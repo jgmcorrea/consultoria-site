@@ -286,6 +286,7 @@
         ${copiar("Descrição", descricaoNF(c, ym, k))}
       </dl>
       <p class="fc-links"><a class="botao" href="${NFSE_EMISSOR}" target="_blank" rel="noopener">Abrir Emissor Nacional</a><a class="botao-sec" href="${NFSE_EMITIDAS}" target="_blank" rel="noopener">Notas emitidas</a></p>
+      ${SIS.passosNF ? `<details class="nf-detalhe"><summary>Passo a passo da emissão no Emissor Nacional</summary>${SIS.passosNF({ cnpj: c.cnpj, cidade: c.cidade, descricao: descricaoNF(c, ym, k), valor: moeda(valor) })}</details>` : ""}
       <h3 class="fc-sub">Depois de emitir, registre a nota aqui</h3>` : ""}
       <div class="grade-form">
         <label class="campo"><span>Nº da nota</span><input name="nf_numero" required value="${esc(f?.nf_numero || "")}"></label>

@@ -45,6 +45,7 @@
     const msg = e.message || String(e);
     if (/cons_servicos/.test(msg)) return toast("Falta preparar o banco para serviços prestados: rode o arquivo 04_servicos.sql no Supabase.", true);
     if (/hora_chegada|hora_saida|carregamento|informacoes|despesa_|valor_sem_carga|horas_min_sem_carga|deslocamento_descricao/.test(msg)) return toast("Falta preparar o banco para as visitas de container: rode o arquivo 06_visitas_containers.sql no Supabase.", true);
+    if (/nota_mesmo_mes/.test(msg)) return toast("Falta preparar o banco: rode o arquivo 07_nota_mesmo_mes.sql no Supabase.", true);
     if (/valor_hora_fds/.test(msg)) return toast("Falta preparar o banco: rode o arquivo 05_valor_fim_de_semana.sql no Supabase.", true);
     toast("Não foi possível salvar: " + msg, true);
   }
@@ -171,7 +172,8 @@
               <div><dt>Tarefas abertas</dt><dd>${n.abertos}</dd></div>
               <div class="${n.vencidos ? "alerta" : ""}"><dt>Prazos vencidos</dt><dd>${n.vencidos}</dd></div>
               <div><dt>Horas no mês</dt><dd>${fmtDur(n.minMes)}</dd></div>
-              ${SIS.calcMes ? (() => { const ant = SIS.mesAnterior(mes); return `<div class="bloco-valor"><dt>Nota a emitir · serviços de ${nomeMes(ant).split(" ")[0].toLowerCase()}</dt><dd>${SIS.moeda(SIS.calcMes(c, ant).valor)}</dd></div>
+              ${SIS.calcMes && SIS.mesmoMes(c) ? `<div class="bloco-valor"><dt>Nota de ${nomeMes(mes).split(" ")[0].toLowerCase()} · serviços do próprio mês</dt><dd>${SIS.moeda(SIS.calcMes(c, mes).valor)}</dd></div>` : ""}
+              ${SIS.calcMes && !SIS.mesmoMes(c) ? (() => { const ant = SIS.mesAnterior(mes); return `<div class="bloco-valor"><dt>Nota a emitir · serviços de ${nomeMes(ant).split(" ")[0].toLowerCase()}</dt><dd>${SIS.moeda(SIS.calcMes(c, ant).valor)}</dd></div>
               <div class="bloco-valor sec"><dt>Acumulado de ${nomeMes(mes).split(" ")[0].toLowerCase()} · nota no mês que vem</dt><dd>${SIS.moeda(SIS.calcMes(c, mes).valor)}</dd></div>`; })() : ""}
             </dl>
           </a>`; }).join("")}
@@ -320,6 +322,7 @@
   const MODELOS = [["hora", "Por hora trabalhada"], ["pacote", "Pacote mensal de horas + hora excedente"], ["unidade", "Por unidade (ex.: container)"], ["servico", "Por serviço prestado"]];
   const CAMPOS_CONTRATO = [
     ["modelo_cobranca", "Forma de cobrança", "select", "", true],
+    ["nota_mesmo_mes", "Nota emitida no mesmo mês dos serviços (e não no mês seguinte)", "checkbox", "", true],
     ["valor_hora", "Valor da hora (R$)", "number", "hora"],
     ["pacote_valor", "Valor do pacote por mês (R$)", "number", "pacote"],
     ["pacote_horas", "Horas incluídas no pacote", "number", "pacote"],
@@ -347,10 +350,11 @@
     const modelo = c.modelo_cobranca || "hora";
     const oculto = so && !so.split(",").includes(modelo) ? "hidden" : "";
     // coluna nova: se o banco ainda não tem (SQL não rodado), o campo aparece bloqueado com o aviso
-    const NOVAS = { valor_hora_fds: "05_valor_fim_de_semana.sql", valor_sem_carga: "06_visitas_containers.sql", horas_min_sem_carga: "06_visitas_containers.sql", deslocamento_descricao: "06_visitas_containers.sql" };
+    const NOVAS = { valor_hora_fds: "05_valor_fim_de_semana.sql", valor_sem_carga: "06_visitas_containers.sql", horas_min_sem_carga: "06_visitas_containers.sql", deslocamento_descricao: "06_visitas_containers.sql", nota_mesmo_mes: "07_nota_mesmo_mes.sql" };
     const semColuna = k in NOVAS && !(k in c);
     const avisoSql = semColuna ? `<small class="dica">Rode o arquivo ${NOVAS[k]} no Supabase para liberar este campo.</small>` : "";
     let input;
+    if (tipo === "checkbox") return `<label class="alternar largo"><input type="checkbox" name="${k}" ${c[k] ? "checked" : ""} ${semColuna ? "disabled" : ""}> ${rot}${avisoSql ? ` ${avisoSql}` : ""}</label>`;
     if (k === "modelo_cobranca") input = `<select name="${k}" data-campo="modelo">${MODELOS.map(([v, n]) => `<option value="${v}" ${v === modelo ? "selected" : ""}>${n}</option>`).join("")}</select>`;
     else if (tipo === "textarea") input = `<textarea name="${k}" rows="2" placeholder="Ex.: Consultoria técnica em qualidade de alimentos - competência {competencia}">${esc(c[k])}</textarea><small class="dica">Use {competencia}, {horas} e {quantidade} para o sistema preencher sozinho.</small>`;
     else if (tipo === "number") input = `<input type="number" step="0.01" min="0" inputmode="decimal" name="${k}" value="${esc(c[k] ?? "")}" ${semColuna ? "disabled" : ""}>${avisoSql || (k === "valor_hora_fds" ? `<small class="dica">Sábado e domingo. Em branco, o fim de semana é cobrado como dia normal.</small>` : k === "valor_sem_carga" ? `<small class="dica">Quando ela vai e não há carregamento, independente do tempo.</small>` : "")}`;
@@ -763,7 +767,7 @@
       if (tipo === "cliente") {
         const dados = { id: f.dataset.id, ativo: f.ativo.checked };
         CAMPOS_CLIENTE.forEach(([k]) => { const v = f[k].value.trim(); dados[k] = v === "" ? null : v; });
-        CAMPOS_CONTRATO.forEach(([k, , tipo]) => { if (f[k].disabled) return; const v = f[k].value.trim(); dados[k] = v === "" ? null : tipo === "number" ? Number(v.replace(",", ".")) : v; });
+        CAMPOS_CONTRATO.forEach(([k, , tipo]) => { if (f[k].disabled) return; if (tipo === "checkbox") { dados[k] = f[k].checked; return; } const v = f[k].value.trim(); dados[k] = v === "" ? null : tipo === "number" ? Number(v.replace(",", ".")) : v; });
         dados.modelo_cobranca = dados.modelo_cobranca || "hora";
         guardarLocal("clientes", await DB.salvar("clientes", dados));
         render(); toast("Dados salvos.");
