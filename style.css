@@ -1,0 +1,779 @@
+/* ===== PALETA ===== */
+:root {
+    --orange: #d66244;
+    --orange-dark: #b84f34;
+    --orange-light: #f0d9c9;
+    --dark: #2b2b2b;
+    --cream: #faf6e8;
+    --white: #ffffff;
+    --text: #2b2b2b;
+    /* Ponto focal da foto do hero (ajuste o eixo Y se a foto cortar a cabeça
+       ou os ombros: 0% = topo da imagem, 100% = base da imagem) */
+    --hero-focus: center 15%;
+}
+
+/* =====================================================================
+   MOBILE FIRST
+   O CSS abaixo define primeiro o layout para telas pequenas (celular).
+   As media queries com "min-width" vão progressivamente ligando o
+   layout de telas maiores (tablet, notebook, desktop grande).
+   ===================================================================== */
+
+/* ===== CONFIGURAÇÕES GERAIS ===== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: "Montserrat", sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+#sobre, #servicos, #contato {
+  scroll-margin-top: 100px;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ===== HEADER / NAV (base = mobile) ===== */
+header {
+  position: relative;
+  z-index: 9999;
+}
+
+.navbar {
+    background-color: var(--orange);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 5%;
+    color: #fff;
+    position: relative;
+    z-index: 9999;
+}
+
+/* Botão hamburguer: visível por padrão (mobile) */
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 10px;
+}
+
+.hamburger {
+  display: block;
+  width: 26px;
+  height: 2px;
+  background: #fff;
+  position: relative;
+  transition: transform 0.2s ease;
+}
+
+.hamburger::before,
+.hamburger::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 26px;
+  height: 2px;
+  background: #fff;
+  transition: transform 0.2s ease, top 0.2s ease, opacity 0.2s ease;
+}
+
+.hamburger::before { top: -8px; }
+.hamburger::after  { top: 8px; }
+
+.navbar.open .hamburger { background: transparent; }
+.navbar.open .hamburger::before { top: 0; transform: rotate(45deg); }
+.navbar.open .hamburger::after  { top: 0; transform: rotate(-45deg); }
+
+/* Links: viram menu dropdown no mobile, fechado por padrão */
+.nav-left {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    background-color: var(--orange);
+    padding: 10px 5%;
+    border-top: 1px solid rgba(255,255,255,0.25);
+    z-index: 10000;
+}
+
+.navbar.open .nav-left {
+    display: flex;
+}
+
+.nav-left a {
+    color: #fff;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
+.nav-left a:last-child {
+    border-bottom: 0;
+}
+
+.nav-left a:hover {
+    text-decoration: underline;
+}
+
+/* Centro: título + subtítulo */
+.nav-center {
+    flex: 1;
+    margin: 0 10px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.nav-title {
+    display: block;
+    font-family: 'Playfair Display', serif;
+    font-weight: bolder;
+    font-size: 1.05rem;
+}
+
+.nav-subtitle {
+    display: block;
+    opacity: 0.9;
+    font-family: "Raleway", sans-serif;
+    font-optical-sizing: auto;
+    font-style: normal;
+    font-size: 0.72rem;
+    margin-top: 4px;
+}
+
+/* Logo */
+.nav-right img {
+    height: 44px;
+    width: auto;
+}
+
+/* ===== HERO (base = mobile: sem imagem de fundo, foto inteira abaixo do texto) ===== */
+.hero-bg {
+  position: relative;
+  color: var(--text);
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 48px 6% 0;
+  text-align: center;
+}
+
+.hero-content {
+  max-width: 680px;
+  margin: 0 auto 32px;
+  position: relative;
+  z-index: 2;
+}
+
+.hero-image-mobile {
+  display: block;
+  width: 100%;
+}
+
+.hero-image-mobile img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.hero-overlay {
+  display: none;
+}
+
+.hero-content h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-family: "Montserrat", sans-serif;
+  margin-bottom: 20px;
+}
+
+.hero-content p {
+  font-size: 1rem;
+  line-height: 1.6;
+  margin-bottom: 28px;
+  font-family: "Montserrat", sans-serif;
+}
+
+/* CTA — usado em todo o site: fundo escuro, destaque laranja no hover */
+.hero-cta,
+.services-cta,
+.final-cta-btn {
+  display: inline-block;
+  background-color: var(--dark);
+  color: #fff;
+  padding: 14px 24px;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  font-family: "Montserrat", sans-serif;
+  width: 100%;
+  max-width: 320px;
+}
+
+.hero-cta:hover,
+.services-cta:hover,
+.final-cta-btn:hover {
+  background-color: var(--orange);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+
+/*===== PAIN (base = mobile) =====*/
+.pain-section {
+  background: linear-gradient(180deg, #ffffff 0%, #fff6ee 100%);
+  padding: 60px 7%;
+}
+
+.pain-container {
+  max-width: 900px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.pain-container h2 {
+  color: var(--text);
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.pain-lead {
+  color: var(--text);
+  opacity: 0.85;
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 640px;
+  margin: 0 auto 36px;
+}
+
+.pain-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  text-align: center;
+}
+
+.pain-card {
+  background: #ffffff;
+  border: 1px solid var(--orange-light);
+  border-radius: 14px;
+  padding: 28px 22px;
+  box-shadow: 0 10px 24px rgba(43,43,43,0.06);
+}
+
+.pain-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--orange);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.pain-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.pain-card h3 {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.pain-card p {
+  color: var(--text);
+  opacity: 0.85;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/*===== SOBRE (base = mobile) =====*/
+.about-section {
+  background-color: var(--cream);
+  padding: 60px 7%;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.about-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  text-align: center;
+}
+
+.about-text h2 {
+  color: var(--text);
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  text-align: center;
+  position: relative;
+  padding-bottom: 16px;
+}
+
+.about-text h2::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 3px;
+  background-color: var(--orange);
+}
+
+.about-text p {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.7;
+  text-align: left;
+}
+
+.about-image img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(43,43,43,0.12);
+}
+
+/*===== SERVIÇOS (base = mobile: 1 coluna) =====*/
+.services-section {
+  background: var(--cream);
+  padding: 60px 7%;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.services-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.services-container h2 {
+  text-align: center;
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 32px;
+}
+
+.services-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.service-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.service-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+.service-card:hover .service-title {
+  filter: brightness(1.05);
+}
+
+.service-title {
+  background: var(--orange);
+  color: #ffffff;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 12px;
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  padding: 16px 12px;
+}
+
+.service-body {
+  margin-top: 10px;
+  padding: 18px 16px 22px;
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--text);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  box-shadow: 0 6px 16px rgba(43,43,43,0.06);
+}
+
+.service-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.service-body li {
+  margin: 10px 0;
+  line-height: 1.4;
+  font-size: 1rem;
+}
+
+.services-cta-wrapper {
+  margin-top: 44px;
+  text-align: center;
+}
+
+/*===== CTA FINAL (base = mobile) =====*/
+.final-cta-section {
+  padding: 60px 7%;
+  background: linear-gradient(to bottom, #ffffff 0%, #f2f2f2 55%, var(--orange) 100%);
+  font-family: 'Montserrat', sans-serif;
+}
+
+.final-cta-container {
+  max-width: 900px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.final-cta-container h2 {
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 22px;
+}
+
+.final-cta-container p {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.7;
+  margin-bottom: 32px;
+}
+
+/*===== FOOTER (base = mobile: 1 coluna) =====*/
+.site-footer {
+  background: var(--orange);
+  padding: 0;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.footer-container {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  align-items: stretch;
+}
+
+.footer-item {
+    border-top: 1px solid rgba(255,255,255,0.25);
+    border-right: none;
+    border-bottom: 1px solid rgba(255,255,255,0.25);
+    padding: 20px 14px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 150px;
+    min-width: 0;
+}
+
+.footer-item:first-child {
+  border-left: none;
+}
+
+.footer-icon svg {
+  width: 30px;
+  height: 30px;
+  fill: #fff;
+  margin-bottom: 10px;
+}
+
+.footer-title {
+  display: block;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.footer-text {
+  color: rgba(255,255,255,0.9);
+  font-size: 0.9rem;
+}
+
+.footer-link {
+  color: rgba(255,255,255,0.9);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.footer-link,
+.footer-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.footer-link:hover {
+  color: var(--dark);
+  text-decoration: underline;
+}
+
+.footer-legal {
+  border-top: 1px solid rgba(255,255,255,0.25);
+  text-align: center;
+  padding: 18px 12px;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.85);
+  background: var(--orange);
+}
+
+/* =====================================================================
+   TABLET PEQUENO — a partir de 481px
+   ===================================================================== */
+@media (min-width: 481px) {
+  .hero-cta,
+  .services-cta,
+  .final-cta-btn {
+    width: auto;
+    max-width: none;
+    padding: 14px 28px;
+  }
+
+  .footer-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .footer-item {
+    padding: 28px 20px;
+    min-height: 180px;
+  }
+
+  .footer-item:nth-child(2),
+  .footer-item:nth-child(4) {
+    border-right: none;
+  }
+
+  .footer-link, .footer-text {
+    font-size: 0.95rem;
+  }
+}
+
+/* =====================================================================
+   TABLET — a partir de 601px
+   ===================================================================== */
+@media (min-width: 601px) {
+  .services-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .services-container h2 {
+    font-size: 2.2rem;
+    margin-bottom: 50px;
+  }
+
+  .services-section {
+    padding: 100px 6%;
+  }
+
+  .service-body li {
+    font-size: 0.95rem;
+  }
+}
+
+/* =====================================================================
+   NOTEBOOK / DESKTOP — a partir de 769px
+   Aqui liga o menu horizontal, a imagem de fundo do hero e os layouts
+   em duas colunas.
+   ===================================================================== */
+@media (min-width: 769px) {
+  #sobre, #servicos, #contato {
+    scroll-margin-top: 120px;
+  }
+
+  .navbar {
+    padding: 16px 5%;
+  }
+
+  .nav-toggle {
+    display: none;
+  }
+
+  .nav-left {
+    display: flex;
+    position: static;
+    flex-direction: row;
+    gap: 24px;
+    background-color: transparent;
+    padding: 0;
+    border-top: 0;
+  }
+
+  .nav-left a {
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  .nav-center {
+    flex: none;
+    margin: 0;
+  }
+
+  .nav-title {
+    font-size: 2rem;
+  }
+
+  .nav-subtitle {
+    font-size: 0.85rem;
+    margin-top: 8px;
+  }
+
+  .nav-right img {
+    height: 80px;
+  }
+
+  /* HERO com foto de fundo */
+  .hero-bg {
+    min-height: clamp(560px, 90vh, 820px);
+    background-image: url('imagens/isadora_foto_prancheta.png');
+    background-size: cover;
+    background-position: var(--hero-focus);
+    color: #fff;
+  }
+
+  .hero-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    min-height: clamp(560px, 90vh, 820px);
+    padding: 0 5%;
+  }
+
+  .hero-content {
+    max-width: 560px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .hero-content h1 {
+    font-size: 1.9rem;
+    margin-bottom: 24px;
+  }
+
+  .hero-content p {
+    font-size: 1.1rem;
+    margin-bottom: 32px;
+    opacity: 0.95;
+  }
+
+  .hero-image-mobile {
+    display: none;
+  }
+
+  .hero-overlay {
+    display: block;
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(43,43,43,0.55) 100%);
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .pain-section {
+    padding: 100px 6%;
+  }
+
+  .pain-container h2 {
+    font-size: 2.4rem;
+  }
+
+  .pain-lead {
+    font-size: 1.05rem;
+    margin-bottom: 50px;
+  }
+
+  .pain-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .about-section {
+    padding: 90px 6%;
+  }
+
+  .about-container {
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+    text-align: justify;
+  }
+
+  .about-text h2 {
+    font-size: 2.3rem;
+  }
+
+  .about-text p {
+    font-size: 1.1rem;
+    text-align: justify;
+  }
+
+  .final-cta-section {
+    padding: 90px 6%;
+  }
+
+  .final-cta-container h2 {
+    font-size: 2.2rem;
+  }
+
+  .final-cta-container p {
+    font-size: 1.1rem;
+  }
+
+  .footer-container {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .footer-item {
+    border-right: 1px solid rgba(255,255,255,0.25);
+  }
+
+  .footer-item:first-child {
+    border-left: 1px solid rgba(255,255,255,0.25);
+  }
+}
+
+/* =====================================================================
+   DESKTOP GRANDE — a partir de 901px
+   ===================================================================== */
+@media (min-width: 901px) {
+  .services-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* =====================================================================
+   DESKTOP EXTRA GRANDE — a partir de 1201px
+   (mantém 3 colunas: com 6 cards de serviço, isso dá 2 linhas de 3,
+   mais equilibrado do que forçar 5 colunas com 1 card sobrando)
+   ===================================================================== */
