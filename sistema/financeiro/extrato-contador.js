@@ -81,7 +81,7 @@ export async function gerarExtratoContador(mes) {
   // 2. Conta do Fator R
   y = titulo(`2. Conta do Fator R (alvo de ${String(alvo).replace(".", ",")}%)`, depois());
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.8); doc.setTextColor(...CINZA);
-  const expl = doc.splitTextToSize(`Fator R = folha de salários (pró-labore) dos 12 meses anteriores ÷ receita bruta dos 12 meses anteriores. Para o mês seguinte continuar no Anexo III, o pró-labore do mês precisa ser de pelo menos ${String(alvo).replace(".", ",")}% × (receitas acumuladas, incluindo o mês) - pró-labores já pagos, e nunca menos que o salário mínimo (${moeda(cfg.salario_minimo)}).`, W - 30);
+  const expl = doc.splitTextToSize(`Fator R = folha de salários (pró-labore) dos 12 meses anteriores ÷ receita bruta dos 12 meses anteriores. Critério adotado: o pró-labore de cada mês é de ${String(alvo).replace(".", ",")}% do faturamento do próprio mês (sem compensar meses anteriores), e nunca menos que o salário mínimo (${moeda(cfg.salario_minimo)}). Assim o Fator R fica sempre acima de 28%.`, W - 30);
   doc.text(expl, 15, y + 3);
   y += 3 + expl.length * 3.8;
   let recAc = 0, folhaAc = 0;

@@ -114,7 +114,7 @@ export async function viewInicio(el) {
           <dt>Fator R do mês</dt><dd>${pctBR(x.fatorR)} <span class="faint small">(mínimo ${String(cfg.fator_r_alvo).replace(".", ",")}%)</span></dd>
           <dt>Receita 12 meses (RBT12)</dt><dd>${moeda(x.rbt12)} · faixa ${x.aliq.faixa}</dd>
           <dt>Alíquota efetiva</dt><dd>${pctBR(x.aliq.efetiva)}</dd>
-          <dt>Pró-labore mínimo</dt><dd><b>${moeda(x.minimo)}</b> <span class="faint small">para o mês seguinte continuar no Anexo III</span></dd>
+          <dt>Pró-labore mínimo</dt><dd><b>${moeda(x.minimo)}</b> <span class="faint small">${String(cfg.fator_r_alvo).replace(".", ",")}% do faturamento do mês</span></dd>
           <dt>Mês seguinte</dt><dd>${badge("anexo", x.anexoProx)} <span class="small">Fator R ${pctBR(x.fatorRProx)}</span></dd>
         </dl>
         <div class="acoes-card"><button class="btn sm" data-fechamento>Ajustar valores do mês</button></div>

@@ -96,10 +96,9 @@ export function calcularMeses({ lancamentos, fechamentos, config: cfg }, ate) {
     // RBT12: 1º mês = receita do mês × 12; depois, média dos meses anteriores × 12 (até completar 12 meses)
     const rbt12 = n === 1 ? r2(receita * 12) : k ? r2((recAnt / k) * 12) : 0;
 
-    // pró-labore mínimo: o maior entre o salário mínimo e o necessário para o Fator R do MÊS SEGUINTE ficar no alvo
-    const k2 = Math.min(n, 12);
-    const jan2 = meses.slice(meses.length - (k2 - 1));
-    const necessario = teto2(alvo * (soma(jan2, (x) => x.receita) + receita) - soma(jan2, (x) => x.prolabore));
+    // pró-labore mínimo (critério combinado com o contador): o alvo (ex.: 30%) do faturamento do PRÓPRIO mês,
+    // sem compensar meses anteriores, e nunca menos que o salário mínimo
+    const necessario = teto2(alvo * receita);
     const minimo = Math.max(Number(cfg.salario_minimo), necessario);
     const prolabore = f.prolabore !== null && f.prolabore !== undefined ? Number(f.prolabore) : minimo;
 

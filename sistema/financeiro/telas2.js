@@ -46,7 +46,7 @@ const GRUPOS = [
   ]],
   ["Pró-labore e distribuição", [
     { n: "salario_minimo", r: "Salário mínimo (pró-labore mínimo)", t: "money", req: true },
-    { n: "fator_r_alvo", r: "Fator R alvo (%)", t: "number", req: true, ajuda: "Mínimo legal 28%. Usamos 29% para ter folga." },
+    { n: "fator_r_alvo", r: "Fator R alvo (%)", t: "number", req: true, ajuda: "Mínimo legal 28%. O pró-labore de cada mês é este % do faturamento do próprio mês (usamos 30%)." },
     { n: "reserva_pct", r: "Reserva para despesas (% do faturamento)", t: "number", req: true },
     { n: "presuncao_pct", r: "Presunção de lucro – serviços (%)", t: "number", req: true, ajuda: "Usada no limite isento sem escrituração." },
   ]],
