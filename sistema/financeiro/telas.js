@@ -3,6 +3,7 @@ import { esc, moeda, pct, data, nomeMes, badge, badgeTxt, seletorMes, ligarSelet
 import { hoje, mesDe, mesAtual, addMeses, diffDias, calcularMeses, obrigacoesDoMes, situacao, caixa, entradasDoMes, saidasDoMes, soma } from "./calc.js";
 import { carregar } from "./dados.js";
 import { formLancamento, alternarStatus, marcarPago, formFechamento, formDistribuicao } from "./formularios.js";
+import { gerarExtratoContador } from "./extrato-contador.js";
 
 const estado = { mesInicio: mesAtual(), mesLanc: mesAtual(), aba: "todas", ano: Number(hoje().slice(0, 4)) };
 
@@ -97,6 +98,7 @@ export async function viewInicio(el) {
           <span>Faturamento</span><span class="num right">${moeda(x.receita)}</span>
           <span class="menos">− DAS (Anexo ${x.anexo}, ${pctBR(x.aliq.efetiva)})</span><span class="num right">${moeda(x.das)}</span>
           <span class="menos">− Pró-labore bruto</span><span class="num right">${moeda(x.prolabore)}</span>
+          ${x.contador ? `<span class="menos">− Honorários do contador</span><span class="num right">${moeda(x.contador)}</span>` : ""}
           <span class="menos">− Reserva para despesas (${String(cfg.reserva_pct).replace(".", ",")}%)</span><span class="num right">${moeda(x.reserva)}</span>
           <span class="tot">= Distribuição sugerida</span><span class="tot num right">${moeda(x.distribuicaoSugerida)}</span>
           <span class="ind">Despesas lançadas no mês</span><span class="num right faint">${moeda(x.despesas)}</span>
@@ -124,6 +126,7 @@ export async function viewInicio(el) {
           <span>+ Entradas recebidas</span><span class="num right">${moeda(cx.entradas)}</span>
           <span class="menos">− Saídas pagas</span><span class="num right">${moeda(cx.saidas)}</span>
           <span class="menos">− Guias pagas (DAS e DARF)</span><span class="num right">${moeda(cx.guias)}</span>
+          ${cx.contador ? `<span class="menos">− Contador pago</span><span class="num right">${moeda(cx.contador)}</span>` : ""}
           <span class="menos">− Pró-labore líquido transferido</span><span class="num right">${moeda(cx.prolabores)}</span>
           <span class="menos">− Lucros distribuídos</span><span class="num right">${moeda(cx.distribuicoes)}</span>
           <span class="tot">= Deveria haver na conta</span><span class="tot num right">${moeda(cx.saldo)}</span>
@@ -133,13 +136,17 @@ export async function viewInicio(el) {
     </div>`;
 
   el.innerHTML = `
-    ${topo("Visão do mês", nomeMes(mes, true), seletorMes(mes) + botoesLancar)}
+    ${topo("Visão do mês", nomeMes(mes, true), seletorMes(mes) + `<button class="btn" data-extrato-contador title="PDF com ${nomeMes(addMeses(mes, -1))} e ${nomeMes(mes)}">Extrato para o contador</button>` + botoesLancar)}
     ${avisos.length ? `<div class="card"><div class="card-titulo"><h2>Alertas</h2><span class="badge amarelo">${avisos.length}</span></div>
       ${avisos.map(([cor, ico, txt]) => `<div class="alerta ${cor}"><span class="ico">${ico}</span><div class="flex1">${txt}</div></div>`).join("")}</div>` : ""}
     ${corpoX}`;
 
   ligarSeletorMes(el, mes, addMeses, (m) => { estado.mesInicio = m; recarregar(); });
   ligarLancar(el, recarregar);
+  el.querySelector("[data-extrato-contador]")?.addEventListener("click", async (ev) => {
+    const b = ev.currentTarget, t = b.textContent; b.disabled = true; b.textContent = "Gerando…";
+    try { await gerarExtratoContador(mes); } catch (e) { console.error(e); window.SIS.toast("Não foi possível gerar o extrato: " + (e.message || e), true); } finally { b.disabled = false; b.textContent = t; }
+  });
   el.querySelectorAll("[data-pagar]").forEach((b) => (b.onclick = async () => {
     const [m, chave] = b.dataset.pagar.split("|");
     const o = obrigs.find((y) => y.x.mes === m && y.chave === chave);

@@ -46,7 +46,7 @@ const GRUPOS = [
   ]],
   ["Pró-labore e distribuição", [
     { n: "salario_minimo", r: "Salário mínimo (pró-labore mínimo)", t: "money", req: true },
-    { n: "fator_r_alvo", r: "Fator R alvo (%)", t: "number", req: true, ajuda: "Mínimo legal 28%. Use 29% ou 30% para ter folga." },
+    { n: "fator_r_alvo", r: "Fator R alvo (%)", t: "number", req: true, ajuda: "Mínimo legal 28%. Usamos 29% para ter folga." },
     { n: "reserva_pct", r: "Reserva para despesas (% do faturamento)", t: "number", req: true },
     { n: "presuncao_pct", r: "Presunção de lucro – serviços (%)", t: "number", req: true, ajuda: "Usada no limite isento sem escrituração." },
   ]],
@@ -64,6 +64,11 @@ const GRUPOS = [
     { n: "dia_darf", r: "Dia do vencimento do DARF da DCTFWeb", t: "int", min: 1, max: 31, req: true },
     { n: "dia_prolabore", r: "Dia de pagar o pró-labore (no mesmo mês do faturamento)", t: "int", min: 1, max: 31, req: true },
     { n: "dias_alerta", r: "Avisar com quantos dias de antecedência", t: "int", min: 0, max: 60, req: true },
+  ]],
+  ["Contador", [
+    { n: "honorario_contador", r: "Honorários mensais do contador (R$)", t: "money", req: true, ajuda: "Entra nas contas a pagar de todo mês e é descontado da distribuição sugerida." },
+    { n: "dia_contador", r: "Dia do pagamento do contador", t: "int", min: 1, max: 31, req: true },
+    { n: "contador_desde", r: "Cobrado a partir de", t: "date", req: true },
   ]],
 ];
 

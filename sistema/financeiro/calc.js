@@ -117,7 +117,9 @@ export function calcularMeses({ lancamentos, fechamentos, config: cfg }, ate) {
     const liquidoProlabore = r2(prolabore - inss - irrf);
 
     const reserva = r2(receita * Number(cfg.reserva_pct) / 100);
-    const distribuicaoSugerida = Math.max(0, r2(receita - das - prolabore - reserva));
+    // honorários do contador: valor fixo mensal, a partir do mês configurado
+    const contador = cfg.contador_desde && m >= mesDe(cfg.contador_desde) ? r2(Number(cfg.honorario_contador || 0)) : 0;
+    const distribuicaoSugerida = Math.max(0, r2(receita - das - prolabore - contador - reserva));
     const limiteIsento = Math.max(0, r2(receita * Number(cfg.presuncao_pct) / 100 - das * aliq.irpj));
     const distribuido = f.distribuido !== null && f.distribuido !== undefined ? Number(f.distribuido) : null;
 
@@ -125,13 +127,14 @@ export function calcularMeses({ lancamentos, fechamentos, config: cfg }, ate) {
       das: ajustarDiaUtil(diaNoMes(addMeses(m, 1), Number(cfg.dia_das)), "prox"),
       darf: ajustarDiaUtil(diaNoMes(addMeses(m, 1), Number(cfg.dia_darf)), "ant"),
       prolabore: diaNoMes(m, Number(cfg.dia_prolabore)), // pago no mesmo mês do faturamento
+      contador: diaNoMes(m, Number(cfg.dia_contador || 25)),
     };
 
     meses.push({
       mes: m, n, f, receita, despesas, saidas, rbt12, fatorR, anexo, aliq, dasCalc, das,
       minimo, prolabore, prolaboreManual: f.prolabore !== null && f.prolabore !== undefined,
       inss, ir, irrf, darf: r2(inss + irrf), liquidoProlabore,
-      reserva, distribuicaoSugerida, limiteIsento, distribuido,
+      reserva, contador, distribuicaoSugerida, limiteIsento, distribuido,
       totalPF: r2(liquidoProlabore + (distribuido ?? distribuicaoSugerida)),
       impostos: r2(das + inss + irrf),
       venc,
@@ -156,6 +159,7 @@ export function obrigacoesDoMes(x) {
   const out = [];
   if (x.das > 0) out.push({ chave: "das", nome: "DAS (Simples Nacional)", valor: x.das, venc: x.venc.das, pagoEm: f.das_pago_em || null, campo: "das_pago_em" });
   if (x.darf > 0) out.push({ chave: "darf", nome: "DARF DCTFWeb (INSS + IRRF do pró-labore)", valor: x.darf, venc: x.venc.darf, pagoEm: f.darf_pago_em || null, campo: "darf_pago_em" });
+  if (x.contador > 0) out.push({ chave: "contador", nome: "Honorários do contador", valor: x.contador, venc: x.venc.contador, pagoEm: f.contador_pago_em || null, campo: "contador_pago_em" });
   if (x.prolabore > 0) out.push({ chave: "prolabore", nome: "Pró-labore líquido (transferir para a sócia)", valor: x.liquidoProlabore, venc: x.venc.prolabore, pagoEm: f.prolabore_pago_em || null, campo: "prolabore_pago_em" });
   return out;
 }
@@ -176,13 +180,14 @@ export function situacao(venc, pagoEm, diasAlerta, ref = hoje()) {
 export function caixa({ lancamentos, config }, meses) {
   const entradas = soma(lancamentos.filter((x) => x.tipo === "entrada" && x.status === "pago"), (x) => x.valor);
   const saidas = soma(lancamentos.filter((x) => x.tipo === "saida" && x.status === "pago"), (x) => x.valor);
-  let guias = 0, prolabores = 0, distribuicoes = 0;
+  let guias = 0, prolabores = 0, distribuicoes = 0, contador = 0;
   for (const x of meses) {
+    if (x.f.contador_pago_em) contador += x.contador;
     if (x.f.das_pago_em) guias += x.das;
     if (x.f.darf_pago_em) guias += x.darf;
     if (x.f.prolabore_pago_em) prolabores += x.liquidoProlabore;
     if (x.f.distribuido_em && x.distribuido) distribuicoes += x.distribuido;
   }
-  const saldo = r2(Number(config.saldo_inicial || 0) + entradas - saidas - guias - prolabores - distribuicoes);
-  return { entradas, saidas, guias: r2(guias), prolabores: r2(prolabores), distribuicoes: r2(distribuicoes), saldo };
+  const saldo = r2(Number(config.saldo_inicial || 0) + entradas - saidas - guias - contador - prolabores - distribuicoes);
+  return { entradas, saidas, guias: r2(guias), contador: r2(contador), prolabores: r2(prolabores), distribuicoes: r2(distribuicoes), saldo };
 }

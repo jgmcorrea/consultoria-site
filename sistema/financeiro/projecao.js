@@ -33,7 +33,7 @@ export async function viewProjecao(el, itensDe) {
         <div class="kpi destaque"><div class="rot">Faturamento previsto</div><div class="val">${moeda(x.receita)}</div><div class="sub">${jaNoMes > 0 ? `${moeda(previsto)} dos clientes + ${moeda(jaNoMes)} já lançado` : "Notas dos clientes"}</div></div>
         <div class="kpi"><div class="rot">DAS previsto</div><div class="val">${moeda(x.das)}</div><div class="sub">Anexo ${x.anexo} · alíquota efetiva ${pctBR(x.aliq.efetiva)}</div></div>
         <div class="kpi"><div class="rot">Pró-labore</div><div class="val">${moeda(x.prolabore)}</div><div class="sub">INSS ${moeda(x.inss)} · IRRF ${moeda(x.irrf)} · líquido ${moeda(x.liquidoProlabore)}</div></div>
-        <div class="kpi"><div class="rot">Distribuição de lucros</div><div class="val">${moeda(x.distribuicaoSugerida)}</div><div class="sub">Sugerida (faturamento − DAS − pró-labore − reserva de ${moeda(x.reserva)})</div></div>
+        <div class="kpi"><div class="rot">Distribuição de lucros</div><div class="val">${moeda(x.distribuicaoSugerida)}</div><div class="sub">Sugerida (faturamento − DAS − pró-labore − contador − reserva de ${moeda(x.reserva)})</div></div>
         <div class="kpi"><div class="rot">Total líquido na pessoa física</div><div class="val">${moeda(r2(x.liquidoProlabore + x.distribuicaoSugerida))}</div><div class="sub">Pró-labore líquido + lucros</div></div>
       </div>
 
@@ -59,6 +59,7 @@ export async function viewProjecao(el, itensDe) {
           <span>Faturamento previsto</span><span class="num right">${moeda(x.receita)}</span>
           <span class="menos">− DAS (${pctBR(x.aliq.efetiva)})</span><span class="num right">${moeda(x.das)}</span>
           <span class="menos">− Pró-labore bruto</span><span class="num right">${moeda(x.prolabore)}</span>
+          ${x.contador ? `<span class="menos">− Honorários do contador</span><span class="num right">${moeda(x.contador)}</span>` : ""}
           <span class="menos">− Reserva para despesas</span><span class="num right">${moeda(x.reserva)}</span>
           <span class="tot">= Distribuição sugerida</span><span class="tot num right">${moeda(x.distribuicaoSugerida)}</span>
         </div>

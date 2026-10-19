@@ -154,7 +154,7 @@ export async function formFechamento(x) {
 export async function formDistribuicao(x) {
   const r = await modal({
     titulo: `Distribuir lucro de ${nomeMes(x.mes, true).toLowerCase()}`,
-    corpo: `<p class="muted small">Sugerido: <b>${moeda(x.distribuicaoSugerida)}</b> (faturamento − DAS − pró-labore − reserva de despesas).</p>` +
+    corpo: `<p class="muted small">Sugerido: <b>${moeda(x.distribuicaoSugerida)}</b> (faturamento − DAS − pró-labore − contador − reserva de despesas).</p>` +
       formHTML([{ n: "distribuido", r: "Valor distribuído", t: "money", req: true, padrao: (x.distribuido ?? x.distribuicaoSugerida).toFixed(2) }, { n: "distribuido_em", r: "Data", t: "date", req: true, padrao: x.f.distribuido_em || (mesDe(hoje()) === x.mes ? hoje() : diaNoMes(x.mes, 31)), ajuda: "A distribuição é feita no mesmo mês do faturamento." }]),
     botoes: [
       ...(x.f.distribuido_em ? [{ texto: "Desfazer", classe: "perigo", valor: "desfazer" }] : []),
