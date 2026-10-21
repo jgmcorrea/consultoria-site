@@ -321,6 +321,26 @@ function arred(v,u){
 }
 
 /* ===================== TEXTOS LEGAIS ===================== */
+// Nomes científicos (gênero + espécie) ficam em itálico. No texto, o itálico é marcado com _sublinhados_.
+const GENEROS=["Penicillium","Lactobacillus","Lacticaseibacillus","Lactiplantibacillus","Limosilactobacillus","Ligilactobacillus","Lactococcus","Streptococcus","Leuconostoc","Bifidobacterium","Propionibacterium","Brevibacterium","Corynebacterium","Staphylococcus","Micrococcus","Geotrichum","Debaryomyces","Kluyveromyces","Saccharomyces","Torulaspora","Brettanomyces","Candida","Yarrowia","Pediococcus","Enterococcus","Weissella","Oenococcus","Aspergillus","Rhizopus","Mucor","Bacillus","Clostridium","Tuber","Agaricus","Pleurotus","Lentinula","Theobroma","Coffea","Camellia","Vanilla","Capsicum","Piper","Origanum","Rosmarinus","Thymus","Ocimum","Mentha","Allium","Citrus","Vitis","Prunus","Malus","Fragaria","Rubus","Vaccinium","Ribes","Olea","Glycine","Zea","Triticum","Hordeum","Secale","Avena","Oryza","Arachis","Anacardium","Bertholletia","Corylus","Juglans","Carya","Pistacia","Pinus","Castanea","Macadamia","Amygdalus","Bos","Capra","Ovis","Bubalus","Gallus","Salmo","Thunnus","Euterpe","Paullinia","Ilex","Stevia","Bacteroides","Akkermansia","Spirulina","Arthrospira","Chlorella","Xanthomonas"];
+// gêneros que também são palavras comuns só contam com inicial maiúscula
+const GEN_AMBIGUOS=new Set(["Stevia","Vanilla","Citrus","Candida","Bos","Capra","Ovis","Gallus","Piper","Mentha","Coffea","Camellia","Origanum","Thymus","Spirulina","Chlorella"]);
+const EPITETO="(?:\\s+(?:spp?\\.|(?!(?:e|de|do|da|dos|das|com|em|ou|para|sem|ao|aos)\\b)[a-záéíóúç][a-záéíóúç-]{2,}))?(?:\\s+(?:subsp|var|ssp)\\.\\s+[a-z][a-z-]{2,})?";
+const RE_ESP1=new RegExp("\\b(?:"+GENEROS.filter(g=>!GEN_AMBIGUOS.has(g)).join("|")+")\\b"+EPITETO,"gi");
+const RE_ESP2=new RegExp("\\b(?:"+[...GEN_AMBIGUOS].join("|")+")\\b"+EPITETO,"g");
+const grafiaCientifica=m=>{const w=m.split(/(\s+)/);w[0]=w[0].charAt(0).toUpperCase()+w[0].slice(1).toLowerCase();for(let i=1;i<w.length;i++)w[i]=w[i].toLowerCase();return w.join("")};
+function marcarEspecies(s){
+  // trechos já marcados pelo usuário com _..._ ficam como estão
+  return String(s).split(/(_[^_]+_)/).map(p=>p.length>2&&p.startsWith("_")&&p.endsWith("_")?p:p.replace(RE_ESP1,m=>"_"+grafiaCientifica(m)+"_").replace(/_[^_]+_|[^_]+/g,q=>q.startsWith("_")?q:q.replace(RE_ESP2,m=>"_"+m+"_"))).join("");
+}
+function parseRich(s){const out=[];String(s||"").split(/(_[^_]+_)/).forEach(p=>{if(!p)return;if(p.length>2&&p.startsWith("_")&&p.endsWith("_"))out.push({t:p.slice(1,-1),i:true});else out.push({t:p,i:false})});return out}
+const semMarcas=s=>String(s||"").replace(/_([^_]+)_/g,"$1");
+// só a 1ª letra do 1º ingrediente em maiúscula; o resto minúsculo (nomes científicos mantêm a grafia)
+function caixaIngredientes(s){
+  const runs=parseRich(s).map(r=>r.i?r:{t:r.t.toLocaleLowerCase("pt-BR").replace(/\bins\b/g,"INS"),i:false});
+  for(const r of runs){const k=r.t.search(/\S/); if(k<0) continue; if(!r.i) r.t=r.t.slice(0,k)+r.t.charAt(k).toLocaleUpperCase("pt-BR")+r.t.slice(k+1); break}
+  return runs.map(r=>r.i?"_"+r.t+"_":r.t).join("");
+}
 function textos(R,C){
   const P=R.produto; const it=C.ings.filter(i=>i.nome.trim()&&!i.omitir);
   const byQ=(a,b)=>nz(b.qtd)-nz(a.qtd);
@@ -332,7 +352,7 @@ function textos(R,C){
   const gl=Object.entries(grupos).sort((a,b)=>Math.max(...b[1].map(i=>nz(i.qtd)))-Math.max(...a[1].map(i=>nz(i.qtd)))).map(([f,l])=>{
     const nm=l.sort(byQ).map(i=>clean(i.nomeDecl||i.nome)); return nm.length===1?`${f} ${nm[0]}`:`${f} (${joinE(nm)})`});
   const todos=nao.concat(gl); let ingTxt="";
-  if(todos.length){const t=joinE(todos); ingTxt="Ingredientes: "+t.charAt(0).toUpperCase()+t.slice(1)+"."}
+  if(todos.length) ingTxt="Ingredientes: "+caixaIngredientes(marcarEspecies(joinE(todos)))+".";
   // alergênicos (RDC 727/2022, arts. 13-15)
   const st={};
   it.concat(C.ings.filter(i=>i.omitir)).forEach(i=>Object.entries(i.alerg||{}).forEach(([k,v])=>{if(!v)return;(st[k]=st[k]||new Set()).add(v)}));
@@ -354,7 +374,16 @@ function textos(R,C){
 
 /* ===================== MEDIÇÃO DE TEXTO ===================== */
 const mctx=document.createElement("canvas").getContext("2d");
-function tw(s,sizeMM,bold,scaleX=1){mctx.font=`${bold?"bold ":""}100px Arial, Helvetica, "Liberation Sans", sans-serif`;return mctx.measureText(s).width/100*sizeMM*scaleX}
+function tw(s,sizeMM,bold,scaleX=1,italic=false){mctx.font=`${italic?"italic ":""}${bold?"bold ":""}100px Arial, Helvetica, "Liberation Sans", sans-serif`;return mctx.measureText(s).width/100*sizeMM*scaleX}
+// quebra de linha com trechos em itálico: devolve linhas de segmentos {s,i,x}
+function wrapRich(text,sizeMM,bold,width){
+  const words=[]; let cur=[]; const push=()=>{if(cur.length){words.push(cur);cur=[]}};
+  parseRich(text).forEach(r=>{const parts=r.t.split(/(\s+)/); parts.forEach(pt=>{if(!pt)return; if(/^\s+$/.test(pt)){push();return} const last=cur[cur.length-1]; if(last&&last.i===r.i) last.s+=pt; else cur.push({s:pt,i:r.i})})}); push();
+  const ww=w=>w.reduce((a,g)=>a+tw(g.s,sizeMM,bold,1,g.i),0), sp=tw(" ",sizeMM,bold);
+  const lines=[]; let line=[], lw=0;
+  words.forEach(w=>{const W2=ww(w); if(line.length&&lw+sp+W2>width){lines.push(line);line=[];lw=0} if(line.length) lw+=sp; let x=lw; w.forEach(g=>{line.push({s:g.s,i:g.i,x});x+=tw(g.s,sizeMM,bold,1,g.i)}); lw+=W2});
+  if(line.length) lines.push(line); return lines;
+}
 function wrap(text,sizeMM,bold,width){
   const words=String(text).split(/\s+/).filter(Boolean); const lines=[]; let cur="";
   words.forEach(w=>{const t=cur?cur+" "+w:w; if(tw(t,sizeMM,bold)<=width||!cur) cur=t; else {lines.push(cur);cur=w}}); if(cur)lines.push(cur); return lines;
@@ -434,47 +463,72 @@ function layLinear(R,C){
   return {w:W,h:y,ops};
 }
 
-/* ===================== LAYOUT: LUPA (Anexos XVII/XVIII, IN 75/2020) ===================== */
-const NARROW=0.82, CAP=0.716, ZY=0.16;
+/* ===================== LAYOUT: LUPA (Anexos XVII/XVIII, IN 75/2020) =====================
+   Geometria tirada da "Malha construtiva - Rotulagem frontal" da Anvisa (vetores do PDF oficial).
+   Unidade = Y (altura do "A" de ALTO EM). Bloco = 8Y × 3Y. Fonte Arial Narrow Bold com corpo 1,397Y. */
+const CAP=0.716;
+const LU={CW:8,CH:3,G:0.33008,EO:0.49036,BW:0.16541,RC:0.6507,MRX:0.576,MRY:0.6075,FS:1.39717,ALTOX:7.5897,BASE1:1.9988,
+  LINHAS:{"AÇÚCAR ADICIONADO":[["AÇÚCAR",1.3387],["ADICIONADO",2.7623]],"GORDURA SATURADA":[["GORDURA",1.2881],["SATURADA",2.7102]],"SÓDIO":[["SÓDIO",1.9988]]},
+  SHP:{"frameOut":[["M",7.308,2.9999],["L",0.5363,2.9999],["L",1.0315,2.1422],["C",1.0564,2.0989,1.068,2.0497,1.0649,2.0],["L",1.0635,1.9764],["L",1.1246,1.8704],["L",1.18,1.8816],["C",1.5974,1.9663,2.0207,1.7756,2.2334,1.4072],["C",2.4761,0.9868,2.3725,0.4419,1.9924,0.1396],["L",1.8166,-0.0003],["L",7.308,-0.0003],["C",7.69,-0.0003,8.0009,0.2932,8.0009,0.6538],["L",8.0009,2.3459],["C",8.0009,2.7065,7.69,2.9999,7.308,2.9999],["Z"]],"frameIn":[["M",0.808,2.843],["L",7.308,2.843],["C",7.6035,2.843,7.844,2.62,7.844,2.3459],["L",7.844,0.6538],["C",7.844,0.3797,7.6035,0.1566,7.308,0.1566],["L",2.2367,0.1566],["C",2.5539,0.5188,2.6163,1.0579,2.3693,1.4857],["C",2.1352,1.8913,1.6808,2.1108,1.2211,2.0477],["C",1.2163,2.1084,1.1982,2.1673,1.1674,2.2206],["Z"]],"ringOut":[["M",1.7582,0.1181],["C",1.3366,-0.1254,0.7974,0.0191,0.5539,0.4408],["C",0.3105,0.8624,0.455,1.4017,0.8766,1.6451],["C",1.2983,1.8885,1.8375,1.7441,2.0809,1.3224],["C",2.3244,0.9007,2.18,0.3615,1.7582,0.1181],["Z"]],"ringIn":[["M",1.4801,1.4889],["C",1.1451,1.5786,0.7998,1.3791,0.7101,1.0443],["C",0.6204,0.7095,0.8199,0.3639,1.1547,0.2742],["C",1.4896,0.1845,1.8349,0.3839,1.9247,0.7188],["C",2.0146,1.0537,1.815,1.3993,1.4801,1.4889],["Z"]],"conn":[["M",0.6439,1.7925],["L",0.865,1.9203],["L",0.9927,1.6991],["L",0.7716,1.5714],["Z"]],"cabo":[["M",0.1128,2.9625],["L",0.1174,2.9652],["C",0.2199,3.0243,0.351,2.9892,0.4101,2.8867],["L",0.856,2.1146],["C",0.9151,2.0121,0.88,1.881,0.7775,1.8218],["L",0.7729,1.8191],["C",0.6704,1.7599,0.5393,1.7951,0.4801,1.8976],["L",0.0343,2.6697],["C",-0.0249,2.7722,0.0102,2.9033,0.1128,2.9625],["Z"]]}};
+let NARROW=null; function narrowScale(){if(NARROW==null){const w=tw("ADICIONADO",1,true);NARROW=w>0?Math.min(1,5.28392/w):0.82}return NARROW}
+const LUPA_LAYOUTS={
+  vertical:{t:"Vertical (blocos empilhados)",ok:n=>n>=1,cells:n=>Array.from({length:n+1},(_,i)=>[0,i])},
+  horizontal:{t:"Horizontal (blocos lado a lado)",ok:n=>n>=1,cells:n=>Array.from({length:n+1},(_,i)=>[i,0])},
+  grade:{t:"Em grade 2 × 2",ok:n=>n===3,cells:()=>[[0,0],[1,0],[0,1],[1,1]]},
+  L:{t:"“ALTO EM” em cima, nutrientes em linha embaixo",ok:n=>n>=2,cells:n=>[[0,0],...Array.from({length:n},(_,i)=>[i,1])]},
+  Linv:{t:"“ALTO EM” ao lado do 1º nutriente, demais em coluna",ok:n=>n>=2,cells:n=>[[0,0],[1,0],...Array.from({length:n-1},(_,i)=>[1,i+1])]},
+  degrau:{t:"“ALTO EM” e 1º nutriente em cima, 2º embaixo do “ALTO EM”",ok:n=>n===2,cells:()=>[[0,0],[1,0],[0,1]]}
+};
+function lupaModelo(R,n){const m=R.lupa.modelo; return LUPA_LAYOUTS[m]&&LUPA_LAYOUTS[m].ok(n)?m:"vertical"}
+function cellRects(cells,off){return cells.map(([c,r])=>[c*(LU.CW+LU.G)-off,r*(LU.CH+LU.G)-off,c*(LU.CW+LU.G)+LU.CW+off,r*(LU.CH+LU.G)+LU.CH+off])}
+function uniao(rects){ // contorno (polígono ortogonal) e área da união de retângulos
+  const xs=[...new Set(rects.flatMap(r=>[r[0],r[2]]))].sort((a,b)=>a-b), ys=[...new Set(rects.flatMap(r=>[r[1],r[3]]))].sort((a,b)=>a-b);
+  const f=(i,j)=>i>=0&&j>=0&&i<xs.length-1&&j<ys.length-1&&rects.some(r=>{const cx=(xs[i]+xs[i+1])/2,cy=(ys[j]+ys[j+1])/2;return cx>r[0]&&cx<r[2]&&cy>r[1]&&cy<r[3]});
+  let area=0; const E=new Map(); const k=(x,y)=>x.toFixed(6)+","+y.toFixed(6);
+  for(let i=0;i<xs.length-1;i++)for(let j=0;j<ys.length-1;j++){ if(!f(i,j)) continue; area+=(xs[i+1]-xs[i])*(ys[j+1]-ys[j]);
+    const x0=xs[i],x1=xs[i+1],y0=ys[j],y1=ys[j+1];
+    if(!f(i,j-1)) E.set(k(x0,y0),[x1,y0]); if(!f(i+1,j)) E.set(k(x1,y0),[x1,y1]); if(!f(i,j+1)) E.set(k(x1,y1),[x0,y1]); if(!f(i-1,j)) E.set(k(x0,y1),[x0,y0]); }
+  const [s0]=E.keys(); const pts=[]; let cur=s0.split(",").map(Number), guard=0;
+  do{pts.push(cur);cur=E.get(k(cur[0],cur[1]));}while(cur&&k(cur[0],cur[1])!==s0&&guard++<500);
+  const P=pts.filter((p,i)=>{const a=pts[(i-1+pts.length)%pts.length],b=pts[(i+1)%pts.length];return !((a[0]===p[0]&&p[0]===b[0])||(a[1]===p[1]&&p[1]===b[1]))});
+  return {pts:P,area};
+}
+function caminhoArredondado(P,r){const K=0.5523,d=[];const n=P.length;
+  const u=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],l=Math.hypot(dx,dy)||1;return [dx/l,dy/l,l]};
+  const cs=P.map((p,i)=>{const a=P[(i-1+n)%n],b=P[(i+1)%n];const ua=u(p,a),ub=u(p,b);const rr=Math.min(r,ua[2]/2,ub[2]/2);
+    const A=[p[0]+ua[0]*rr,p[1]+ua[1]*rr],B=[p[0]+ub[0]*rr,p[1]+ub[1]*rr];return {A,B,c1:[A[0]+(p[0]-A[0])*K,A[1]+(p[1]-A[1])*K],c2:[B[0]+(p[0]-B[0])*K,B[1]+(p[1]-B[1])*K]}});
+  d.push(["M",...cs[0].B]); for(let i=1;i<=n;i++){const c=cs[i%n];d.push(["L",...c.A],["C",...c.c1,...c.c2,...c.B])} d.push(["Z"]); return d;
+}
 function lupaMedidas(R,C){
   const n=C.lupa.nutrientes.length; if(!n) return null;
-  const blocks=1+n; const A=C.lupa.area; const vert=R.lupa.modelo!=="horizontal";
-  const cW = vert? (6*ZY+8) : (6*ZY+blocks*8+(blocks-1)*2*ZY);
-  const cH = vert? (6*ZY+blocks*3+(blocks-1)*2*ZY) : (6*ZY+3);
-  let Y, pct=null, motivo="", pt;
-  const minPt = A>100?9:null, maxPt = A>100?15:9;
-  if(A>0){
-    pct = A>100?[2,3,4][blocks-2]:[3.5,5.25,7][blocks-2];
-    const alvo=A*100*pct/100; // mm²
-    Y=Math.sqrt(alvo/(cW*cH)); pt=Y/CAP/PT;
+  const modelo=lupaModelo(R,n); const cells=LUPA_LAYOUTS[modelo].cells(n); const blocks=n+1; const A=C.lupa.area;
+  const U1=uniao(cellRects(cells,LU.EO)); const xs=U1.pts.map(p=>p[0]),ys=U1.pts.map(p=>p[1]);
+  const bw=Math.max(...xs)-Math.min(...xs), bh=Math.max(...ys)-Math.min(...ys);
+  let Y,pct=null,motivo="",pt; const minPt=A>100?9:null, maxPt=A>100?15:9;
+  const ptDeY=y=>y*LU.FS/PT, yDePt=p=>p*PT/LU.FS;
+  if(A>0){ pct=A>100?[2,3,4][blocks-2]:[3.5,5.25,7][blocks-2];
+    Y=Math.sqrt((A*100*pct/100)/U1.area); pt=ptDeY(Y);
     if(minPt&&pt<minPt){pt=minPt;motivo=`fonte elevada ao mínimo de ${minPt} pt (art. 22, parágrafo único, RDC 429/2020)`}
     if(pt>maxPt){pt=maxPt;motivo=`fonte limitada ao máximo de ${maxPt} pt (art. 22, parágrafo único, RDC 429/2020)`}
-    Y=pt*CAP*PT;
-  } else { pt=9; Y=pt*CAP*PT; motivo="medidas do painel não informadas: desenho em 9 pt"; }
-  const w=cW*Y,h=cH*Y; return {Y,Z:ZY*Y,pt,w,h,pct,area:A,blocks,motivo,ocup:A>0?w*h/(A*100)*100:null,vert};
+    Y=yDePt(pt);
+  } else {pt=9;Y=yDePt(pt);motivo="medidas do painel não informadas: desenho em 9 pt"}
+  const w=bw*Y,h=bh*Y, areaMM=U1.area*Y*Y;
+  return {Y,Z:LU.BW*Y,pt,w,h,pct,area:A,blocks,motivo,ocup:A>0?areaMM/(A*100)*100:null,modelo,cells};
 }
 function layLupa(R,C){
-  const M=lupaMedidas(R,C); if(!M) return null;
-  const {Y,Z,w,h,vert}=M; const ops=[]; const fsA=Y/CAP;
-  ops.push({t:"rect",x:Z/2,y:Z/2,w:w-Z,h:h-Z,stroke:"#000",sw:Z,r:Y*0.55,fill:"#fff"});
-  const mods=["ALTO EM",...C.lupa.nutrientes];
-  const pos=i=>vert?{x:3*Z,y:3*Z+i*(3*Y+2*Z)}:{x:3*Z+i*(8*Y+2*Z),y:3*Z};
-  const longest=Math.max(...C.lupa.nutrientes.map(s=>tw(s,1,true,NARROW)));
-  const fsN=Math.min(fsA,(8*Y-4*Z)/longest);
-  mods.forEach((m,i)=>{const p=pos(i);
-    if(i===0){
-      const cx=p.x+Z+0.85*Y, cy=p.y+0.95*Y, r=0.85*Y-0.7*Z, ang=Math.PI/3;
-      ops.push({t:"circle",cx,cy,r,stroke:"#000",sw:1.4*Z});
-      const ux=Math.cos(ang),uy=Math.sin(ang); const s0=0.85*Y; const c1=s0+1.2*Z;
-      ops.push({t:"line",x1:cx+ux*(s0-0.2*Z),y1:cy+uy*(s0-0.2*Z),x2:cx+ux*c1,y2:cy+uy*c1,sw:1.5*Z});
-      ops.push({t:"line",x1:cx+ux*(c1+1.3*Z),y1:cy+uy*(c1+1.3*Z),x2:cx+ux*(c1+1.3*Y),y2:cy+uy*(c1+1.3*Y),sw:2.6*Z,cap:"round"});
-      let fs=fsA; const avail=8*Y-2*Z-(Z+1.95*Y); const wt=tw("ALTO EM",fs,true,NARROW); if(wt>avail) fs*=avail/wt;
-      ops.push({t:"text",x:p.x+8*Y-2*Z,y:p.y+1.5*Y+fs*CAP/2,s:"ALTO EM",size:fs,bold:true,anchor:"end",scaleX:NARROW});
-    } else {
-      ops.push({t:"rect",x:p.x,y:p.y,w:8*Y,h:3*Y,fill:"#000",r:Y*0.4});
-      ops.push({t:"text",x:p.x+4*Y,y:p.y+1.5*Y+fsN*CAP/2,s:m,size:fsN,bold:true,anchor:"middle",scaleX:NARROW,fill:"#fff"});
-    }});
-  return {w,h,ops,M};
+  const M=lupaMedidas(R,C); if(!M) return null; const {Y,cells}=M; const ops=[]; const sx=narrowScale(); const fs=LU.FS*Y;
+  const o=LU.EO; const T=(x,y)=>[(x+o)*Y,(y+o)*Y];
+  const shp=(nome,cx,cy,fill)=>({t:"path",fill,d:LU.SHP[nome].map(c=>c[0]==="Z"?["Z"]:[c[0],...c.slice(1).map((v,i)=>(i%2===0?(v+cx+o)*Y:(v+cy+o)*Y))])});
+  const U=uniao(cellRects(cells,LU.EO-LU.BW/2));
+  ops.push({t:"path",d:caminhoArredondado(U.pts,LU.RC).map(c=>c[0]==="Z"?c:[c[0],...c.slice(1).map((v,i)=>(v+o)*Y)]),fill:"#fff",stroke:"#000",sw:LU.BW*Y});
+  const nomes=["ALTO EM",...C.lupa.nutrientes];
+  cells.forEach(([c,r],i)=>{const cx=c*(LU.CW+LU.G), cy=r*(LU.CH+LU.G); const [px,py]=T(cx,cy);
+    if(i===0){ ["frameOut","frameIn","ringOut","ringIn","conn","cabo"].forEach(nm=>ops.push(shp(nm,cx,cy,nm==="frameIn"||nm==="ringIn"?"#fff":"#000")));
+      ops.push({t:"text",x:px+LU.ALTOX*Y,y:py+LU.BASE1*Y,s:"ALTO EM",size:fs,bold:true,anchor:"end",scaleX:sx});
+    } else { ops.push({t:"rect",x:px,y:py,w:LU.CW*Y,h:LU.CH*Y,fill:"#000",r:LU.MRX*Y,ry:LU.MRY*Y});
+      (LU.LINHAS[nomes[i]]||[[nomes[i],LU.BASE1]]).forEach(([s,b])=>ops.push({t:"text",x:px+4*Y,y:py+b*Y,s,size:fs,bold:true,anchor:"middle",scaleX:sx,fill:"#fff"})); }
+  });
+  return {w:M.w,h:M.h,ops,M};
 }
 /* Símbolo T de transgênico (Decreto 4.680/2003; Portaria MJ 2.658/2003) */
 function layT(lado=12){const h=lado*Math.sqrt(3)/2;return {w:lado,h,ops:[{t:"poly",pts:[[lado/2,0.4],[lado-0.4,h-0.3],[0.4,h-0.3]],fill:"#FFD400",stroke:"#000",sw:0.6},{t:"text",x:lado/2,y:h*0.86,s:"T",size:h*0.62,bold:true,anchor:"middle"}]}}
@@ -486,9 +540,10 @@ function tamanhos(R,C){
   const avisoPtMin=minAvisoMM/(CAP*PT); const avisoPt=Math.max(Math.ceil(avisoPtMin*2)/2,ingPt);
   return {ingPt,avisoPt,minAvisoMM,ingAltX:ingPt*PT*0.519,avisoAlt:avisoPt*PT*CAP};
 }
+function layParas(paras,W){const ops=[];let y=0;paras.forEach(({txt,pt,bold})=>{if(!txt)return;const s=pt*PT;wrapRich(txt,s,bold,W).forEach(l=>{y+=s*1.22;l.forEach(g=>ops.push({t:"text",x:g.x,y,s:g.s,size:s,bold,italic:g.i}))});y+=s*0.45});return {w:W,h:y+0.3,ops}}
 function layDecl(R,C,T){
   const S=tamanhos(R,C); const W=Math.max(30,nz(R.textos.largura)||80); const ops=[]; let y=0;
-  const par=(txt,pt,bold)=>{if(!txt)return; const s=pt*PT; wrap(txt,s,bold,W).forEach(l=>{y+=s*1.22;ops.push({t:"text",x:0,y,s:l,size:s,bold})}); y+=s*0.45};
+  const par=(txt,pt,bold)=>{if(!txt)return; const s=pt*PT; wrapRich(txt,s,bold,W).forEach(l=>{y+=s*1.22;l.forEach(g=>ops.push({t:"text",x:g.x,y,s:g.s,size:s,bold,italic:g.i}))}); y+=s*0.45};
   par(T.ing,S.ingPt,false); par(T.alg,S.avisoPt,true); par(T.lac,S.avisoPt,true); par(T.gluten,S.avisoPt,true);
   return {w:W,h:y+0.5,ops};
 }
@@ -498,24 +553,28 @@ const FONT=`Arial, Helvetica, 'Liberation Sans', sans-serif`;
 function svgOf(lay,pxPerMM){
   const W=lay.w,H=lay.h; let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(3)} ${H.toFixed(3)}" width="${(W*pxPerMM).toFixed(1)}" height="${(H*pxPerMM).toFixed(1)}"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>`;
   lay.ops.forEach(o=>{
-    if(o.t==="rect") s+=`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="${o.r||0}" fill="${o.fill||"none"}" ${o.stroke?`stroke="${o.stroke}" stroke-width="${o.sw}"`:""}/>`;
+    if(o.t==="rect") s+=`<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="${o.r||0}" ry="${o.ry||o.r||0}" fill="${o.fill||"none"}" ${o.stroke?`stroke="${o.stroke}" stroke-width="${o.sw}"`:""}/>`;
     else if(o.t==="line") s+=`<line x1="${o.x1}" y1="${o.y1}" x2="${o.x2}" y2="${o.y2}" stroke="#000" stroke-width="${o.sw}" stroke-linecap="${o.cap||"butt"}"/>`;
     else if(o.t==="circle") s+=`<circle cx="${o.cx}" cy="${o.cy}" r="${o.r}" fill="none" stroke="${o.stroke}" stroke-width="${o.sw}"/>`;
     else if(o.t==="poly") s+=`<polygon points="${o.pts.map(p=>p.join(",")).join(" ")}" fill="${o.fill}" stroke="${o.stroke}" stroke-width="${o.sw}" stroke-linejoin="round"/>`;
     else if(o.t==="text"){const a=o.anchor==="middle"?"middle":o.anchor==="end"?"end":"start"; const sx=o.scaleX||1;
-      s+=`<g transform="translate(${o.x} ${o.y}) scale(${sx} 1)"><text x="0" y="0" font-family="${FONT}" font-size="${o.size}" font-weight="${o.bold?700:400}" text-anchor="${a}" fill="${o.fill||"#000"}">${esc(o.s)}</text></g>`}
+      s+=`<g transform="translate(${o.x} ${o.y}) scale(${sx} 1)"><text x="0" y="0" font-family="${FONT}" font-size="${o.size}" font-weight="${o.bold?700:400}" ${o.italic?'font-style="italic"':""} text-anchor="${a}" fill="${o.fill||"#000"}" xml:space="preserve">${esc(o.s)}</text></g>`}
+    else if(o.t==="path") s+=`<path d="${o.d.map(c=>c[0]+(c.length>1?" "+c.slice(1).map(v=>+v.toFixed(4)).join(" "):"")).join(" ")}" fill="${o.fill||"none"}" ${o.stroke?`stroke="${o.stroke}" stroke-width="${o.sw}" stroke-linejoin="round"`:""}/>`;
   });
   return s+"</svg>";
 }
 function pdfDraw(doc,lay,ox,oy){
   lay.ops.forEach(o=>{
     if(o.t==="rect"){const st=o.fill&&o.stroke?"FD":o.fill?"F":"S"; if(o.fill){const c=o.fill==="#fff"?255:0;doc.setFillColor(c,c,c)} doc.setDrawColor(0); if(o.stroke)doc.setLineWidth(o.sw);
-      if(o.r) doc.roundedRect(ox+o.x,oy+o.y,o.w,o.h,o.r,o.r,st); else doc.rect(ox+o.x,oy+o.y,o.w,o.h,st)}
+      if(o.r) doc.roundedRect(ox+o.x,oy+o.y,o.w,o.h,o.r,o.ry||o.r,st); else doc.rect(ox+o.x,oy+o.y,o.w,o.h,st)}
     else if(o.t==="line"){doc.setDrawColor(0);doc.setLineWidth(o.sw);doc.setLineCap(o.cap==="round"?"round":"butt");doc.line(ox+o.x1,oy+o.y1,ox+o.x2,oy+o.y2);doc.setLineCap("butt")}
     else if(o.t==="circle"){doc.setDrawColor(0);doc.setLineWidth(o.sw);doc.circle(ox+o.cx,oy+o.cy,o.r,"S")}
+    else if(o.t==="path"){const c=o.fill==="#fff"?255:0; doc.setFillColor(c,c,c); doc.setDrawColor(0); if(o.stroke) doc.setLineWidth(o.sw);
+      const st=o.fill&&o.stroke?"FD":o.fill?"F":"S"; let seg=null,sx0=0,sy0=0,cx=0,cy=0; const flush=()=>{if(seg&&seg.length) doc.lines(seg,ox+sx0,oy+sy0,[1,1],st,true); seg=null};
+      o.d.forEach(c=>{ if(c[0]==="M"){flush();seg=[];sx0=cx=c[1];sy0=cy=c[2]} else if(c[0]==="L"){seg.push([c[1]-cx,c[2]-cy]);cx=c[1];cy=c[2]} else if(c[0]==="C"){seg.push([c[1]-cx,c[2]-cy,c[3]-cx,c[4]-cy,c[5]-cx,c[6]-cy]);cx=c[5];cy=c[6]} else if(c[0]==="Z"){flush()} }); flush(); }
     else if(o.t==="poly"){doc.setFillColor(255,212,0);doc.setDrawColor(0);doc.setLineWidth(o.sw);doc.setLineJoin("round");const p=o.pts;doc.triangle(ox+p[0][0],oy+p[0][1],ox+p[1][0],oy+p[1][1],ox+p[2][0],oy+p[2][1],"FD")}
     else if(o.t==="text"){
-      doc.setFont("helvetica",o.bold?"bold":"normal"); doc.setFontSize(o.size/PT);
+      doc.setFont("helvetica",o.bold&&o.italic?"bolditalic":o.bold?"bold":o.italic?"italic":"normal"); doc.setFontSize(o.size/PT);
       const fc=o.fill==="#fff"?255:0; doc.setTextColor(fc,fc,fc); doc.setFillColor(fc,fc,fc);
       const sx=o.scaleX||1; const parts=String(o.s).split("●"); const bulletW=o.size*0.55;
       const wPart=t=>doc.getTextWidth(t)*sx; const total=parts.reduce((a,t)=>a+wPart(t),0)+(parts.length-1)*bulletW;
@@ -565,7 +624,7 @@ async function carregarClientes(){const {data,error}=await DBR.sb.from("cons_cli
 const nomeCliente=id=>(DBR.clientes.find(c=>c.id===id)||{}).nome||"";
 function linhaDe(R){return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto.nome||"").trim(),tipo:R.tipo,dados:R}}
 let salvarT, gravando=null;
-function setStatus(st,msg=""){S.status=st;const el=document.getElementById("savest");if(!el)return;const m={pendente:["neutral","Alterações não salvas"],salvando:["neutral","Salvando…"],salvo:["","Salvo no sistema"],erro:["bad","Erro ao salvar"]}[st]||["neutral",""];el.className="chip "+m[0];el.textContent=m[1];el.title=msg}
+function setStatus(st,msg=""){S.status=st;const el=document.getElementById("savest");if(!el)return;const m={pendente:["neutral","Alterações não salvas"],salvando:["neutral","Salvando…"],salvo:["","Salvo no sistema"],erro:["bad","Erro ao salvar"]}[st]||["neutral",""];el.className="chip "+m[0];el.textContent=m[1];el.title=msg;el.hidden=!m[1]}
 function salvar(){if(!S.R)return;S.sujo=true;setStatus("pendente");clearTimeout(salvarT);salvarT=setTimeout(gravar,800)}
 async function gravar(){
   clearTimeout(salvarT); const R=S.R; if(!R||!S.sujo) return gravando;
@@ -770,8 +829,8 @@ function viewFormulacao(R,C){
           </div>
           <div class="stack"><span class="small muted" style="font-weight:600">Alergênicos (RDC 727/2022, Anexo III)</span>
             <div class="alg">${Object.entries(i.alerg).filter(([,v])=>v).map(([k,v])=>`<span class="tag">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1])} · ${esc(ALG_ST[v])}<button aria-label="Remover" data-algdel="${ix}|${k}">×</button></span>`).join("")||`<span class="small muted">Nenhum alergênico marcado.</span>`}</div>
-            <div class="row"><select id="algk-${ix}" style="width:auto;flex:1 1 180px">${ALERG.map(a=>`<option value="${a[0]}">${a[1]}</option>`).join("")}</select>
-              <select id="algs-${ix}" style="width:auto;flex:1 1 200px">${Object.entries(ALG_ST).map(([k,t])=>`<option value="${k}">${t}</option>`).join("")}</select>
+            <div class="row"><select id="algk-${ix}" style="width:auto;flex:1 1 180px"><option value="">Selecionar alergênico…</option>${ALERG.map(a=>`<option value="${a[0]}">${a[1]}</option>`).join("")}</select>
+              <select id="algs-${ix}" style="width:auto;flex:1 1 200px"><option value="">Selecionar situação…</option>${Object.entries(ALG_ST).map(([k,t])=>`<option value="${k}">${t}</option>`).join("")}</select>
               <button class="mini" data-algadd="${ix}">Adicionar</button></div>
             ${i.alerg.crustaceos?inp(p+".alergEsp","Espécie do crustáceo",{hint:"Obrigatório declarar a espécie (art. 13, parágrafo único)."}):""}
           </div>
@@ -830,7 +889,7 @@ function viewPorcao(R,C){
     <div class="grid3">
       ${sel("tabela.modelo","Modelo da tabela",[["vertical","Vertical (padrão)"],["quebrado","Vertical quebrado"],["linear","Linear"]],{re:true,hint:"Use o linear só quando a tabela não couber (RDC 429/2020, art. 17)."})}
       ${R.tabela.modelo==="linear"?inp("tabela.largLinear","Largura do modelo linear (mm)",{n:true}):""}
-      ${sel("lupa.modelo","Modelo da lupa",[["vertical","Vertical (blocos empilhados)"],["horizontal","Horizontal (blocos lado a lado)"]],{re:true})}
+      ${(()=>{const n=C.lupa.nutrientes.length;const ops=Object.entries(LUPA_LAYOUTS).filter(([k,v])=>v.ok(Math.max(n,1))).map(([k,v])=>[k,v.t]);const cur=lupaModelo(R,Math.max(n,1));if(R.lupa.modelo!==cur)R.lupa.modelo=cur;return sel("lupa.modelo","Disposição da lupa",ops,{re:true,hint:n?`Variações da malha construtiva da Anvisa para ${n+1} blocos.`:"Este produto não precisa de lupa."})})()}
       ${inp("textos.tamIng","Fonte da lista de ingredientes (pt)",{n:true})}
       ${inp("textos.largura","Largura do bloco de textos (mm)",{n:true})}
     </div>
@@ -872,7 +931,7 @@ function viewRotulo(R,C){
     </div>
   </div>
   <div class="card stack"><div class="sec-t"><h2>Textos gerados</h2><span class="small muted">Edite só se precisar ajustar a redação; o original fica guardado.</span></div>
-    <label class="f">Lista de ingredientes (RDC 727/2022, arts. 11 e 12)<textarea data-bind="textos.ingOverride" id="f-textos.ingOverride" data-rerender-blur="1" placeholder="${esc(T.ingAuto)}">${esc(R.textos.ingOverride)}</textarea><span class="hint">${R.textos.ingOverride?`<button class="ghost mini" data-clear="textos.ingOverride">Voltar ao texto automático</button>`:"Em branco = texto automático (mostrado acima, em cinza)."}</span></label>
+    <label class="f">Lista de ingredientes (RDC 727/2022, arts. 11 e 12)<textarea data-bind="textos.ingOverride" id="f-textos.ingOverride" data-rerender-blur="1" placeholder="${esc(T.ingAuto)}">${esc(R.textos.ingOverride)}</textarea><span class="hint">${R.textos.ingOverride?`<button class="ghost mini" data-clear="textos.ingOverride">Voltar ao texto automático</button>`:"Em branco = texto automático (mostrado acima, em cinza). Trechos entre _sublinhados_ saem em itálico."}</span></label>
     <label class="f">Advertência de alérgicos (arts. 13 a 15)<textarea data-bind="textos.algOverride" id="f-textos.algOverride" data-rerender-blur="1" placeholder="${esc(T.algAuto||"Nenhum alergênico marcado: não há advertência a declarar.")}">${esc(R.textos.algOverride)}</textarea><span class="hint">${R.textos.algOverride?`<button class="ghost mini" data-clear="textos.algOverride">Voltar ao texto automático</button>`:"Em branco = texto automático."}</span></label>
     <dl class="kv"><dt>Lactose</dt><dd>${esc(T.lac||"Não declarar (até 100 mg/100 "+C.un+")")}</dd><dt>Glúten</dt><dd>${esc(T.gluten)}</dd></dl>
   </div>
@@ -917,7 +976,7 @@ function pdfFicha(R,C,T,tab,lup,dec){
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${R.lupa.vedada?" ATENÇÃO: lupa vedada para este produto (Anexo XVI) — não aplicar.":""}`,{size:8})}
-  h2("Lista de ingredientes e advertências"); para(T.ing); if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
+  h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
   para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8});
   h2(`Tabela nutricional — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;
   h2("Demais informações"); kv("Conservação",P.conservacao); kv("Validade",P.validade+(P.validadeAberto?` · após aberto: ${P.validadeAberto}`:"")); kv("Lote",P.lote); kv("Identificação de origem",P.origem); if(P.descricao) kv("Descrição",P.descricao);
@@ -938,7 +997,7 @@ async function excel(R,C,T,tab,lup,dec){
   const add=(k,v,o={})=>{const r=s1.addRow([k,v]);r.getCell(1).font=A(10,true);r.getCell(2).font=A(10,!!o.b);r.getCell(2).alignment={wrapText:true,vertical:"top"};r.getCell(1).alignment={vertical:"top"}};
   s1.addRow([P.nome||"Rótulo"]).font=A(14,true); s1.addRow([`${TIPOS[R.tipo].t} · gerado em ${new Date().toLocaleString("pt-BR")}`]).font=A(9); s1.addRow([]);
   [["Denominação de venda",P.denominacao],["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto],["Lote",P.lote]].forEach(([k,v])=>add(k,v||""));
-  s1.addRow([]); add("Lista de ingredientes",T.ing); add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
+  s1.addRow([]); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); add("Lupa",C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:(C.lupa.nutrientes.length?"Vedada (Anexo XVI)":"Não precisa"));
   add("Tabela nutricional",`${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm · Arial ${R.tabela.reduzida?"6/8":"8/10"} pt`);
   const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes ${br(Sz.ingPt,1)} pt; advertências ${br(Sz.avisoPt,1)} pt negrito caixa alta (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)`);
@@ -1038,7 +1097,7 @@ document.addEventListener("click",e=>{
   if(d.deli!=null){if(b.dataset.armed){S.R.ingredientes.splice(+d.deli,1);if(!S.R.ingredientes.length)S.R.ingredientes.push(novoIng());salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar remoção"}return}
   if(d.dupi!=null){const src=S.R.ingredientes[+d.dupi];const c=JSON.parse(JSON.stringify(src));c.id=uid();c.nome+=" (cópia)";S.R.ingredientes.splice(+d.dupi+1,0,c);S.open[c.id]=true;salvar();render();return}
   if(d.mv){const [ix,dir]=d.mv.split("|").map(Number);const a=S.R.ingredientes;const j=ix+dir;if(j<0||j>=a.length)return;[a[ix],a[j]]=[a[j],a[ix]];salvar();render();return}
-  if(d.algadd!=null){const ix=+d.algadd;const k=$("#algk-"+ix).value,v=$("#algs-"+ix).value;const ing=S.R.ingredientes[ix];ing.alerg[k]=v;
+  if(d.algadd!=null){const ix=+d.algadd;const k=$("#algk-"+ix).value,v=$("#algs-"+ix).value;if(!k||!v){toast(!k?"Selecione o alergênico.":"Selecione a situação do alergênico.");return}const ing=S.R.ingredientes[ix];ing.alerg[k]=v;
     if(k==="leite"&&(v==="c"||v==="cd")&&!ing.lactose){ing.lactose=true;toast("Marcado também como fonte de lactose. Desmarque se o leite for zero lactose.")}
     if(["trigo","centeio","cevada","aveia"].includes(k)&&v!=="p"&&!ing.gluten){ing.gluten=true;toast("Marcado também como “contém glúten”.")}
     S.open[ing.id]=true;salvar();render();return}
