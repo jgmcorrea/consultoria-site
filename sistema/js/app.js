@@ -135,6 +135,7 @@
           <a href="#/prospeccao" class="nav-link ${r.tela === "prospeccao" ? "ativo" : ""}"><span>Prospecção</span>${(() => { const n = S.dados.prospects.filter((p) => !["fechado", "perdido"].includes(p.etapa)).length; return n ? `<span class="nav-num">${n}</span>` : ""; })()}</a>
           <a href="#/laboratorios" class="nav-link ${r.tela === "laboratorios" ? "ativo" : ""}">Laboratórios</a>
           <a href="#/financeiro" class="nav-link ${r.tela === "financeiro" ? "ativo" : ""}">Financeiro</a>
+          <a href="../rotulos/" class="nav-link">Rótulos</a>
           <p class="nav-titulo">Clientes</p>
           ${lista.map(c => { const n = resumoCliente(c.id); return `
             <a href="#/c/${c.id}" class="nav-link ${r.id === c.id ? "ativo" : ""} ${c.ativo === false ? "inativo" : ""}">

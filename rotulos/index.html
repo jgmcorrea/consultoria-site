@@ -143,6 +143,8 @@ table.calc td.num{font-family:var(--f-num)}
 <div class="wrap" id="app"></div>
 <div class="toast" id="toast" hidden></div>
 
+<script src="../sistema/vendor/supabase.js"></script>
+<script src="../sistema/js/config.js"></script>
 <script src="../sistema/vendor/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
@@ -207,7 +209,7 @@ let toastT; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false
 /* ===================== MODELO ===================== */
 function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",omitir:false,etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
 function novoRotulo(tipo){
-  return {id:uid(),tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
+  return {id:novoUUID(),clienteId:"",tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
     produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:""},
     ingredientes:[novoIng()],
     balanco:{subproduto:"Soro",modo:"massa",massaBase:"",rendimento:"",comp:{}},
@@ -550,11 +552,66 @@ async function saveFile(filename,blob){
 }
 const slug=s=>fold(s||"rotulo").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,50)||"rotulo";
 
-/* ===================== ARMAZENAMENTO ===================== */
-const SK="rotulos_isadora_v1";
-function lerTodos(){try{return JSON.parse(localStorage.getItem(SK)||"[]")}catch(e){return []}}
-function gravarTodos(a){try{localStorage.setItem(SK,JSON.stringify(a))}catch(e){}}
-let salvarT; function salvar(){clearTimeout(salvarT);salvarT=setTimeout(()=>{if(!S.R)return;S.R.atualizado=Date.now();const a=lerTodos().filter(x=>x.id!==S.R.id);a.unshift(S.R);gravarTodos(a)},400)}
+/* ===================== ARMAZENAMENTO (Supabase, mesmo login do /sistema/) ===================== */
+const SK="rotulos_isadora_v1"; // rótulos antigos, salvos só no navegador (antes do login)
+function lerLocais(){try{return JSON.parse(localStorage.getItem(SK)||"[]")}catch(e){return []}}
+function limparLocais(){try{localStorage.removeItem(SK)}catch(e){}}
+const isUUID=s=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s||"");
+function novoUUID(){return crypto.randomUUID?crypto.randomUUID():"10000000-1000-4000-8000-100000000000".replace(/[018]/g,c=>(c^(crypto.getRandomValues(new Uint8Array(1))[0]&(15>>(c/4)))).toString(16))}
+const DBR={sb:null,lista:[],clientes:[],user:null};
+const TAB="cons_rotulos";
+async function carregarLista(){const {data,error}=await DBR.sb.from(TAB).select("id,cliente_id,nome,tipo,atualizado_em,dados").order("atualizado_em",{ascending:false});if(error)throw error;DBR.lista=data||[]}
+async function carregarClientes(){const {data,error}=await DBR.sb.from("cons_clientes").select("id,nome,ativo").order("nome");if(error)throw error;DBR.clientes=data||[]}
+const nomeCliente=id=>(DBR.clientes.find(c=>c.id===id)||{}).nome||"";
+function linhaDe(R){return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto.nome||"").trim(),tipo:R.tipo,dados:R}}
+let salvarT, gravando=null;
+function setStatus(st,msg=""){S.status=st;const el=document.getElementById("savest");if(!el)return;const m={pendente:["neutral","Alterações não salvas"],salvando:["neutral","Salvando…"],salvo:["","Salvo no sistema"],erro:["bad","Erro ao salvar"]}[st]||["neutral",""];el.className="chip "+m[0];el.textContent=m[1];el.title=msg}
+function salvar(){if(!S.R)return;S.sujo=true;setStatus("pendente");clearTimeout(salvarT);salvarT=setTimeout(gravar,800)}
+async function gravar(){
+  clearTimeout(salvarT); const R=S.R; if(!R||!S.sujo) return gravando;
+  if(gravando) await gravando;
+  S.sujo=false; R.atualizado=Date.now(); setStatus("salvando");
+  gravando=(async()=>{const row=linhaDe(R);const {error}=await DBR.sb.from(TAB).upsert(row);
+    if(error){S.sujo=true;setStatus("erro",error.message);toast("Não foi possível salvar: "+(error.message||error));return}
+    const lr={...row,atualizado_em:new Date().toISOString()};const i=DBR.lista.findIndex(x=>x.id===R.id);if(i>=0)DBR.lista.splice(i,1);DBR.lista.unshift(lr);
+    if(S.R===R&&!S.sujo)setStatus("salvo")})();
+  try{await gravando}finally{gravando=null}
+}
+window.addEventListener("beforeunload",e=>{if(S.sujo){gravar();e.preventDefault();e.returnValue=""}});
+async function enviarLocais(){
+  const loc=lerLocais(); if(!loc.length) return;
+  const rows=loc.map(R=>{if(!isUUID(R.id))R.id=novoUUID();R.clienteId=R.clienteId||"";return linhaDe(R)});
+  const {error}=await DBR.sb.from(TAB).upsert(rows); if(error) return toast("Não foi possível enviar: "+error.message);
+  limparLocais(); await carregarLista(); render(); toast(`${rows.length} rótulo(s) enviados para o sistema.`);
+}
+function telaLogin(msg=""){
+  $("#app").innerHTML=`<div style="min-height:80vh;display:grid;place-items:center"><form class="card stack" id="loginForm" style="width:min(380px,100%)">
+    <span class="eyebrow">Consultoria Isadora Andrade</span><h1>Gerador de rótulos</h1><p class="muted small">Entre com o mesmo e-mail e senha do sistema.</p>
+    <label class="f">E-mail<input type="email" id="lgEmail" autocomplete="username" required></label>
+    <label class="f">Senha<input type="password" id="lgSenha" autocomplete="current-password" required></label>
+    ${msg?`<div class="alert err">${esc(msg)}</div>`:""}
+    <button class="primary" type="submit">Entrar</button></form></div>`;
+  $("#loginForm").addEventListener("submit",async e=>{e.preventDefault();const b=e.target.querySelector("button");b.disabled=true;b.textContent="Entrando…";
+    const {error}=await DBR.sb.auth.signInWithPassword({email:$("#lgEmail").value.trim(),password:$("#lgSenha").value});
+    if(error) return telaLogin("E-mail ou senha incorretos."); iniciar()});
+}
+function telaMsg(titulo,texto,botoes=""){ $("#app").innerHTML=`<div style="min-height:70vh;display:grid;place-items:center"><div class="card stack" style="width:min(460px,100%)"><h1>${esc(titulo)}</h1><p>${texto}</p><div class="row">${botoes}</div></div></div>` }
+async function iniciar(){
+  const cfg=window.CONFIG||{};
+  if(!window.supabase||!cfg.SUPABASE_URL) return telaMsg("Sem conexão","Não foi possível carregar a conexão com o banco. Recarregue a página.");
+  if(!DBR.sb) DBR.sb=window.supabase.createClient(String(cfg.SUPABASE_URL).trim().replace(/\/rest\/v1\/?$/,"").replace(/\/+$/,""),String(cfg.SUPABASE_ANON_KEY).trim());
+  try{
+    const {data}=await DBR.sb.auth.getSession(); if(!data.session) return telaLogin();
+    DBR.user=data.session.user;
+    const m=await DBR.sb.rpc("cons_e_membro"); if(m.error) throw m.error;
+    if(m.data!==true) return telaMsg("Sem acesso",`O e-mail ${esc(DBR.user.email)} entrou, mas não está liberado no sistema.`,`<button data-act="sair">Sair</button>`);
+    $("#app").innerHTML=`<p class="muted">Carregando…</p>`;
+    await Promise.all([carregarLista(),carregarClientes()]);
+    S.pronto=true; render();
+  }catch(err){console.error(err);
+    const semTabela=/cons_rotulos|schema cache|does not exist/i.test(err.message||"");
+    telaMsg(semTabela?"Banco ainda não preparado":"Não foi possível carregar",semTabela?"Falta criar a tabela dos rótulos: rode o arquivo 08_rotulos.sql no SQL Editor do Supabase.":esc(err.message||err),`<button onclick="location.reload()">Tentar de novo</button><button data-act="sair">Sair</button>`)}
+}
 
 /* ===================== EXEMPLOS (das planilhas enviadas) ===================== */
 const POMERODE="Pomerode Alimentos LTDA. Rua dos Atiradores, 71, Centro, Pomerode, SC, Brasil. CEP 89355-272. CNPJ: 04.630.689/0001-99.";
@@ -598,41 +655,44 @@ function exemplo(tipo){
 }
 
 /* ===================== ESTADO E NAVEGAÇÃO ===================== */
-const S={R:null,step:0,open:{},zoom:3,real:false};
+const S={R:null,step:0,open:{},zoom:3,real:false,pronto:false,sujo:false,status:"",filtroCliente:""};
 const STEPS=["Produto","Formulação","Porção e embalagem","Rótulo final"];
 function abrir(R){S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
 function render(){
   const app=$("#app");
+  if(!S.pronto) return;
   if(!S.R){app.innerHTML=viewInicio();return}
   const R=S.R; const C=calc(R);
   app.innerHTML=`
   <header class="top">
     <div class="brand"><span class="eyebrow">Gerador de rótulos · Consultoria Isadora Andrade</span>
       <h1>${esc(R.produto.nome||"Novo rótulo")}</h1>
-      <div class="row"><span class="chip">${TIPOS[R.tipo].t}</span>${R.exemplo?`<span class="chip warn">Exemplo das planilhas</span>`:""}</div></div>
+      <div class="row"><span class="chip">${TIPOS[R.tipo].t}</span>${R.clienteId?`<span class="chip neutral">${esc(nomeCliente(R.clienteId))}</span>`:""}${R.exemplo?`<span class="chip warn">Exemplo das planilhas</span>`:""}<span id="savest" class="chip neutral"></span></div></div>
     <div class="row"><button class="ghost" data-act="home">Todos os rótulos</button></div>
   </header>
   <nav class="steps">${STEPS.map((s,i)=>`<button class="${S.step===i?"on":""}" data-step="${i}"><span class="n">${i+1}</span>${s}</button>`).join("")}</nav>
   <main id="main">${[viewProduto,viewFormulacao,viewPorcao,viewRotulo][S.step](R,C)}</main>
   <div class="navbar">${S.step>0?`<button data-step="${S.step-1}">← ${STEPS[S.step-1]}</button>`:"<span></span>"}${S.step<3?`<button class="primary" data-step="${S.step+1}">${STEPS[S.step+1]} →</button>`:""}</div>`;
-  afterRender();
+  afterRender(); setStatus(S.status);
 }
 function viewInicio(){
-  const todos=lerTodos();
+  const todos=DBR.lista.filter(r=>!S.filtroCliente||(S.filtroCliente==="_sem"?!r.cliente_id:r.cliente_id===S.filtroCliente)); const locais=lerLocais();
   const glyph={normal:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="12" width="28" height="26" rx="3"/><path d="M15 12V8h16v4M15 22h16M15 28h10"/></svg>`,
     balanco:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 6v34M10 40h26M8 14h30M8 14l-5 12a6 6 0 0 0 10 0zM38 14l-5 12a6 6 0 0 0 10 0z"/></svg>`,
     concentracao:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 20h30v8a15 12 0 0 1-30 0z"/><path d="M16 14c0-3 3-3 3-6M23 14c0-3 3-3 3-6M30 14c0-3 3-3 3-6"/></svg>`};
   return `<header class="top"><div class="brand"><span class="eyebrow">Consultoria Isadora Andrade</span><h1>Gerador de rótulos</h1>
-    <p class="muted">Tabela nutricional, lupa, lista de ingredientes e advertências conforme RDC 429/2020, IN 75/2020 e RDC 727/2022.</p></div></header>
+    <p class="muted">Tabela nutricional, lupa, lista de ingredientes e advertências conforme RDC 429/2020, IN 75/2020 e RDC 727/2022.</p></div>
+    <div class="row"><a class="btn" href="../sistema/" style="text-decoration:none">Abrir o sistema</a><button class="ghost" data-act="sair">Sair</button></div></header>
+  ${locais.length?`<div class="alert warn" style="margin-bottom:14px;align-items:center;flex-wrap:wrap"><span>Há ${locais.length} rótulo(s) salvos só neste navegador, de antes do login.</span><button class="mini" data-act="enviarLocais">Enviar para o sistema</button></div>`:""}
   <section class="stack">
     <div class="card stack"><div><span class="eyebrow">Novo rótulo</span><h2>Qual é o tipo do produto?</h2>
       <p class="muted small">A resposta define como a tabela é calculada. Dá para trocar depois, se necessário.</p></div>
       <div class="types">${Object.entries(TIPOS).map(([k,t])=>`<button class="type" data-novo="${k}">${glyph[k]}<b>${t.t}</b><span>${t.d}</span><span class="ex">Ex.: ${t.ex}</span></button>`).join("")}</div>
     </div>
-    <div class="card stack"><div class="sec-t"><h2>Rótulos salvos</h2><div class="row"><button class="mini" data-act="importar">Importar JSON</button><input type="file" id="impfile" accept=".json,application/json" hidden></div></div>
-      ${todos.length?`<div class="list">${todos.map(r=>`<div class="it"><div><b>${esc(r.produto.nome||"Sem nome")}</b><div class="small muted">${TIPOS[r.tipo].t} · atualizado em ${new Date(r.atualizado).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}${r.exemplo?" · exemplo":""}</div></div>
+    <div class="card stack"><div class="sec-t"><h2>Rótulos salvos</h2><div class="row"><select id="filtroCli" style="width:auto"><option value="">Todos os clientes</option>${DBR.clientes.map(c=>`<option value="${c.id}" ${S.filtroCliente===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}<option value="_sem" ${S.filtroCliente==="_sem"?"selected":""}>Sem cliente</option></select><button class="mini" data-act="importar">Importar JSON</button><input type="file" id="impfile" accept=".json,application/json" hidden></div></div>
+      ${todos.length?`<div class="list">${todos.map(r=>`<div class="it"><div><b>${esc(r.nome||"Sem nome")}</b><div class="small muted">${r.cliente_id?esc(nomeCliente(r.cliente_id))+" · ":""}${(TIPOS[r.tipo]||{t:r.tipo}).t} · atualizado em ${new Date(r.atualizado_em).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}${r.dados&&r.dados.exemplo?" · exemplo":""}</div></div>
         <div class="row"><button class="mini" data-abrir="${r.id}">Abrir</button><button class="mini" data-dup="${r.id}">Duplicar</button><button class="mini danger" data-del="${r.id}">Excluir</button></div></div>`).join("")}</div>`
-      :`<p class="muted small">Nenhum rótulo salvo neste navegador ainda. Comece escolhendo o tipo acima, ou abra um dos exemplos montados a partir das planilhas:</p>`}
+      :`<p class="muted small">Nenhum rótulo salvo ainda. Comece escolhendo o tipo acima, ou abra um dos exemplos montados a partir das planilhas:</p>`}
       <div class="row"><span class="small muted">Exemplos das planilhas:</span><button class="mini" data-ex="normal">Creme com Queijo Azul</button><button class="mini" data-ex="balanco">Iogurte com geleia</button><button class="mini" data-ex="concentracao">Doce de leite</button></div>
     </div>
   </section>`;
@@ -646,7 +706,7 @@ function viewProduto(R,C){
   <div class="card stack"><div class="sec-t"><h2>Identificação do produto</h2><div class="row small muted">Tipo: <b>${TIPOS[R.tipo].t}</b> <select id="trocaTipo" class="mini" style="width:auto">${Object.entries(TIPOS).map(([k,t])=>`<option value="${k}" ${k===R.tipo?"selected":""}>${t.t}</option>`).join("")}</select></div></div>
     <div class="grid2">
       ${inp("produto.nome","Nome do produto (uso interno)")}
-      ${inp("produto.cliente","Cliente")}
+      ${sel("clienteId","Cliente",[["","Sem cliente"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===R.clienteId).map(c=>[c.id,c.nome])],{hint:"Os rótulos ficam agrupados por cliente na lista."})}
       ${inp("produto.denominacao","Denominação de venda",{hint:"Conforme o padrão de identidade e qualidade. Vai no painel principal (RDC 727/2022, art. 9)."})}
       ${inp("produto.marca","Marca")}
       ${inp("produto.descricao","Descrição",{span:true,area:true})}
@@ -955,19 +1015,23 @@ document.addEventListener("input",e=>{
     showAC(el,r.map(x=>({t:x[1],s:`${x[2]} · ${x[3]} · ${x[0].split(" - ")[0]}`,x})),it=>{const x=it.x; S.R.porcao.anexo=x[1]; const v=nz(String(x[2]).match(/[\d.,]+/)?.[0]); if(v) S.R.porcao.ref=String(v); if(/ml/i.test(x[2])&&S.R.produto.estado!=="liquido") toast("Esta porção é em ml: confira se o produto é líquido."); salvar(); render()})}
 });
 document.addEventListener("change",e=>{const el=e.target;
+  if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
   if(el.id==="trocaTipo"){S.R.tipo=el.value;salvar();render();toast("Tipo alterado para "+TIPOS[el.value].t+".");return}
-  if(el.id==="impfile"&&el.files[0]){const fr=new FileReader();fr.onload=()=>{try{const R=JSON.parse(fr.result);if(!R.tipo||!R.produto)throw 0;R.id=uid();const a=lerTodos();a.unshift(R);gravarTodos(a);abrir(R);toast("Rótulo importado.")}catch(x){toast("Esse arquivo não é um backup de rótulo válido.")}};fr.readAsText(el.files[0])}
+  if(el.id==="impfile"&&el.files[0]){const fr=new FileReader();fr.onload=()=>{try{const R=JSON.parse(fr.result);if(!R.tipo||!R.produto)throw 0;R.id=novoUUID();R.clienteId=R.clienteId&&DBR.clientes.some(c=>c.id===R.clienteId)?R.clienteId:"";abrir(R);salvar();toast("Rótulo importado.")}catch(x){toast("Esse arquivo não é um backup de rótulo válido.")}};fr.readAsText(el.files[0])}
   if(el.tagName==="SELECT"&&el.dataset.bind&&!el.dataset.rerender) updateLive();
 });
 document.addEventListener("focusout",e=>{if(e.target.dataset&&e.target.dataset.rerenderBlur&&!(e.relatedTarget&&e.relatedTarget.closest&&e.relatedTarget.closest("button"))) setTimeout(()=>{if(!document.activeElement||!document.activeElement.dataset.bind)render()},120); setTimeout(closeAC,150)});
 document.addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return; const d=b.dataset;
-  if(d.novo){abrir(novoRotulo(d.novo));salvar();return}
-  if(d.ex){const R=exemplo(d.ex);abrir(R);salvar();return}
-  if(d.abrir){const R=lerTodos().find(x=>x.id===d.abrir);if(R)abrir(R);return}
-  if(d.dup){const R=JSON.parse(JSON.stringify(lerTodos().find(x=>x.id===d.dup)));R.id=uid();R.produto.nome+=" (cópia)";const a=lerTodos();a.unshift(R);gravarTodos(a);render();return}
-  if(d.del){if(b.dataset.armed){gravarTodos(lerTodos().filter(x=>x.id!==d.del));render();toast("Rótulo excluído.")}else{b.dataset.armed="1";b.textContent="Confirmar exclusão";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="Excluir"}},3000)}return}
-  if(d.act==="home"){S.R=null;render();return}
+  if(d.novo){const R=novoRotulo(d.novo);if(S.filtroCliente&&S.filtroCliente!=="_sem")R.clienteId=S.filtroCliente;S.status="";abrir(R);salvar();return}
+  if(d.ex){S.status="";abrir(exemplo(d.ex));return}
+  if(d.abrir){const row=DBR.lista.find(x=>x.id===d.abrir);if(row){const R=JSON.parse(JSON.stringify(row.dados));R.id=row.id;R.clienteId=row.cliente_id||"";S.status="salvo";abrir(R)}return}
+  if(d.dup){const row=DBR.lista.find(x=>x.id===d.dup);if(!row)return;const R=JSON.parse(JSON.stringify(row.dados));R.id=novoUUID();R.clienteId=row.cliente_id||"";R.produto.nome=(R.produto.nome||"")+" (cópia)";
+    DBR.sb.from(TAB).insert(linhaDe(R)).then(async({error})=>{if(error)return toast("Não foi possível duplicar: "+error.message);await carregarLista();render();toast("Rótulo duplicado.")});return}
+  if(d.del){if(b.dataset.armed){DBR.sb.from(TAB).delete().eq("id",d.del).then(({error})=>{if(error)return toast("Não foi possível excluir: "+error.message);DBR.lista=DBR.lista.filter(x=>x.id!==d.del);render();toast("Rótulo excluído.")})}else{b.dataset.armed="1";b.textContent="Confirmar exclusão";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="Excluir"}},3000)}return}
+  if(d.act==="home"){(async()=>{await gravar();S.R=null;render();window.scrollTo(0,0)})();return}
+  if(d.act==="sair"){(async()=>{await gravar();await DBR.sb.auth.signOut();location.reload()})();return}
+  if(d.act==="enviarLocais"){enviarLocais();return}
   if(d.act==="importar"){$("#impfile").click();return}
   if(d.step!=null){S.step=+d.step;render();window.scrollTo(0,0);return}
   if(d.act==="addIng"){const i=novoIng();S.R.ingredientes.push(i);S.open[i.id]=true;salvar();render();setTimeout(()=>{const el=document.getElementById(`f-ingredientes.${S.R.ingredientes.length-1}.nome`);el&&el.focus()},30);return}
@@ -984,7 +1048,7 @@ document.addEventListener("click",e=>{
   if(d.exp){exportar(d.exp);return}
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeAC()});
-render();
+iniciar();
 </script>
 
 </body>
