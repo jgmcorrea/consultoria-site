@@ -960,31 +960,59 @@ async function exportar(tipo){
     if(tipo==="pngDec") return saveFile(nomeArq("png","ingredientes"),(await pngOf(dec)).blob);
     const {jsPDF}=window.jspdf||{}; if((tipo.startsWith("pdf"))&&!jsPDF) return toast("A biblioteca de PDF não carregou. Verifique a internet e recarregue.");
     if(tipo==="pdfTab"||tipo==="pdfLupa"){const L=tipo==="pdfTab"?tab:lup; const m=2; const doc=new jsPDF({unit:"mm",format:[L.w+2*m,L.h+2*m],orientation:L.w>L.h?"l":"p"}); pdfDraw(doc,L,m,m); return saveFile(nomeArq("pdf",tipo==="pdfTab"?"tabela":"lupa"),doc.output("blob"))}
-    if(tipo==="pdf") return saveFile(nomeArq("pdf","ficha"),pdfFicha(R,C,T,tab,lup,dec));
+    if(tipo==="pdf") return saveFile(nomeArq("pdf","ficha"),await pdfFicha(R,C,T,tab,lup,dec));
     if(tipo==="xlsx") return saveFile(nomeArq("xlsx"),await excel(R,C,T,tab,lup,dec));
   }catch(e){console.error(e);toast("Não foi possível gerar o arquivo: "+(e.message||e))}
 }
-function pdfFicha(R,C,T,tab,lup,dec){
-  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15, W=210-2*M; let y=M; const P=R.produto; const Sz=tamanhos(R,C);
-  const need=h=>{if(y+h>297-M){doc.addPage();y=M}};
-  const h1=t=>{need(10);doc.setFont("helvetica","bold");doc.setFontSize(15);doc.text(t,M,y+5);y+=10};
-  const h2=t=>{need(9);doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(27,106,80);doc.text(t.toUpperCase(),M,y+4);doc.setTextColor(0);y+=6.5};
-  const para=(t,{size=9.5,bold=false}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
-  const kv=(k,v)=>{doc.setFont("helvetica","bold");doc.setFontSize(9);need(5);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
-  h1(P.nome||"Rótulo"); doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(90);doc.text(`${TIPOS[R.tipo].t} · gerado em ${new Date().toLocaleString("pt-BR")} · Consultoria Isadora Andrade`,M,y);doc.setTextColor(0);y+=7;
+/* mesmo estilo dos documentos do sistema (extrato de horas): faixa laranja, logo, título escuro, rodapé com data e página */
+const LARANJA=[226,102,26], TINTA=[30,43,39], CINZA=[86,100,94], LINHA=[220,226,222], CLARO=[253,238,226];
+let logoCache;
+function carregarLogo(){
+  return (logoCache||=new Promise(ok=>{
+    const img=new Image();
+    img.onload=()=>{try{
+      const cv=document.createElement("canvas"); cv.width=cv.height=280;
+      const g=cv.getContext("2d"); g.fillStyle="#fff"; g.fillRect(0,0,280,280); g.drawImage(img,0,0,280,280);
+      const url=cv.toDataURL("image/jpeg",0.9); ok({url,b64:url.split(",")[1]}); // fundo branco + JPEG: arquivo leve
+    }catch{ok(null)}};
+    img.onerror=()=>ok(null); img.src="../imagens/logo.png";
+  }));
+}
+async function pdfFicha(R,C,T,tab,lup,dec){
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15, W=210-2*M, BASE=297-18; const P=R.produto; const Sz=tamanhos(R,C);
+  const logo=await carregarLogo();
+  doc.setFillColor(...LARANJA); doc.rect(0,0,210,4,"F");
+  if(logo) doc.addImage(logo.url,"JPEG",210-M-30,9,30,30);
+  doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...LARANJA); doc.text("Consultoria Isadora Andrade",M,16);
+  doc.setFontSize(19); doc.setTextColor(...TINTA); const tit=doc.splitTextToSize(P.nome||"Rótulo",W-36).slice(0,2); tit.forEach((l,i)=>doc.text(l,M,26+i*7.5));
+  let y=26+tit.length*7.5+1.5;
+  doc.setFontSize(10.5); doc.setTextColor(...CINZA);
+  [["Documento","Ficha do rótulo"],["Tipo de cálculo",TIPOS[R.tipo].t]].forEach(([k,v])=>{doc.setFont("helvetica","bold");doc.text(k+":",M,y);doc.setFont("helvetica","normal");doc.text(String(v),M+31,y);y+=6});
+  y=Math.max(y+2,44);
+  const need=h=>{if(y+h>BASE){doc.addPage();y=M}};
+  const h2=t=>{need(12);y+=3;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
+  const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
+  const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
+  // resumo em destaque, como o "Total de horas" do extrato
+  {const res=[`Porção ${br(C.porcao,1)} ${C.un}`,`Tabela ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm`,C.lupa.precisa?`Lupa: ALTO EM ${C.lupa.nutrientes.join(", ")}`:"Sem lupa"].join("   ·   ");
+    doc.setFillColor(...CLARO); doc.roundedRect(M,y,W,12,2,2,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...TINTA);
+    doc.text(doc.splitTextToSize(res,W-10)[0],M+5,y+7.6); y+=17}
   h2("Painel principal"); kv("Denominação de venda",P.denominacao); kv("Marca",P.marca); kv("Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:"");
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
-    para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${R.lupa.vedada?" ATENÇÃO: lupa vedada para este produto (Anexo XVI) — não aplicar.":""}`,{size:8})}
+    para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${R.lupa.vedada?" ATENÇÃO: lupa vedada para este produto (Anexo XVI) — não aplicar.":""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
-  para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8});
+  para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8,cor:CINZA});
   h2(`Tabela nutricional — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;
   h2("Demais informações"); kv("Conservação",P.conservacao); kv("Validade",P.validade+(P.validadeAberto?` · após aberto: ${P.validadeAberto}`:"")); kv("Lote",P.lote); kv("Identificação de origem",P.origem); if(P.descricao) kv("Descrição",P.descricao);
   h2("Base do cálculo"); kv("Porção",`${br(C.porcao,1)} ${C.un}${C.medida?` (${C.medida})`:""}${C.individual?" — embalagem individual":""}`); kv("Porções",C.porcoesTxt||"Não se aplica"); kv("Massa final",`${br(C.massaFinal,1)} g`);
   if(R.tipo==="balanco") kv("Balanço",`Tanque ${br(C.extra.massaTanque,1)} g; produto-base ${br(C.extra.massaBase,1)} g; ${R.balanco.subproduto||"subproduto"} ${br(C.extra.massaSub,1)} g; adicionado depois ${br(C.extra.massaDepois,1)} g`);
   if(R.tipo==="concentracao") kv("Concentração",`Entrada ${br(C.extra.massaEntrada,1)} g; água evaporada ${br(C.extra.evaporado,1)} g; fator ${br(C.extra.fator,3)}`);
   if(C.E.length||C.W.length){h2("Pendências"); C.E.concat(C.W).forEach(t=>para("• "+t,{size:8.5}))}
-  para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5});
+  para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
+  const emitido=new Date().toLocaleDateString("pt-BR"), n=doc.internal.getNumberOfPages();
+  for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
+    doc.text(`Emitido em ${emitido}`,M,297-9); doc.text(`Página ${i} de ${n}`,210-M,297-9,{align:"right"})}
   return doc.output("blob");
 }
 async function excel(R,C,T,tab,lup,dec){
@@ -993,12 +1021,23 @@ async function excel(R,C,T,tab,lup,dec){
   const thin={style:"thin",color:{argb:"FF000000"}}, med={style:"medium",color:{argb:"FF000000"}}, thick={style:"thick",color:{argb:"FF000000"}};
   const A=(sz,b=false)=>({name:"Arial",size:sz,bold:b});
   // Aba Rótulo
-  const s1=wb.addWorksheet("Rótulo"); s1.columns=[{width:30},{width:95}];
+  const s1=wb.addWorksheet("Rótulo",{views:[{showGridLines:false}]}); s1.columns=[{width:30},{width:95}];
+  const LJ="FFE2661A", TN="FF1E2B27", CZ="FF56645E";
+  const cab=row=>row.eachCell(c=>{c.font={...c.font,bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:TN}}});
+  const secao=row=>{row.font={name:"Arial",size:11,bold:true,color:{argb:LJ}}};
+  const logo=await carregarLogo();
   const add=(k,v,o={})=>{const r=s1.addRow([k,v]);r.getCell(1).font=A(10,true);r.getCell(2).font=A(10,!!o.b);r.getCell(2).alignment={wrapText:true,vertical:"top"};r.getCell(1).alignment={vertical:"top"}};
-  s1.addRow([P.nome||"Rótulo"]).font=A(14,true); s1.addRow([`${TIPOS[R.tipo].t} · gerado em ${new Date().toLocaleString("pt-BR")}`]).font=A(9); s1.addRow([]);
+  // faixa laranja, nome da consultoria, título e logo à direita (como nos documentos do sistema)
+  {const r=s1.addRow(["",""]);r.height=6;r.eachCell({includeEmpty:true},c=>c.fill={type:"pattern",pattern:"solid",fgColor:{argb:LJ}})}
+  s1.addRow(["Consultoria Isadora Andrade"]).font={name:"Arial",size:10,bold:true,color:{argb:LJ}};
+  {const r=s1.addRow([P.nome||"Rótulo"]);r.font={name:"Arial",size:16,bold:true,color:{argb:TN}};r.height=24}
+  s1.addRow([`${TIPOS[R.tipo].t} · emitido em ${new Date().toLocaleDateString("pt-BR")}`]).font={name:"Arial",size:9,color:{argb:CZ}};
+  s1.addRow([]); s1.addRow([]);
+  if(logo){const id=wb.addImage({base64:logo.b64,extension:"jpeg"}); s1.addImage(id,{tl:{col:1.8,row:1.3},ext:{width:90,height:90}})}
+  secao(s1.addRow(["PAINEL PRINCIPAL"]));
   [["Denominação de venda",P.denominacao],["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto],["Lote",P.lote]].forEach(([k,v])=>add(k,v||""));
-  s1.addRow([]); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
-  s1.addRow([]); add("Lupa",C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:(C.lupa.nutrientes.length?"Vedada (Anexo XVI)":"Não precisa"));
+  s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
+  s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:(C.lupa.nutrientes.length?"Vedada (Anexo XVI)":"Não precisa"));
   add("Tabela nutricional",`${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm · Arial ${R.tabela.reduzida?"6/8":"8/10"} pt`);
   const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes ${br(Sz.ingPt,1)} pt; advertências ${br(Sz.avisoPt,1)} pt negrito caixa alta (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)`);
   // Aba Tabela nutricional
@@ -1021,16 +1060,16 @@ async function excel(R,C,T,tab,lup,dec){
   if(lup){const pL=await pngOf(lup,300);const idL=wb.addImage({base64:"data:image/png;base64,"+u8b64(pL.u8),extension:"png"});s2.addImage(idL,{tl:{col:6,row:4+Math.ceil(tab.h*mm2px/20)},ext:{width:lup.w*mm2px,height:lup.h*mm2px}})}
   // Aba Cálculos
   const s3=wb.addWorksheet("Cálculos"); const hdr=["Ingrediente","Qtd (g)","% formulação",...KEYS.map(k=>COMP_LBL[k]),"Fonte"].concat(R.tipo==="balanco"?["Etapa"]:[]);
-  s3.addRow(["COMPOSIÇÃO DOS INGREDIENTES (por 100 g)"]).font=A(11,true); const hr=s3.addRow(hdr); hr.font=A(9,true);
+  secao(s3.addRow(["COMPOSIÇÃO DOS INGREDIENTES (por 100 g)"])); const hr=s3.addRow(hdr); hr.font=A(9,true); cab(hr);
   C.ings.forEach(i=>{const c=compOf(i);s3.addRow([i.nome,nz(i.qtd),C.tot.massa?nz(i.qtd)/C.tot.massa*100:0,...KEYS.map(k=>c[k]),i.fonte].concat(R.tipo==="balanco"?[i.etapa==="depois"?"adicionado depois":"tanque"]:[])).font=A(9)});
-  s3.addRow([]); s3.addRow(["CONTRIBUIÇÃO NA FORMULAÇÃO (quantidade × valor/100)"]).font=A(11,true); s3.addRow(["Ingrediente","Qtd (g)",...KEYS.map(k=>COMP_LBL[k])]).font=A(9,true);
+  s3.addRow([]); secao(s3.addRow(["CONTRIBUIÇÃO NA FORMULAÇÃO (quantidade × valor/100)"])); {const r=s3.addRow(["Ingrediente","Qtd (g)",...KEYS.map(k=>COMP_LBL[k])]);r.font=A(9,true);cab(r)}
   C.ings.forEach(i=>{const c=compOf(i),q=nz(i.qtd);s3.addRow([i.nome,q,...KEYS.map(k=>q*c[k]/100)]).font=A(9)});
-  s3.addRow(["Total",C.tot.massa,...KEYS.map(k=>C.tot.n[k])]).font=A(9,true);
+  {const r=s3.addRow(["Total",C.tot.massa,...KEYS.map(k=>C.tot.n[k])]);r.font=A(9,true);r.eachCell(c=>c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F4F2"}})}
   s3.addRow([]);
-  if(R.tipo==="balanco"){const X=C.extra;s3.addRow(["BALANÇO DE MASSA"]).font=A(11,true);[["Massa no tanque (g)",X.massaTanque],["Massa do produto-base (g)",X.massaBase],[`Massa de ${R.balanco.subproduto||"subproduto"} (g)`,X.massaSub],["Rendimento (%)",X.rendPct],["Adicionado depois (g)",X.massaDepois]].forEach(a=>s3.addRow(a).font=A(9));
+  if(R.tipo==="balanco"){const X=C.extra;secao(s3.addRow(["BALANÇO DE MASSA"]));[["Massa no tanque (g)",X.massaTanque],["Massa do produto-base (g)",X.massaBase],[`Massa de ${R.balanco.subproduto||"subproduto"} (g)`,X.massaSub],["Rendimento (%)",X.rendPct],["Adicionado depois (g)",X.massaDepois]].forEach(a=>s3.addRow(a).font=A(9));
     s3.addRow([`Composição do ${R.balanco.subproduto||"subproduto"} /100 g`,"",...KEYS.map(k=>nz(R.balanco.comp[k]))]).font=A(9); s3.addRow(["Produto-base /100 g","",...KEYS.map(k=>X.base100[k])]).font=A(9); s3.addRow([])}
-  if(R.tipo==="concentracao"){const X=C.extra;s3.addRow(["CONCENTRAÇÃO"]).font=A(11,true);[["Massa de entrada (g)",X.massaEntrada],["Massa final (g)",C.massaFinal],["Água evaporada (g)",X.evaporado],["Fator de concentração",X.fator]].forEach(a=>s3.addRow(a).font=A(9));s3.addRow([])}
-  s3.addRow(["RESULTADO"]).font=A(11,true); s3.addRow(["Nutriente",`Calculado /100 ${C.un}`,"Calculado /porção",`Rótulo 100 ${C.un}`,"Rótulo porção","%VD"]).font=A(9,true);
+  if(R.tipo==="concentracao"){const X=C.extra;secao(s3.addRow(["CONCENTRAÇÃO"]));[["Massa de entrada (g)",X.massaEntrada],["Massa final (g)",C.massaFinal],["Água evaporada (g)",X.evaporado],["Fator de concentração",X.fator]].forEach(a=>s3.addRow(a).font=A(9));s3.addRow([])}
+  secao(s3.addRow(["RESULTADO"])); {const r=s3.addRow(["Nutriente",`Calculado /100 ${C.un}`,"Calculado /porção",`Rótulo 100 ${C.un}`,"Rótulo porção","%VD"]);r.font=A(9,true);cab(r)}
   C.linhas.forEach(x=>s3.addRow([x.l,x.raw100,x.rawP,x.v100,x.vp,x.vd]).font=A(9));
   s3.addRow([]); s3.addRow([`Porção ${br(C.porcao,1)} ${C.un}; massa final ${br(C.massaFinal,1)} g; valor energético = 4×(carboidratos+proteínas) + 9×gorduras + 2×fibras (IN 75/2020).`]).font=A(9);
   s3.getColumn(1).width=34; for(let i=2;i<=15;i++) s3.getColumn(i).width=13;
