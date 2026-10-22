@@ -1203,7 +1203,7 @@ async function relatorioPDF(R,C,T){
   function cabecalho(titulo,secao,{subtitulo=true,logo=true,ytit=106.1}={}){
     doc.addPage(); pagTitulo=titulo; pagSecao=secao; temLogo=logo;
     doc.setFillColor(...REL.laranja); doc.lines([[507,0],[-79,69.8],[-428,0]],0,0,[1,1],"F",true);
-    if(logo&&A.circ) doc.addImage(A.circ,"PNG",13,3.5,63,63);
+    if(logo&&A.circ) doc.addImage(A.circ,"PNG",13,3.5,63,63,"logoCirculo","FAST");
     doc.setFillColor(...REL.linha); doc.rect(577.9,214.5,1.5,628,"F");
     F("PoppinsLight"); doc.setFontSize(9.5); cor(REL.cinza); doc.text(`ISADORA ANDRADE | ${ano}`,578,210,{angle:90,charSpace:1.6});
     F("Poppins"); doc.setFontSize(29); cor(REL.laranja); doc.text(titulo,13.2,ytit);
@@ -1222,8 +1222,8 @@ async function relatorioPDF(R,C,T){
   const itensRich=s=>parseRich(s).map(r=>({t:r.t,f:"Poppins",i:r.i}));
   // ================= CAPA =================
   doc.setFillColor(...REL.laranja); doc.rect(0,0,595.5,842.25,"F");
-  if(A.faixa) doc.addImage(A.faixa,"PNG",-13.2,117.9,622,323.4); else {doc.setFillColor(254,253,253);doc.rect(0,136.1,595.5,291,"F")}
-  if(A.logo) doc.addImage(A.logo,"PNG",169.6,148.5,256.9,256.9);
+  if(A.faixa) doc.addImage(A.faixa,"PNG",-13.2,117.9,622,323.4,"faixa","FAST"); else {doc.setFillColor(254,253,253);doc.rect(0,136.1,595.5,291,"F")}
+  if(A.logo) doc.addImage(A.logo,"PNG",169.6,148.5,256.9,256.9,"logo","FAST");
   F("PoppinsLight"); doc.setFontSize(24); cor(BRANCO); doc.text("Consultora Isadora Andrade",59.2,80.4);
   F("Alice"); doc.setFontSize(60); doc.text("DIZERES",59.5,529.4); doc.text("ROTULAGEM",59.5,595.4);
   const cliente=(RD.cliente||nomeCliente(R.clienteId)||P.marca||"").toUpperCase();
@@ -1262,7 +1262,7 @@ async function relatorioPDF(R,C,T){
     cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
     bullet("Carimbo oficial da Inspeção Federal"); y+=LH;
     y=escrever([{t:`O carimbo deve seguir o modelo abaixo, com o número de registro do estabelecimento ${RD.registroSif||"000"}.`}],X0,y)+LH*0.4;
-    if(A.carimbo) doc.addImage(A.carimbo,"PNG",134.8,y,291.1,183.1);
+    if(A.carimbo) doc.addImage(A.carimbo,"PNG",134.8,y,291.1,183.1,"carimbo","FAST");
   }
   // ================= TABELAS =================
   const modelos=modelosTab(R);
@@ -1345,7 +1345,7 @@ async function relatorioPDF(R,C,T){
   doc.addPage(); doc.setFillColor(...REL.laranja); doc.rect(0,0,595.5,842.25,"F");
   if(doc.GState){for(let i=0;i<8;i++){doc.setGState(new doc.GState({opacity:0.05}));doc.setFillColor(0,0,0);doc.rect(417-8+i,0,8-i,842.25,"F")}doc.setGState(new doc.GState({opacity:1}))}
   doc.setFillColor(255,255,255); doc.rect(417,0,178.5,842.25,"F");
-  if(A.logo) doc.addImage(A.logo,"PNG",424,615,168,168);
+  if(A.logo) doc.addImage(A.logo,"PNG",424,615,168,168,"logo","FAST");
   F("PoppinsLight"); doc.setFontSize(16.5); cor(BRANCO); doc.text("EM CASO DE DÚVIDAS, ENTRE EM CONTATO",28,264);
   // ícone WhatsApp
   doc.setDrawColor(255,255,255);doc.setFillColor(255,255,255);doc.setLineWidth(3.2);doc.circle(44,337,19,"S");doc.triangle(25,358,30,345,38,354,"F");
