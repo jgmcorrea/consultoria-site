@@ -207,7 +207,7 @@ function setP(o,p,v){const ks=p.split(".");let a=o;ks.slice(0,-1).forEach(k=>{if
 let toastT; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
 
 /* ===================== MODELO ===================== */
-function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",omitir:false,etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
+function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",omitir:false,opcional:false,etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
 function novoRotulo(tipo){
   return {id:novoUUID(),clienteId:"",tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
     produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:""},
@@ -218,7 +218,7 @@ function novoRotulo(tipo){
     painel:{largura:"",altura:""},
     tabela:{modelos:["vertical"],reduzida:false,lactoseGal:false,largLinear:"90"},
     relatorio:{versao:"1",data:"",cidade:"Blumenau - SC",nome:"",cliente:"",fantasia:"",alegacaoLactose:"",redes:"",observacao:"",codigoBarras:"",expressao:"",sif:false,registroSif:""},
-    lupa:{modelo:"vertical",vedada:false},
+    lupa:{modelo:"vertical",anexo16:""},
     textos:{tamIng:"7",largura:"80",ingOverride:"",algOverride:""}
   };
 }
@@ -298,16 +298,35 @@ function calc(R){
   order.forEach(([k,lvl])=>{const d=NUT[k];linhas.push({k,l:`${d.l} (${d.u})`,lvl,v100:NS[k]?"0":arred(b100[k],d.u),vp:NS[k]?"0":arred(pv[k],d.u),vd:d.vdr?(NS[k]?"0":String(rhu(pv[k]/d.vdr*100,0))):"",raw100:b100[k],rawP:pv[k]})});
   // lupa
   const lim = liquido?{acAdd:7.5,sat:3,sodio:300}:{acAdd:15,sat:6,sodio:600};
-  const lupaN=[]; if(b100.acAdd>=lim.acAdd)lupaN.push("AÇÚCAR ADICIONADO"); if(b100.sat>=lim.sat)lupaN.push("GORDURA SATURADA"); if(b100.sodio>=lim.sodio)lupaN.push("SÓDIO");
+  const LUPA_K=[["acAdd","AÇÚCAR ADICIONADO"],["sat","GORDURA SATURADA"],["sodio","SÓDIO"]];
+  const acima=LUPA_K.filter(([k])=>b100[k]>=lim[k]);
+  // Anexo XVI (IN 75/2020) + RDC 429/2020, art. 18, §§1º e 2º
+  if(R.lupa.anexo16===undefined) R.lupa.anexo16=R.lupa.vedada?"cond":"";
+  const modo16=R.lupa.anexo16;
+  const opc=ings.filter(i=>i.opcional);
+  const alt={}; const contrib={};
+  LUPA_K.forEach(([k])=>{
+    const s=opc.reduce((a,i)=>a+nz(i.qtd)*compOf(i)[k]/100,0);
+    const c100=massaFinal>0?s/massaFinal*100*(liquido?dens:1):0, cP=c100*porcao/100;
+    contrib[k]=c100;
+    // açúcares adicionados: qualquer adição altera; demais: acima das quantidades não significativas (Anexo IV), por 100 g/ml ou por porção
+    alt[k]= k==="acAdd" ? c100>1e-9 : (c100>NUT[k].ns+1e-9 || cP>NUT[k].ns+1e-9);
+  });
+  let aplicar=acima, vedados=[];
+  if(modo16==="total"){ aplicar=[]; vedados=acima; }
+  else if(modo16==="cond"){ aplicar=acima.filter(([k])=>alt[k]); vedados=acima.filter(([k])=>!alt[k]); }
+  const lupaN=aplicar.map(x=>x[1]);
   const area=nz(R.painel.largura)*nz(R.painel.altura);
-  const lupa={lim,nutrientes:lupaN,precisa:lupaN.length>0&&!R.lupa.vedada,area,opcional:area>0&&area<35};
+  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:area>0&&area<35,modo16,alt,contrib,opc:opc.map(i=>i.nome).filter(Boolean)};
+  if(modo16==="cond"&&!opc.length&&acima.length) I.push("Nenhum ingrediente marcado como opcional do RTIQ/PIQ: o produto usa só ingredientes obrigatórios e a lupa fica vedada (Anexo XVI, IN 75/2020).");
+  if(modo16==="cond"&&opc.some(i=>!KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null)&&!i.acucarAdic)) W.push("Há ingrediente opcional sem composição nutricional: o sistema não consegue saber se ele altera açúcares adicionados, gordura saturada ou sódio.");
   // lactose
   const fontesLac=ings.filter(i=>i.lactose); const semValorLac=fontesLac.filter(i=>i.comp.lac===""||i.comp.lac==null);
   let lactose="";
   if(b100.lac>0.1+1e-9) lactose="CONTÉM LACTOSE";
   else if(semValorLac.length){lactose="CONTÉM LACTOSE"; W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
   if(claimLac && b100.lac>0.1) W.push("Há alegação de restrição de lactose marcada, mas o produto tem mais de 100 mg de lactose por 100 "+un+".");
-  if(R.lupa.vedada&&lupaN.length) I.push("Lupa não aplicada: produto marcado como do Anexo XVI da IN 75/2020 (rotulagem frontal vedada).");
+  if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
   return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area};
 }
@@ -871,7 +890,7 @@ function viewFormulacao(R,C){
     const tags=[]; if(i.aditivo)tags.push(`<span class="chip neutral">aditivo${i.funcao?" · "+esc(i.funcao):""}</span>`);
     if(R.tipo==="balanco")tags.push(`<span class="chip neutral">${i.etapa==="depois"?"adicionado depois":"no tanque"}</span>`);
     Object.entries(i.alerg).forEach(([k,v])=>{if(v)tags.push(`<span class="chip warn">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1].replace(/ \(.*\)$/,""))}${v==="p"?" (pode conter)":""}</span>`)});
-    if(i.lactose)tags.push(`<span class="chip warn">lactose</span>`); if(i.gluten)tags.push(`<span class="chip warn">glúten</span>`); if(i.ogm)tags.push(`<span class="chip bad">OGM</span>`);
+    if(i.opcional&&R.lupa.anexo16==="cond")tags.push(`<span class="chip neutral">opcional</span>`); if(i.lactose)tags.push(`<span class="chip warn">lactose</span>`); if(i.gluten)tags.push(`<span class="chip warn">glúten</span>`); if(i.ogm)tags.push(`<span class="chip bad">OGM</span>`);
     const autoAd = i.acucarAdic&&(i.comp.acAdd===""||i.comp.acAdd==null)?br(compOf(i).acAdd,2)+" (auto)":"";
     return `<details class="ing" data-ing="${i.id}" ${S.open[i.id]?"open":""}>
       <summary><span class="idx">${String(ix+1).padStart(2,"0")}</span><span><span class="nm">${esc(i.nome||"Novo ingrediente")}</span><br><span class="small muted num">${i.qtd?br(nz(i.qtd),3)+" g":"sem quantidade"} · ${br(pct,2)}%</span></span><span class="meta">${tags.join("")}</span></summary>
@@ -886,6 +905,7 @@ function viewFormulacao(R,C){
           <div class="grid2">
             ${chk(p+".aditivo","É aditivo alimentar",{hint:"Vai para o fim da lista, com a função tecnológica."})}
             ${chk(p+".acucarAdic","É fonte de açúcar adicionado",{hint:"Açúcar, mel, xaropes, sucos concentrados usados para adoçar etc."})}
+            ${R.lupa.anexo16==="cond"?chk(p+".opcional","Ingrediente opcional do RTIQ/PIQ",{hint:"Ex.: trufa no queijo fundido. A lupa só sai para o nutriente que ele alterar (RDC 429/2020, art. 18, §2º)."}):""}
             ${chk(p+".omitir","Não listar nos ingredientes",{hint:"Água ou voláteis eliminados no processo (RDC 727/2022, art. 11, §4º)."})}
           </div>
           ${i.aditivo?`<div class="grid2">${sel(p+".funcao","Função tecnológica principal",[["","Escolha…"],...FUNCOES.map(f=>[f,f])],{re:true})}${inp(p+".nomeDecl","Nome ou INS para declarar",{hint:"Deixe em branco para usar o nome do ingrediente. Tartrazina (INS 102) sempre por extenso."})}</div>`:""}
@@ -942,7 +962,7 @@ function resumoHTML(C){
   const un=C.un; const rows=C.linhas.map(x=>`<tr><td style="padding-left:${10+x.lvl*14}px">${esc(x.l)}</td><td class="num">${x.k==="energia"?br(x.raw100,2):br(x.raw100,3)}</td><td class="num">${x.k==="energia"?br(x.rawP,2):br(x.rawP,3)}</td><td class="num"><b>${x.v100}</b></td><td class="num"><b>${x.vp}</b></td><td class="num">${x.vd?x.vd+"%":""}</td></tr>`).join("");
   return `${alertsHTML(C)}<div class="tbl-wrap" style="margin-top:12px"><table class="calc"><thead><tr><th>Nutriente</th><th>Calculado /100 ${un}</th><th>Calculado /porção</th><th>Rótulo 100 ${un}</th><th>Rótulo porção</th><th>%VD</th></tr></thead><tbody>${rows}</tbody></table></div>
   <p class="small muted" style="margin-top:8px">Porção: ${br(C.porcao,1)} ${un}${C.individual?" (embalagem individual)":""}. Arredondamentos do Anexo III e quantidades não significativas do Anexo IV da IN 75/2020 já aplicados nas colunas “Rótulo”.</p>
-  <div class="row" style="margin-top:10px">${C.lupa.nutrientes.length?(C.lupa.precisa?`<span class="chip bad">Precisa de lupa: ${C.lupa.nutrientes.join(", ")}</span>`:`<span class="chip neutral">Lupa vedada (Anexo XVI)</span>`):`<span class="chip">Não precisa de lupa</span>`}${C.lactose?`<span class="chip warn">CONTÉM LACTOSE</span>`:""}</div>`;
+  <div class="row" style="margin-top:10px">${C.lupa.precisa?`<span class="chip bad">Precisa de lupa: ${C.lupa.nutrientes.join(", ")}</span>`:""}${C.lupa.vedados.length?`<span class="chip neutral">Lupa vedada (Anexo XVI): ${C.lupa.vedados.join(", ")}</span>`:""}${!C.lupa.precisa&&!C.lupa.vedados.length?`<span class="chip">Não precisa de lupa</span>`:""}${C.lactose?`<span class="chip warn">CONTÉM LACTOSE</span>`:""}</div>`;
 }
 function viewPorcao(R,C){
   const un=C.un; const area=C.area;
@@ -970,7 +990,10 @@ function viewPorcao(R,C){
     <div class="grid2">
       ${chk("tabela.reduzida","Usar formatação reduzida (6 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
       ${chk("tabela.lactoseGal","Produto com alegação de restrição de lactose",{hint:"Inclui lactose e galactose na tabela (RDC 429/2020, art. 5º, §4º)."})}
-      ${chk("lupa.vedada","Produto do Anexo XVI (lupa vedada)",{hint:"Ex.: queijos e leites fermentados sem ingredientes que acrescentem açúcar, gordura saturada ou sódio relevantes."})}
+    </div>
+    <div class="grid2">
+      ${sel("lupa.anexo16","Enquadramento no Anexo XVI (IN 75/2020)",[["","Não está no Anexo XVI (regra geral)"],["cond","Itens 1 a 6 (queijos, leites fermentados, carnes…)"],["total","Itens 7 a 18 (leites, óleos, sal…): sempre vedada"]],{re:true,hint:"Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170)."})}
+      ${C.lupa.modo16==="cond"?`<div style="display:flex;flex-direction:column;gap:4px"><b style="font-size:.86rem">Ingredientes opcionais do RTIQ/PIQ</b><span class="small">${C.lupa.opc.length?esc(joinE(C.lupa.opc)):"Nenhum marcado. Marque “Ingrediente opcional do RTIQ/PIQ” no ingrediente, na etapa Formulação."}</span>${C.lupa.opc.length?`<span class="hint">Alteram: ${[["acAdd","açúcares adicionados",3,"g"],["sat","gordura saturada",3,"g"],["sodio","sódio",1,"mg"]].map(([k,n,d,u])=>`${n} ${C.lupa.alt[k]?"sim":"não"} (+${br(C.lupa.contrib[k],d)} ${u}/100 ${C.un})`).join(" · ")}. Para avaliar o limite conta o total do produto (Anvisa, P&R 169).</span>`:""}</div>`:""}
     </div>
   </div></div>`;
 }
@@ -994,8 +1017,8 @@ function viewRotulo(R,C){
     <div class="stack">
       <div><span class="eyebrow">Rotulagem nutricional frontal</span>
         ${lup?`<div class="paper ${S.real?"":"fit"}">${svgOf(lup,z)}</div><div class="paper-cap"><span class="num">${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm</span><span>${lup.M.pct?`${br(lup.M.pct,2)}% exigido · ocupa ${br(lup.M.ocup,2)}% de ${br(lup.M.area,1)} cm²`:""} · “ALTO EM” ${br(lup.M.pt,1)} pt${lup.M.motivo?" · "+esc(lup.M.motivo):""}</span></div>
-          ${R.lupa.vedada?`<div class="alert warn">Lupa calculada mas vedada para este produto (Anexo XVI). Não aplicar.</div>`:`<p class="small muted">Metade superior do painel principal, em superfície contínua, preto sobre branco (RDC 429/2020, art. 21). Fonte do modelo: Arial Narrow.${C.lupa.opcional?" Painel menor que 35 cm²: lupa opcional (art. 18, §3º).":""}</p>`}`
-          :`<div class="alert info">Não precisa de lupa: nenhum nutriente atinge os limites do Anexo XV (${C.liquido?"7,5 g / 3 g / 300 mg por 100 ml":"15 g / 6 g / 600 mg por 100 g"}).</div>`}
+          ${C.lupa.vedados.length?`<div class="alert info">Só ${esc(joinE(C.lupa.nutrientes))}: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas a lupa é vedada para ${C.lupa.vedados.length>1?"eles":"esse nutriente"} (Anexo XVI; RDC 429/2020, art. 18, §2º).</div>`:""}<p class="small muted">Metade superior do painel principal, em superfície contínua, preto sobre branco (RDC 429/2020, art. 21). Fonte do modelo: Arial Narrow.${C.lupa.opcional?" Painel menor que 35 cm²: lupa opcional (art. 18, §3º).":""}</p>`
+          :C.lupa.vedados.length?`<div class="alert info">Sem lupa: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas é vedada (Anexo XVI, IN 75/2020).</div>`:`<div class="alert info">Não precisa de lupa: nenhum nutriente atinge os limites do Anexo XV (${C.liquido?"7,5 g / 3 g / 300 mg por 100 ml":"15 g / 6 g / 600 mg por 100 g"}).</div>`}
       </div>
       ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(),z*0.6)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">Símbolo e expressão no painel principal (Decreto 4.680/2003). Confira o tamanho na Portaria MJ 2.658/2003.</p></div>`:""}
       <div class="card stack"><h3>Painel principal</h3>
@@ -1076,7 +1099,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   h2("Painel principal"); kv("Denominação de venda",P.denominacao); kv("Marca",P.marca); kv("Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:"");
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
-    para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${R.lupa.vedada?" ATENÇÃO: lupa vedada para este produto (Anexo XVI) — não aplicar.":""}`,{size:8,cor:CINZA})}
+    para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
   para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]}) — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;});
@@ -1113,7 +1136,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   secao(s1.addRow(["PAINEL PRINCIPAL"]));
   [["Denominação de venda",P.denominacao],["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
-  s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:(C.lupa.nutrientes.length?"Vedada (Anexo XVI)":"Não precisa"));
+  s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
   add("Tabela nutricional",`${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm · Arial ${R.tabela.reduzida?"6/8":"8/10"} pt`);
   const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes ${br(Sz.ingPt,1)} pt; advertências ${br(Sz.avisoPt,1)} pt negrito caixa alta (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)`);
   // Aba Tabela nutricional
@@ -1312,7 +1335,7 @@ async function relatorioPDF(R,C,T){
   }
   // ================= ROTULAGEM FRONTAL =================
   const lup=layLupa(R,C);
-  if(lup&&!R.lupa.vedada){
+  if(lup){
     cabecalho("Rotulagem nutricional frontal","",{ytit:108.1});
     const Rv={...R,lupa:{...R.lupa,modelo:"vertical"}}, lv=layLupa(Rv,C); const kv=180/lv.w; pdfDraw(doc,escalar(lv,kv),28,190);
     const M=lup.M, faixa=M.area>100?"maior que 100 cm²":"de 35 cm² até 100 cm²";
