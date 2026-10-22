@@ -303,22 +303,34 @@ function calc(R){
   // Anexo XVI (IN 75/2020) + RDC 429/2020, art. 18, §§1º e 2º
   if(R.lupa.anexo16===undefined) R.lupa.anexo16=R.lupa.vedada?"cond":"";
   const modo16=R.lupa.anexo16;
-  const opc=ings.filter(i=>i.opcional);
-  const alt={}; const contrib={};
+  if(R.lupa.temOpcional===undefined) R.lupa.temOpcional=R.ingredientes.some(i=>i.opcional)?"sim":"";
+  const temOpc=R.lupa.temOpcional;
+  const opc=(modo16==="cond"&&temOpc==="sim")?ings.filter(i=>i.opcional):[];
+  // compara o produto COM e SEM os ingredientes opcionais (mesmo cálculo, mesma porção)
+  const alt={}, contrib={}, semV={}, comV={};
+  let sem=null;
+  if(opc.length&&!R._semOpc){
+    const R2=JSON.parse(JSON.stringify(R)); R2._semOpc=true; R2.lupa.anexo16="";
+    R2.ingredientes=R2.ingredientes.filter(i=>!i.opcional);
+    if(R.tipo==="concentracao") R2.concentracao.massaFinal=String(Math.max(0,massaFinal-opc.reduce((a,i)=>a+nz(i.qtd),0)));
+    sem=calc(R2).b100;
+  }
   LUPA_K.forEach(([k])=>{
-    const s=opc.reduce((a,i)=>a+nz(i.qtd)*compOf(i)[k]/100,0);
-    const c100=massaFinal>0?s/massaFinal*100*(liquido?dens:1):0, cP=c100*porcao/100;
-    contrib[k]=c100;
-    // açúcares adicionados: qualquer adição altera; demais: acima das quantidades não significativas (Anexo IV), por 100 g/ml ou por porção
-    alt[k]= k==="acAdd" ? c100>1e-9 : (c100>NUT[k].ns+1e-9 || cP>NUT[k].ns+1e-9);
+    comV[k]=b100[k]; semV[k]=sem?sem[k]:b100[k];
+    const d100=sem?b100[k]-sem[k]:0, dP=d100*porcao/100;
+    contrib[k]=d100;
+    // açúcares adicionados: qualquer aumento altera; gordura saturada e sódio: aumento acima das quantidades não significativas (Anexo IV), por 100 g/ml ou por porção
+    alt[k]= !!sem && (k==="acAdd" ? d100>1e-9 : (d100>NUT[k].ns+1e-9 || dP>NUT[k].ns+1e-9));
   });
   let aplicar=acima, vedados=[];
   if(modo16==="total"){ aplicar=[]; vedados=acima; }
   else if(modo16==="cond"){ aplicar=acima.filter(([k])=>alt[k]); vedados=acima.filter(([k])=>!alt[k]); }
   const lupaN=aplicar.map(x=>x[1]);
   const area=nz(R.painel.largura)*nz(R.painel.altura);
-  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:area>0&&area<35,modo16,alt,contrib,opc:opc.map(i=>i.nome).filter(Boolean)};
-  if(modo16==="cond"&&!opc.length&&acima.length) I.push("Nenhum ingrediente marcado como opcional do RTIQ/PIQ: o produto usa só ingredientes obrigatórios e a lupa fica vedada (Anexo XVI, IN 75/2020).");
+  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:area>0&&area<35,modo16,temOpc,alt,contrib,semV,comV,opc:opc.map(i=>i.nome).filter(Boolean)};
+  if(modo16==="cond"&&!temOpc) W.push("Lupa: responda se o produto tem ingrediente opcional do RTIQ/PIQ (etapa Porção e embalagem).");
+  if(modo16==="cond"&&temOpc==="sim"&&!opc.length) W.push("Lupa: selecione qual ingrediente é o opcional do RTIQ/PIQ (etapa Porção e embalagem).");
+  if(modo16==="cond"&&temOpc==="nao"&&acima.length) I.push("Produto só com ingredientes obrigatórios do RTIQ/PIQ: a lupa fica vedada (Anexo XVI, IN 75/2020; Anvisa, P&R 168).");
   if(modo16==="cond"&&opc.some(i=>!KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null)&&!i.acucarAdic)) W.push("Há ingrediente opcional sem composição nutricional: o sistema não consegue saber se ele altera açúcares adicionados, gordura saturada ou sódio.");
   // lactose
   const fontesLac=ings.filter(i=>i.lactose); const semValorLac=fontesLac.filter(i=>i.comp.lac===""||i.comp.lac==null);
@@ -890,7 +902,7 @@ function viewFormulacao(R,C){
     const tags=[]; if(i.aditivo)tags.push(`<span class="chip neutral">aditivo${i.funcao?" · "+esc(i.funcao):""}</span>`);
     if(R.tipo==="balanco")tags.push(`<span class="chip neutral">${i.etapa==="depois"?"adicionado depois":"no tanque"}</span>`);
     Object.entries(i.alerg).forEach(([k,v])=>{if(v)tags.push(`<span class="chip warn">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1].replace(/ \(.*\)$/,""))}${v==="p"?" (pode conter)":""}</span>`)});
-    if(i.opcional&&R.lupa.anexo16==="cond")tags.push(`<span class="chip neutral">opcional</span>`); if(i.lactose)tags.push(`<span class="chip warn">lactose</span>`); if(i.gluten)tags.push(`<span class="chip warn">glúten</span>`); if(i.ogm)tags.push(`<span class="chip bad">OGM</span>`);
+    if(i.opcional&&R.lupa.anexo16==="cond"&&R.lupa.temOpcional==="sim")tags.push(`<span class="chip neutral">opcional</span>`); if(i.lactose)tags.push(`<span class="chip warn">lactose</span>`); if(i.gluten)tags.push(`<span class="chip warn">glúten</span>`); if(i.ogm)tags.push(`<span class="chip bad">OGM</span>`);
     const autoAd = i.acucarAdic&&(i.comp.acAdd===""||i.comp.acAdd==null)?br(compOf(i).acAdd,2)+" (auto)":"";
     return `<details class="ing" data-ing="${i.id}" ${S.open[i.id]?"open":""}>
       <summary><span class="idx">${String(ix+1).padStart(2,"0")}</span><span><span class="nm">${esc(i.nome||"Novo ingrediente")}</span><br><span class="small muted num">${i.qtd?br(nz(i.qtd),3)+" g":"sem quantidade"} · ${br(pct,2)}%</span></span><span class="meta">${tags.join("")}</span></summary>
@@ -905,7 +917,6 @@ function viewFormulacao(R,C){
           <div class="grid2">
             ${chk(p+".aditivo","É aditivo alimentar",{hint:"Vai para o fim da lista, com a função tecnológica."})}
             ${chk(p+".acucarAdic","É fonte de açúcar adicionado",{hint:"Açúcar, mel, xaropes, sucos concentrados usados para adoçar etc."})}
-            ${R.lupa.anexo16==="cond"?chk(p+".opcional","Ingrediente opcional do RTIQ/PIQ",{hint:"Ex.: trufa no queijo fundido. A lupa só sai para o nutriente que ele alterar (RDC 429/2020, art. 18, §2º)."}):""}
             ${chk(p+".omitir","Não listar nos ingredientes",{hint:"Água ou voláteis eliminados no processo (RDC 727/2022, art. 11, §4º)."})}
           </div>
           ${i.aditivo?`<div class="grid2">${sel(p+".funcao","Função tecnológica principal",[["","Escolha…"],...FUNCOES.map(f=>[f,f])],{re:true})}${inp(p+".nomeDecl","Nome ou INS para declarar",{hint:"Deixe em branco para usar o nome do ingrediente. Tartrazina (INS 102) sempre por extenso."})}</div>`:""}
@@ -993,8 +1004,15 @@ function viewPorcao(R,C){
     </div>
     <div class="grid2">
       ${sel("lupa.anexo16","Enquadramento no Anexo XVI (IN 75/2020)",[["","Não está no Anexo XVI (regra geral)"],["cond","Itens 1 a 6 (queijos, leites fermentados, carnes…)"],["total","Itens 7 a 18 (leites, óleos, sal…): sempre vedada"]],{re:true,hint:"Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170)."})}
-      ${C.lupa.modo16==="cond"?`<div style="display:flex;flex-direction:column;gap:4px"><b style="font-size:.86rem">Ingredientes opcionais do RTIQ/PIQ</b><span class="small">${C.lupa.opc.length?esc(joinE(C.lupa.opc)):"Nenhum marcado. Marque “Ingrediente opcional do RTIQ/PIQ” no ingrediente, na etapa Formulação."}</span>${C.lupa.opc.length?`<span class="hint">Alteram: ${[["acAdd","açúcares adicionados",3,"g"],["sat","gordura saturada",3,"g"],["sodio","sódio",1,"mg"]].map(([k,n,d,u])=>`${n} ${C.lupa.alt[k]?"sim":"não"} (+${br(C.lupa.contrib[k],d)} ${u}/100 ${C.un})`).join(" · ")}. Para avaliar o limite conta o total do produto (Anvisa, P&R 169).</span>`:""}</div>`:""}
+      ${C.lupa.modo16==="cond"?sel("lupa.temOpcional","O produto tem ingrediente opcional do RTIQ/PIQ?",[["","Selecionar…"],["nao","Não, só ingredientes obrigatórios"],["sim","Sim"]],{re:true,hint:"Só com ingredientes obrigatórios, a lupa fica vedada mesmo acima dos limites (Anvisa, P&R 168)."}):""}
     </div>
+    ${C.lupa.modo16==="cond"&&C.lupa.temOpc==="sim"?`<div class="stack" style="gap:8px"><b style="font-size:.9rem">Qual ingrediente é o opcional?</b>
+      <div class="row" style="gap:6px 18px">${R.ingredientes.map((g,ix)=>g.nome.trim()?chk(`ingredientes.${ix}.opcional`,esc(g.nome)):"").join("")}</div>
+      ${C.lupa.opc.length?`<div style="overflow-x:auto"><table class="kv-t" style="border-collapse:collapse;font-size:.86rem;min-width:520px">
+        <thead><tr style="text-align:left;border-bottom:1px solid #ccc"><th style="padding:4px 10px 4px 0">Por 100 ${C.un}</th><th style="padding:4px 10px">Sem ${esc(joinE(C.lupa.opc))}</th><th style="padding:4px 10px">Com ${esc(joinE(C.lupa.opc))}</th><th style="padding:4px 10px">Diferença</th><th style="padding:4px 10px">Agrega valor?</th><th style="padding:4px 10px">Lupa</th></tr></thead>
+        <tbody>${[["acAdd","Açúcares adicionados",2,"g"],["sat","Gordura saturada",2,"g"],["sodio","Sódio",0,"mg"]].map(([k,n,d,u])=>{const lim=C.lupa.lim[k],nm={acAdd:"AÇÚCAR ADICIONADO",sat:"GORDURA SATURADA",sodio:"SÓDIO"}[k];const st=C.lupa.nutrientes.includes(nm)?"<b>Sim</b>":C.lupa.vedados.includes(nm)?"Vedada":"Abaixo do limite";const df=C.lupa.contrib[k];return `<tr style="border-bottom:1px solid #eee"><td style="padding:4px 10px 4px 0">${n}</td><td style="padding:4px 10px" class="num">${br(C.lupa.semV[k],d)} ${u}</td><td style="padding:4px 10px" class="num">${br(C.lupa.comV[k],d)} ${u}</td><td style="padding:4px 10px" class="num">${df>0?"+":""}${br(df,d===0?1:3)} ${u}</td><td style="padding:4px 10px">${C.lupa.alt[k]?"<b>Sim</b>":"Não"}</td><td style="padding:4px 10px">${st}</td></tr>`}).join("")}</tbody></table></div>
+      <span class="hint">Agrega valor: açúcar adicionado com qualquer aumento; gordura saturada acima de 0,1 g e sódio acima de 5 mg (Anexo IV, por 100 ${C.un} ou porção). A lupa sai só para o nutriente que agrega valor e passa do limite no total do produto (${C.liquido?"7,5 g / 3 g / 300 mg":"15 g / 6 g / 600 mg"}) — RDC 429/2020, art. 18, §2º; Anvisa, P&R 169.${R.tipo==="concentracao"?" Na concentração, o “sem” desconta a massa do opcional da massa final.":""}</span>`:""}
+    </div>`:""}
   </div></div>`;
 }
 function viewRotulo(R,C){
