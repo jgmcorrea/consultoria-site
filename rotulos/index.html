@@ -170,6 +170,66 @@ const EXTRA_K = EXTRAS.map(e=>e[0]);
 // alegações sobre lactose (RDC 135/2017): "zero" até 100 mg/100 g ou ml; "baixo" acima de 100 mg até 1 g/100 g ou ml
 const ALEG_LAC = [["","Sem alegação sobre lactose",null],["ZERO LACTOSE","Zero lactose",0.1],["ISENTO DE LACTOSE","Isento de lactose",0.1],["SEM LACTOSE","Sem lactose",0.1],["0% LACTOSE","0% lactose",0.1],["NÃO CONTÉM LACTOSE","Não contém lactose",0.1],["BAIXO TEOR DE LACTOSE","Baixo teor de lactose",1],["BAIXO EM LACTOSE","Baixo em lactose",1]];
 const alegLac = R=>String(R.relatorio?.alegacaoLactose||"").trim().toUpperCase();
+// classificação dos estabelecimentos — Decreto 9.013/2017 (RIISPOA), arts. 17 a 23
+const CLASSIF_EST = [
+  ["Carnes e derivados",["Abatedouro frigorífico","Unidade de beneficiamento de carne e produtos cárneos"]],
+  ["Pescado e derivados",["Barco-fábrica","Abatedouro frigorífico de pescado","Unidade de beneficiamento de pescado e produtos de pescado","Estação depuradora de moluscos bivalves"]],
+  ["Ovos e derivados",["Granja avícola","Unidade de beneficiamento de ovos e derivados"]],
+  ["Leite e derivados",["Granja leiteira","Posto de refrigeração","Unidade de beneficiamento de leite e derivados","Queijaria"]],
+  ["Produtos de abelhas",["Unidade de beneficiamento de produtos de abelhas"]],
+  ["Armazenagem",["Entreposto de produtos de origem animal","Casa atacadista"]]
+];
+// Anexo XVI da IN 75/2020 — alimentos com rotulagem nutricional frontal vedada (itens 1 a 6: vedação condicional, RDC 429/2020, art. 18, §2º)
+const ANEXO16=["Frutas, hortaliças, leguminosas, tubérculos, cereais, nozes, castanhas, sementes e cogumelos","Farinhas","Carnes e pescados embalados, refrigerados ou congelados","Ovos","Leites fermentados","Queijos","Leites de todas as espécies de animais mamíferos","Leite em pó","Azeite de oliva e outros óleos vegetais, prensados a frio ou refinados","Sal destinado ao consumo humano","Fórmulas infantis","Fórmulas para nutrição enteral","Alimentos para controle de peso","Suplementos alimentares","Bebidas alcoólicas","Produtos destinados exclusivamente ao processamento industrial","Produtos destinados exclusivamente aos serviços de alimentação","Aditivos alimentares e coadjuvantes de tecnologia"];
+const UFS="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" ");
+// serviços de inspeção
+const SERVICOS=[["","Selecionar…"],["SIF","SIF — Serviço de Inspeção Federal (MAPA)"],["SIE","SIE — Serviço de Inspeção Estadual"],["SIM","SIM — Serviço de Inspeção Municipal"],["nenhum","Não se aplica (produto sem inspeção de origem animal)"]];
+// respostas obrigatórias por ingrediente: glúten, lactose e alergênicos
+function respIng(i){
+  if(i.glutenR==null||i.glutenR==="") i.glutenR=i.gluten?"sim":(i.glutenR||"");
+  if(i.lactoseR==null||i.lactoseR==="") i.lactoseR=i.lactose?"sim":(i.lactoseR||"");
+  const temAlg=Object.values(i.alerg||{}).some(Boolean);
+  if(temAlg) i.alergR="sim"; else if(i.alergR==null) i.alergR="";
+  i.gluten=i.glutenR==="sim"; i.lactose=i.lactoseR==="sim";
+}
+function pendDecl(R){
+  const falta=[];
+  R.ingredientes.forEach((i,ix)=>{ if(!i.nome.trim()&&!nz(i.qtd)) return; respIng(i); const f=[];
+    if(!i.alergR) f.push("alergênicos"); else if(i.alergR==="sim"&&!Object.values(i.alerg||{}).some(Boolean)) f.push("quais alergênicos");
+    if(!i.lactoseR) f.push("lactose"); if(!i.glutenR) f.push("glúten");
+    if(f.length) falta.push({ix,nome:i.nome||`ingrediente ${ix+1}`,f}); });
+  return falta;
+}
+function migrar(R){
+  R.ingredientes.forEach(respIng);
+  if(!R.origemD) R.origemD={expressao:"Fabricado em",razao:"",classificacao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:"",industria:true};
+  if(!R.inspecao||(!R.inspecao.servico&&R.relatorio?.sif)){ const rd=R.relatorio||{}; R.inspecao={servico:rd.sif?"SIF":"",orgao:"",regEstab:rd.registroSif||"",regProduto:"",frase:rd.expressao||""}; }
+  if(R.produto.temDrenado==null){R.produto.temDrenado="";R.produto.drenado=""}
+  return R;
+}
+const origemLegada = R=>!R.origemD?.razao && (R.produto.origem||"").trim();
+function origemTexto(R){
+  const o=R.origemD||{}; if(!o.razao) return (R.produto.origem||"").trim();
+  const loc=[o.municipio,o.uf].filter(Boolean).join("/");
+  const partes=[`${o.expressao||"Fabricado em"}: ${o.razao}`, o.classificacao, o.endereco, loc, o.cep?`CEP ${o.cep}`:"", o.pais||"Brasil"].filter(Boolean).join(", ")+".";
+  return [partes, o.cnpj?`CNPJ: ${o.cnpj}.`:"", o.industria!==false&&fold(o.pais||"brasil")==="brasil"?"INDÚSTRIA BRASILEIRA.":"", o.telefone?`Tel.: ${o.telefone}.`:"", o.email?`E-mail: ${o.email}.`:""].filter(Boolean).join(" ");
+}
+function fraseRegistro(R){
+  const I=R.inspecao||{}; if(I.frase&&I.frase.trim()) return I.frase.trim();
+  const n=[I.regProduto,I.regEstab].filter(x=>String(x||"").trim()).join("/"); if(!I.servico||I.servico==="nenhum") return "";
+  if(I.servico==="SIF") return `Registro no Ministério da Agricultura SIF/DIPOA sob nº ${n||"0000/0000"}.`;
+  if(I.servico==="SIE") return `Registro no ${I.orgao||"Serviço de Inspeção Estadual"} SIE sob nº ${n||"0000/0000"}.`;
+  return `Registro no ${I.orgao||"Serviço de Inspeção Municipal"} SIM sob nº ${n||"0000/0000"}.`;
+}
+// carimbo do SIF (Decreto 9.013/2017, art. 467, III — modelo 3) pelo peso da embalagem
+function carimboSIF(R,C){
+  const area=C.area, g=C.contPeso;
+  if(area>0&&area<=10) return {d:"1 cm",motivo:"superfície visível para rotulagem de até 10 cm²"};
+  if(!(g>0)) return {d:"—",motivo:"informe o conteúdo líquido"};
+  if(g<=1000) return {d:"2 cm ou 3 cm",motivo:"embalagem de até 1 kg"};
+  if(g<=10000) return {d:"4 cm",motivo:"embalagem acima de 1 kg até 10 kg"};
+  return {d:"5 cm",motivo:"embalagem acima de 10 kg"};
+}
 const KEYS = [...OBRIG, ...EXTRA_K];
 const NUT = {
   carb:{l:"Carboidratos",u:"g",vdr:300,ns:0.5},
@@ -229,10 +289,12 @@ function setP(o,p,v){const ks=p.split(".");let a=o;ks.slice(0,-1).forEach(k=>{if
 let toastT; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
 
 /* ===================== MODELO ===================== */
-function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",omitir:false,opcional:false,extras:[],etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
+function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
 function novoRotulo(tipo){
   return {id:novoUUID(),clienteId:"",tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
-    produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:""},
+    produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:"",temDrenado:"",drenado:""},
+    origemD:{expressao:"Fabricado em",razao:"",classificacao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:"",industria:true},
+    inspecao:{servico:"",orgao:"",regEstab:"",regProduto:"",frase:""},
     ingredientes:[novoIng()],
     balanco:{subproduto:"Soro",modo:"massa",massaBase:"",rendimento:"",comp:{}},
     concentracao:{massaFinal:""},
@@ -259,6 +321,7 @@ function somar(list){
 function calc(R){
   const E=[],W=[],I=[];
   const P=R.produto;
+  R.ingredientes.forEach(respIng);
   const ings=R.ingredientes.filter(i=>i.nome.trim()||nz(i.qtd));
   const liquido=P.estado==="liquido"; const dens=nz(P.densidade)||1;
   let massaFinal=0,N={},extra={};
@@ -293,9 +356,16 @@ function calc(R){
   const b100={}; KEYS.forEach(k=>b100[k]=per100g[k]*(liquido?dens:1));
   const un=liquido?"ml":"g";
   // embalagem e porção
-  let cont=nz(P.conteudo); if(P.unidade==="kg"||P.unidade==="L") cont*=1000;
+  let contPeso=nz(P.conteudo); if(P.unidade==="kg"||P.unidade==="L") contPeso*=1000;
+  let drenado=nz(P.drenado); if(P.unidade==="kg"||P.unidade==="L") drenado*=1000;
+  const temDren=P.temDrenado==="sim";
+  if(!P.temDrenado) E.push("Responda se o produto tem peso drenado (etapa Produto).");
+  if(temDren&&!(drenado>0)) E.push("Informe o peso drenado (etapa Produto).");
+  if(temDren&&drenado>contPeso&&contPeso>0) E.push("O peso drenado não pode ser maior que o peso líquido.");
+  // porção de produtos drenados = quantidade drenada (RDC 429/2020, art. 9º, II)
+  const cont = temDren&&drenado>0 ? drenado : contPeso;
   const ref=nz(R.porcao.ref);
-  if(!(cont>0)) E.push("Informe o conteúdo líquido da embalagem (etapa Produto).");
+  if(!(contPeso>0)) E.push("Informe o conteúdo líquido da embalagem (etapa Produto).");
   if(!(ref>0)) E.push("Informe a porção de referência do Anexo V (etapa Porção e embalagem).");
   const individual = cont>0&&ref>0&&cont<=2*ref;
   const porcao = individual?cont:ref;
@@ -336,6 +406,7 @@ function calc(R){
   const acima=LUPA_K.filter(([k])=>b100[k]>=lim[k]);
   // Anexo XVI (IN 75/2020) + RDC 429/2020, art. 18, §§1º e 2º
   if(R.lupa.anexo16===undefined) R.lupa.anexo16=R.lupa.vedada?"cond":"";
+  if(R.lupa.item16!==undefined&&R.lupa.item16!==null){const n=+R.lupa.item16; R.lupa.anexo16=n?(n<=6?"cond":"total"):"";}
   const modo16=R.lupa.anexo16;
   if(R.lupa.temOpcional===undefined) R.lupa.temOpcional=R.ingredientes.some(i=>i.opcional)?"sim":"";
   const temOpc=R.lupa.temOpcional;
@@ -377,10 +448,11 @@ function calc(R){
     if(lim!=null && b100.lac>lim+1e-9) E.push(`A alegação “${aLac}” exige no máximo ${lim<1?"100 mg":"1 g"} de lactose por 100 ${un}; o produto tem ${br(mg,0)} mg (RDC 135/2017).`);
     else if(lim===1 && b100.lac<=0.1+1e-9) I.push(`Com ${br(mg,0)} mg de lactose por 100 ${un}, o produto também atende “ZERO LACTOSE” (até 100 mg/100 ${un}).`);
     if(semValorLac.length) W.push(`Para confirmar a alegação “${aLac}”, informe a lactose (g/100 g) de ${joinE(semValorLac.map(i=>`“${i.nome}”`))}.`);
-    if(lactose) E.push(`“${aLac}” não pode aparecer junto com “CONTÉM LACTOSE”.`); }
+    if(lactose) E.push(`“${aLac}” não pode aparecer junto com “CONTÉM LACTOSE”.`);
+    if(lupa.precisa) I.push(`Com lupa, a alegação “${aLac}” não pode ficar na metade superior do painel principal nem ter letras maiores que as da lupa (RDC 429/2020, art. 30).`); }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
-  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area};
+  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area};
 }
 // Anexo III, IN 75/2020
 function arred(v,u){
@@ -422,7 +494,10 @@ function textos(R,C){
   const ad=it.filter(i=>i.aditivo); const grupos={};
   ad.forEach(i=>{const f=(i.funcao||"aditivo").toLowerCase(); (grupos[f]=grupos[f]||[]).push(i)});
   const gl=Object.entries(grupos).sort((a,b)=>Math.max(...b[1].map(i=>nz(i.qtd)))-Math.max(...a[1].map(i=>nz(i.qtd)))).map(([f,l])=>{
-    const nm=l.sort(byQ).map(i=>clean(i.nomeDecl||i.nome)); return nm.length===1?`${f} ${nm[0]}`:`${f} (${joinE(nm)})`});
+    // separa nomes declarados juntos ("A e B") e tira repetidos dentro da mesma função
+    const partes=s=>{const fr=s.split(/\s*,\s*|\s+e\s+/).map(x=>x.trim()).filter(Boolean); return fr.length>1&&fr.every(x=>x.split(/\s+/).length>=2)?fr:[s]};
+    const vistos=new Set(), nm=[]; l.sort(byQ).forEach(i=>partes(clean(i.nomeDecl||i.nome)).forEach(x=>{const k=fold(x); if(!vistos.has(k)){vistos.add(k);nm.push(x)}}));
+    return nm.length===1?`${f} ${nm[0]}`:`${f} (${joinE(nm)})`});
   const todos=nao.concat(gl); let ingTxt="";
   if(todos.length) ingTxt="Ingredientes: "+caixaIngredientes(marcarEspecies(joinE(todos)))+".";
   // alergênicos (RDC 727/2022, arts. 13-15)
@@ -479,13 +554,13 @@ function linhasTab(R,C){const red=!!R.tabela.reduzida;return C.linhas.map(x=>({.
 function layTabela(R,C,modelo){
   modelo=modelo||modelosTab(R)[0]||"vertical";
   if(modelo==="linear") return layLinear(R,C);
-  const red=!!R.tabela.reduzida, g=red?0.75:1, ft=red?8:10, fs=red?6:8, ff=6;
+  const red=!!R.tabela.reduzida, g=red?0.75:1, ft=red?8:10, fs=red?6:8, ff=6, fv=8; // Anexo XII: valores nutricionais 8 pt também na formatação reduzida
   const L=linhasTab(R,C), ops=[], P=v=>v*PT;
   const twp=(s,size,bold)=>tw(s,P(size),bold)/PT; // largura em pt
   const cols=["100 "+C.un,`${br(C.porcao,1)} ${C.un}`,"%VD*"];
   const ind=3.4*g;
   const nameW=rows=>Math.max(...rows.map(x=>x?twp(x.l,fs,false)+x.lvl*ind:0))+3*g;
-  const colW=Math.max(26.08*g,...cols.map(c=>twp(c,fs,true)+5.2*g),...L.flatMap(x=>[x.v100,x.vp,x.vd]).map(v=>twp(v,fs,false)+5.2*g));
+  const colW=Math.max(26.08*g,...cols.map(c=>twp(c,fs,true)+5.2*g),...L.flatMap(x=>[x.v100,x.vp,x.vd]).map(v=>twp(v,fv,false)+5.2*g));
   const T=(x,y,s,size,o={})=>ops.push({t:"text",x:P(x),y:P(y),s,size:P(size),...o});
   const H=(x1,x2,y,lw)=>ops.push({t:"line",x1:P(x1),y1:P(y),x2:P(x2),y2:P(y),sw:P(lw)});
   const V=(x,y1,y2)=>ops.push({t:"line",x1:P(x),y1:P(y1),x2:P(x),y2:P(y2),sw:P(LWT.fina)});
@@ -498,7 +573,7 @@ function layTabela(R,C,modelo){
     let y=headRule;
     for(let r=0;r<nLin;r++){const x=rows[r]; const yb=y+R0;
       if(r>=rows.length){y=yb;continue} // coluna mais curta do modelo quebrado: sem linhas sobrando
-      if(x){T(x0+x.lvl*ind,y+baseOff,x.l,fs);[x.v100,x.vp,x.vd].forEach((v,i)=>T(x0+nw+colW*i+colW/2,y+baseOff,v,fs,{anchor:"middle"}))}
+      if(x){T(x0+x.lvl*ind,y+baseOff,x.l,fs);[x.v100,x.vp,x.vd].forEach((v,i)=>T(x0+nw+colW*i+colW/2,y+baseOff,v,fv,{anchor:"middle"}))}
       const ult=r===rows.length-1; H(x0,xEnd,yb,ult?LWT.media:LWT.fina);
       for(let i=0;i<3;i++) V(x0+nw+colW*i,y+0.12,yb-(ult?0.5:0.12));
       y=yb;}
@@ -668,9 +743,10 @@ function layT(lado=12){const h=lado*Math.sqrt(3)/2;return {w:lado,h,ops:[{t:"pol
 /* ===================== LAYOUT: BLOCO DE DECLARAÇÕES ===================== */
 function tamanhos(R,C){
   const area=C.area; const minAvisoMM = area>0&&area<=100?1:2;
-  const ingPt=Math.max(nz(R.textos.tamIng)||7,1);
+  // lista de ingredientes: sem tamanho fixado; altura mínima de 1 mm (medida na letra minúscula) — regra geral para informações sem tamanho próprio
+  const ingPtMin=Math.ceil(1/(PT*0.519)*2)/2; const ingPtPedido=nz(R.textos.tamIng)||7; const ingPt=Math.max(ingPtPedido,ingPtMin);
   const avisoPtMin=minAvisoMM/(CAP*PT); const avisoPt=Math.max(Math.ceil(avisoPtMin*2)/2,ingPt);
-  return {ingPt,avisoPt,minAvisoMM,ingAltX:ingPt*PT*0.519,avisoAlt:avisoPt*PT*CAP};
+  return {ingPt,ingPtMin,ingPtPedido,avisoPt,minAvisoMM,ingAltX:ingPt*PT*0.519,avisoAlt:avisoPt*PT*CAP};
 }
 function layParas(paras,W){const ops=[];let y=0;paras.forEach(({txt,pt,bold})=>{if(!txt)return;const s=pt*PT;wrapRich(txt,s,bold,W).forEach(l=>{y+=s*1.22;l.forEach(g=>ops.push({t:"text",x:g.x,y,s:g.s,size:s,bold,italic:g.i}))});y+=s*0.45});return {w:W,h:y+0.3,ops}}
 function layDecl(R,C,T){
@@ -846,13 +922,18 @@ function exemplo(tipo){
     Object.assign(R.porcao,{anexo:"Doces em pasta (abóbora, goiaba, leite, banana, mocotó)",ref:"20",medida:"1 colher de sopa"});
     Object.assign(R.painel,{largura:"10",altura:"8"});
   }
+  // dados estruturados de origem e inspeção (Pomerode Alimentos, exemplos das planilhas)
+  R.origemD={expressao:"Fabricado em",razao:"Pomerode Alimentos LTDA",classificacao:"Unidade de beneficiamento de leite e derivados",endereco:"Rua dos Atiradores, 71, Centro",municipio:"Pomerode",uf:"SC",cep:"89355-272",pais:"Brasil",cnpj:"04.630.689/0001-99",telefone:"(47) 3387-3983",email:"contato@queijospomerode.com.br",industria:true};
+  if(tipo==="concentracao") R.inspecao={servico:"SIF",orgao:"",regEstab:"1414",regProduto:"0110",frase:""};
+  R.produto.temDrenado="nao";
+  R.ingredientes.forEach(i=>{ i.glutenR=i.glutenR||(i.gluten?"sim":"nao"); i.lactoseR=i.lactoseR||(i.lactose?"sim":"nao"); i.alergR=i.alergR||(Object.values(i.alerg||{}).some(Boolean)?"sim":"nao"); });
   return R;
 }
 
 /* ===================== ESTADO E NAVEGAÇÃO ===================== */
 const S={R:null,step:0,open:{},zoom:3,real:false,pronto:false,sujo:false,status:"",filtroCliente:""};
 const STEPS=["Produto","Formulação","Porção e embalagem","Rótulo final"];
-function abrir(R){S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
+function abrir(R){migrar(R);S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
 function render(){
   const app=$("#app");
   if(!S.pronto) return;
@@ -909,19 +990,46 @@ function viewProduto(R,C){
     </div></div>
   <div class="card stack"><h2>Embalagem e estado físico</h2>
     <div class="grid3">
-      ${inp("produto.conteudo","Conteúdo líquido",{n:true})}
+      ${inp("produto.conteudo","Conteúdo líquido (peso líquido)",{n:true})}
       ${sel("produto.unidade","Unidade",[["g","g"],["kg","kg"],["ml","ml"],["L","L"]],{re:true})}
+      ${sel("produto.temDrenado","Tem peso drenado?",[["","Selecionar…"],["nao","Não"],["sim","Sim (sólido em meio líquido, ex.: conservas)"]],{re:true,hint:"Produtos com fase sólida e líquida separáveis por filtragem declaram PESO LÍQUIDO e PESO DRENADO (Portaria Inmetro 249/2021)."})}
+      ${R.produto.temDrenado==="sim"?inp("produto.drenado",`Peso drenado (${R.produto.unidade})`,{n:true,hint:"A porção e as porções por embalagem passam a usar o peso drenado (RDC 429/2020, art. 9º, II)."}):""}
       ${sel("produto.estado","Estado do alimento",[["solido","Sólido ou semissólido"],["liquido","Líquido"]],{re:true,hint:"Define a base 100 g ou 100 ml e os limites da lupa."})}
       ${R.produto.estado==="liquido"?inp("produto.densidade","Densidade (g/ml)",{n:true,hint:"Converte o cálculo em massa para 100 ml."}):""}
     </div></div>
   <div class="card stack"><h2>Dados obrigatórios do rótulo</h2>
     <div class="grid2">
-      ${inp("produto.origem","Identificação de origem",{span:true,area:true,hint:"Razão social, endereço, CNPJ, município e país de origem, nº de registro (RDC 727/2022, art. 29)."})}
       ${inp("produto.conservacao","Instruções de conservação",{span:true,area:true,hint:"Temperaturas máxima e mínima e prazo quando houver cuidado especial (art. 32)."})}
       ${inp("produto.validade","Prazo de validade")}
       ${inp("produto.validadeAberto","Validade após aberto")}
-      ${inp("produto.especieLeite","Espécie do leite (se não for vaca)",{hint:"Usado na advertência de alérgicos: ex. “cabra” vira “LEITE DE CABRA”."})}
     </div></div>
+  <div class="card stack"><div><h2>Identificação de origem</h2><p class="muted small">RDC 727/2022, art. 29, e Decreto 9.013/2017 (RIISPOA), art. 443.</p></div>
+    ${origemLegada(R)?`<div class="alert warn">Texto antigo: “${esc(R.produto.origem)}”. Preencha os campos abaixo; enquanto a razão social estiver em branco, o texto antigo continua sendo usado.</div>`:""}
+    <div class="grid3">
+      ${sel("origemD.expressao","Expressão",[["Fabricado em","Fabricado em:"],["Produzido por","Produzido por:"],["Fabricado por","Fabricado por:"],["Indústria","Indústria:"]],{re:true})}
+      ${inp("origemD.razao","Razão social")}
+      <label class="f">Classificação do estabelecimento (RIISPOA)<select data-bind="origemD.classificacao" id="f-origemD.classificacao" data-rerender="1"><option value="">Selecionar…</option>${CLASSIF_EST.map(([g,it])=>`<optgroup label="${esc(g)}">${it.map(x=>`<option ${R.origemD.classificacao===x?"selected":""}>${esc(x)}</option>`).join("")}</optgroup>`).join("")}${R.origemD.classificacao&&!CLASSIF_EST.some(([,it])=>it.includes(R.origemD.classificacao))?`<option selected>${esc(R.origemD.classificacao)}</option>`:""}</select><span class="hint">Decreto 9.013/2017, arts. 17 a 23.</span></label>
+      ${inp("origemD.endereco","Endereço (rua, número, bairro)",{span:true})}
+      ${inp("origemD.municipio","Município")}
+      ${sel("origemD.uf","UF",[["",""],...UFS.map(u=>[u,u])],{re:true})}
+      ${inp("origemD.cep","CEP",{ph:"00000-000"})}
+      ${inp("origemD.pais","País",{ph:"Brasil"})}
+      ${inp("origemD.cnpj","CNPJ",{ph:"00.000.000/0000-00"})}
+      ${inp("origemD.telefone","Telefone (SAC)")}
+      ${inp("origemD.email","E-mail")}
+      ${chk("origemD.industria","Incluir “INDÚSTRIA BRASILEIRA”")}
+    </div>
+    <div class="small"><span class="muted">Como vai sair:</span> ${esc(origemTexto(R)||"—")}</div>
+  </div>
+  <div class="card stack"><div><h2>Serviço de inspeção</h2><p class="muted small">Carimbo e frase de registro (Decreto 9.013/2017, arts. 443, IX, e 464 a 467 para o SIF; SIE e SIM seguem o regulamento do estado ou município).</p></div>
+    <div class="grid3">
+      ${sel("inspecao.servico","Serviço de inspeção",SERVICOS,{re:true})}
+      ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.orgao",R.inspecao.servico==="SIE"?"Órgão estadual":"Município / órgão",{ph:R.inspecao.servico==="SIE"?"Ex.: CIDASC":"Ex.: Prefeitura de Pomerode"}):""}
+      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regEstab","Nº de registro do estabelecimento",{n:true}):""}
+      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regProduto","Nº de registro do produto",{n:true,hint:"Quando aplicável."}):""}
+      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.frase","Frase de registro (opcional)",{span:true,ph:fraseRegistro({inspecao:{...R.inspecao,frase:""}}),hint:"Em branco = frase padrão acima. Edite se o serviço exigir outro texto."}):""}
+    </div>
+  </div>
   <div class="card stack"><div><span class="eyebrow">Relatório para o cliente</span><h2>Dados do relatório “Dizeres de Rotulagem”</h2><p class="muted small">Aparecem no PDF do relatório, no modelo da Isadora. Os campos em branco não entram.</p></div>
     <div class="grid3">
       ${inp("relatorio.nome","Nome do produto no relatório",{ph:R.produto.nome||"DOCE DE LEITE 400g",hint:"Vai na capa e no topo de cada página. Em branco = nome do produto."})}
@@ -933,11 +1041,8 @@ function viewProduto(R,C){
     <div class="grid2">
       ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS."})}
       ${inp("relatorio.codigoBarras","Código de barras",{n:true})}
-      ${inp("relatorio.expressao","Indicação da expressão (registro)",{ph:"Registro no Ministério da Agricultura SIF/DIPOA sob nº 0000/0000."})}
       ${inp("relatorio.redes","Redes sociais e site",{area:true,ph:"@queijospomerode\nqueijospomerode.com.br"})}
       ${inp("relatorio.observacao","Observação em destaque (sai em vermelho)",{area:true,ph:"- verificar com o cliente se será a marca X ou Y"})}
-      ${chk("relatorio.sif","Incluir página do carimbo do SIF (Inspeção Federal)")}
-      ${R.relatorio?.sif?inp("relatorio.registroSif","Número de registro do estabelecimento",{n:true}):""}
     </div></div></div>`;
 }
 function compInputs(base,obj,o={}){
@@ -968,7 +1073,7 @@ function viewFormulacao(R,C){
             ${chk(p+".acucarAdic","É fonte de açúcar adicionado",{hint:"Açúcar, mel, xaropes, sucos concentrados usados para adoçar etc."})}
             ${chk(p+".omitir","Não listar nos ingredientes",{hint:"Água ou voláteis eliminados no processo (RDC 727/2022, art. 11, §4º)."})}
           </div>
-          ${i.aditivo?`<div class="grid2">${sel(p+".funcao","Função tecnológica principal",[["","Escolha…"],...FUNCOES.map(f=>[f,f])],{re:true})}${inp(p+".nomeDecl","Nome ou INS para declarar",{hint:"Deixe em branco para usar o nome do ingrediente. Tartrazina (INS 102) sempre por extenso."})}</div>`:""}
+          ${i.aditivo?`<div class="grid2">${sel(p+".funcao","Função tecnológica principal",[["","Escolha…"],...[...FUNCOES].sort((a,b)=>a.localeCompare(b,"pt")).map(f=>[f,f])],{re:true})}${inp(p+".nomeDecl","Nome ou INS para declarar",{hint:"Deixe em branco para usar o nome do ingrediente. Tartrazina (INS 102) sempre por extenso."})}</div>`:""}
         </div>
         <div class="stack"><div class="sec-t"><h3>Composição por 100 g</h3><span class="small muted">Use carboidratos disponíveis (sem fibra).</span></div>
           ${compInputs(p+".comp",i.comp,{auto:autoAd})}
@@ -980,16 +1085,17 @@ function viewFormulacao(R,C){
         </div>
         <div class="stack"><h3>Declarações</h3>
           <div class="grid2">
-            ${chk(p+".gluten","Contém glúten",{hint:"Lei 10.674/2003."})}
-            ${chk(p+".lactose","Lactose",{hint:"Marque se o ingrediente contém lactose. Informe a quantidade (g/100 g) em “Nutrientes não obrigatórios” para o sistema decidir sobre “CONTÉM LACTOSE”."})}
+            ${sel(p+".glutenR","Glúten",[["","Selecionar…"],["nao","Não contém glúten"],["sim","Contém glúten"]],{re:true,hint:"Obrigatório responder (Lei 10.674/2003)."})}
+            ${sel(p+".lactoseR","Lactose",[["","Selecionar…"],["nao","Não contém lactose"],["sim","Contém lactose"]],{re:true,hint:"Obrigatório responder. Se contém, informe a quantidade (g/100 g) em “Nutrientes não obrigatórios” para o sistema decidir sobre “CONTÉM LACTOSE”."})}
             ${chk(p+".ogm","É transgênico (OGM)",{hint:"Decreto 4.680/2003."})}
             ${i.ogm?inp(p+".gene","Espécie doadora do gene"):""}
           </div>
           <div class="stack"><span class="small muted" style="font-weight:600">Alergênicos (RDC 727/2022, Anexo III)</span>
-            <div class="alg">${Object.entries(i.alerg).filter(([,v])=>v).map(([k,v])=>`<span class="tag">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1])} · ${esc(ALG_ST[v])}<button aria-label="Remover" data-algdel="${ix}|${k}">×</button></span>`).join("")||`<span class="small muted">Nenhum alergênico marcado.</span>`}</div>
+            ${sel(p+".alergR","Contém ou pode conter alergênicos?",[["","Selecionar…"],["nao","Não"],["sim","Sim"]],{re:true,hint:"Obrigatório responder."})}
+            ${i.alergR==="sim"?`<div class="alg">${Object.entries(i.alerg).filter(([,v])=>v).map(([k,v])=>`<span class="tag">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1])} · ${esc(ALG_ST[v])}<button aria-label="Remover" data-algdel="${ix}|${k}">×</button></span>`).join("")||`<span class="small muted">Nenhum alergênico marcado.</span>`}</div>
             <div class="row"><select id="algk-${ix}" style="width:auto;flex:1 1 180px"><option value="">Selecionar alergênico…</option>${ALERG.map(a=>`<option value="${a[0]}">${a[1]}</option>`).join("")}</select>
               <select id="algs-${ix}" style="width:auto;flex:1 1 200px"><option value="">Selecionar situação…</option>${Object.entries(ALG_ST).map(([k,t])=>`<option value="${k}">${t}</option>`).join("")}</select>
-              <button class="mini" data-algadd="${ix}">Adicionar</button></div>
+              <button class="mini" data-algadd="${ix}">Adicionar</button></div>`:""}
             ${i.alerg.crustaceos?inp(p+".alergEsp","Espécie do crustáceo",{hint:"Obrigatório declarar a espécie (art. 13, parágrafo único)."}):""}
           </div>
         </div>
@@ -1011,10 +1117,14 @@ function viewFormulacao(R,C){
       <p class="muted small">Os nutrientes de todos os ingredientes ficam no produto; só a água sai. O sistema divide o total de nutrientes pela massa final.</p></div>
       <div class="grid3">${inp("concentracao.massaFinal","Massa final obtida (g)",{n:true})}</div>
       <div class="sumline" id="concsum">${concSum(C)}</div></div>`;}
+  const pend=pendDecl(R), temLeite=R.ingredientes.some(i=>i.alerg&&i.alerg.leite);
   return `<div class="stack">
+    ${pend.length?`<div class="alert warn"><b>Falta responder:</b> <span>${pend.map(x=>`${esc(x.nome)} (${x.f.join(", ")})`).join("; ")}. Sem essas respostas não dá para avançar.</span></div>`:""}
     <div class="card stack"><div class="sec-t"><div><span class="eyebrow">Formulação</span><h2>Ingredientes (${R.ingredientes.length})</h2></div><span class="small muted num">Total: ${br(tot,3)} g</span></div>
       <div class="stack">${cards}</div>
       <div class="row"><button class="primary" data-act="addIng">+ Adicionar ingrediente</button></div></div>
+    <div class="card stack"><h2>Espécie do leite</h2>
+      <div class="grid2">${inp("produto.especieLeite","Espécie do leite (se não for vaca)",{ph:temLeite?"vaca":"",hint:"Usado na advertência de alérgicos: ex. “cabra” vira “LEITE DE CABRA”. Em branco = vaca."})}</div></div>
     ${proc}
     <div class="card stack"><div class="sec-t"><h2>Resultado do cálculo</h2><span class="small muted">Atualiza enquanto você digita</span></div><div id="resumo">${resumoHTML(C)}</div></div>
   </div>`;
@@ -1037,7 +1147,7 @@ function viewPorcao(R,C){
       ${inp("porcao.ref",`Porção de referência (${un})`,{n:true})}
       ${C.individual?inp("porcao.individualMedida","Medida caseira (embalagem individual)",{ph:"1 pote, 1 unidade…",hint:"Na embalagem individual a medida caseira é a própria embalagem (art. 11, II)."}):inp("porcao.medida","Medida caseira",{ph:"2 colheres de sopa",hint:"Colher de sopa = 10 ml; xícara/copo = 200 ml (Anexo VII). Fração irredutível quando não inteira."})}
     </div>
-    <div class="sumline"><span>Conteúdo: <b>${br(C.cont,1)} ${un}</b></span><span>Embalagem individual: <b>${C.individual?"sim (≤ 2 porções)":"não"}</b></span><span>Porção declarada: <b>${br(C.porcao,1)} ${un}</b></span><span>${esc(C.porcoesTxt||"Sem “porções por embalagem” (embalagem individual)")}</span></div>
+    <div class="sumline"><span>Conteúdo: <b>${br(C.contPeso,1)} ${un}</b>${C.temDren?` · drenado: <b>${br(C.drenado,1)} ${un}</b> (base da porção)`:""}</span><span>Embalagem individual: <b>${C.individual?"sim (≤ 2 porções)":"não"}</b></span><span>Porção declarada: <b>${br(C.porcao,1)} ${un}</b></span><span>${esc(C.porcoesTxt||"Sem “porções por embalagem” (embalagem individual)")}</span></div>
   </div>
   <div class="card stack"><div><span class="eyebrow">Painel principal</span><h2>Medidas da embalagem</h2><p class="muted small">A área do painel principal define o tamanho da lupa e a altura mínima das advertências.</p></div>
     <div class="grid3">${inp("painel.largura","Largura do painel principal (cm)",{n:true})}${inp("painel.altura","Altura do painel principal (cm)",{n:true,hint:"Para rótulo redondo, use a área equivalente (π × r²) informando largura = área e altura = 1."})}
@@ -1048,15 +1158,15 @@ function viewPorcao(R,C){
       <div class="f span2"><span>Modelos da tabela (pode marcar mais de um)</span><div class="row" style="gap:6px 16px">${MODELOS_TAB.map(([k,n])=>`<label class="check"><input type="checkbox" data-modelo="${k}" id="mod-${k}" ${modelosTab(R).includes(k)?"checked":""}><span>${n}</span></label>`).join("")}</div><span class="hint">A ordem acima é a ordem de prioridade no relatório. Use o linear só quando a tabela não couber (RDC 429/2020, art. 17).</span></div>
       ${modelosTab(R).includes("linear")?inp("tabela.largLinear","Largura do modelo linear (mm)",{n:true}):""}
       ${(()=>{const n=C.lupa.nutrientes.length;const ops=Object.entries(LUPA_LAYOUTS).filter(([k,v])=>v.ok(Math.max(n,1))).map(([k,v])=>[k,v.t]);const cur=lupaModelo(R,Math.max(n,1));if(R.lupa.modelo!==cur)R.lupa.modelo=cur;return sel("lupa.modelo","Disposição da lupa",ops,{re:true,hint:n?`Variações da malha construtiva da Anvisa para ${n+1} blocos.`:"Este produto não precisa de lupa."})})()}
-      ${inp("textos.tamIng","Fonte da lista de ingredientes (pt)",{n:true})}
+      ${inp("textos.tamIng","Fonte da lista de ingredientes (pt)",{n:true,hint:"Sem tamanho na legislação; letras com no mínimo 1 mm (a partir de 5,5 pt em Arial)."})}
       ${inp("textos.largura","Largura do bloco de textos (mm)",{n:true})}
     </div>
     <div class="grid2">
-      ${chk("tabela.reduzida","Usar formatação reduzida (6 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
+      ${chk("tabela.reduzida","Usar formatação reduzida (título 8 pt, nutrientes 6 pt, valores 8 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
       ${R.tabela.lactoseGal&&!alegLac(R)?chk("tabela.lactoseGal","Produto com alegação de restrição de lactose",{hint:"Escolha a alegação na etapa Produto; depois desmarque aqui."}):`<div class="small muted">${alegLac(R)?`Alegação “${esc(alegLac(R))}”: a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º).`:"Sem alegação sobre lactose (escolha na etapa Produto, se houver)."}</div>`}
     </div>
     <div class="grid2">
-      ${sel("lupa.anexo16","Enquadramento no Anexo XVI (IN 75/2020)",[["","Não está no Anexo XVI (regra geral)"],["cond","Itens 1 a 6 (queijos, leites fermentados, carnes…)"],["total","Itens 7 a 18 (leites, óleos, sal…): sempre vedada"]],{re:true,hint:"Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170)."})}
+      ${(()=>{ const leg=R.lupa.item16==null&&R.lupa.anexo16; return `<label class="f">Enquadramento no Anexo XVI (IN 75/2020)<select data-bind="lupa.item16" id="f-lupa.item16" data-rerender="1"><option value="" ${!R.lupa.item16&&!leg?"selected":""}>Não está no Anexo XVI (regra geral)</option>${leg?`<option value="" selected disabled>Grupo não especificado (${R.lupa.anexo16==="cond"?"itens 1 a 6":"itens 7 a 18"}) — escolha o grupo</option>`:""}<optgroup label="Vedação condicional: lupa só do nutriente alterado por ingrediente opcional">${ANEXO16.slice(0,6).map((n,i)=>`<option value="${i+1}" ${String(R.lupa.item16)===String(i+1)?"selected":""}>${i+1}. ${esc(n)}</option>`).join("")}</optgroup><optgroup label="Lupa sempre vedada">${ANEXO16.slice(6).map((n,i)=>`<option value="${i+7}" ${String(R.lupa.item16)===String(i+7)?"selected":""}>${i+7}. ${esc(n)}</option>`).join("")}</optgroup></select><span class="hint">Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170).</span></label>`})()}
       ${C.lupa.modo16==="cond"?sel("lupa.temOpcional","O produto tem ingrediente opcional do RTIQ/PIQ?",[["","Selecionar…"],["nao","Não, só ingredientes obrigatórios"],["sim","Sim"]],{re:true,hint:"Só com ingredientes obrigatórios, a lupa fica vedada mesmo acima dos limites (Anvisa, P&R 168)."}):""}
     </div>
     ${C.lupa.modo16==="cond"&&C.lupa.temOpc==="sim"?`<div class="stack" style="gap:8px"><b style="font-size:.9rem">Qual ingrediente é o opcional?</b>
@@ -1072,7 +1182,7 @@ function viewRotulo(R,C){
   const T=textos(R,C); const tabs=modelosTab(R).map(m=>layTabela(R,C,m)); const tab=tabs[0]; const lup=layLupa(R,C); const dec=layDecl(R,C,T); const Sz=tamanhos(R,C);
   const z=S.real?3.7795:S.zoom*3.7795; const P=R.produto;
   const conteudoTxt=P.conteudo?`${P.conteudo} ${P.unidade}`:"—";
-  const altCont=(()=>{const c=C.cont;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
+  const altCont=(()=>{const c=C.contPeso;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
   return `<div class="stack">
   ${C.E.length||C.W.length||C.I.length?`<div class="card stack"><h2>Pendências e avisos</h2>${alertsHTML(C)}</div>`:`<div class="alert info"><b>Pronto.</b> <span>Nenhuma pendência encontrada nos dados informados.</span></div>`}
   <div class="row" style="justify-content:space-between"><h2>Prévia do rótulo</h2><div class="seg"><button class="${!S.real?"on":""}" data-zoom="0">Ampliado</button><button class="${S.real?"on":""}" data-zoom="1">Tamanho real</button></div></div>
@@ -1080,10 +1190,10 @@ function viewRotulo(R,C){
     <div class="stack">
       ${tabs.map((tb,i)=>`<div><span class="eyebrow">Tabela nutricional · ${i+1}ª opção · ${esc(NOME_MODELO[tb.modelo])}${R.tabela.reduzida&&tb.modelo!=="linear"?" · reduzida":""}</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(tb,z)}</div>
-        <div class="paper-cap"><span class="num">${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm</span><span>Arial ${tb.modelo==="linear"||R.tabela.reduzida?"8/6":"10/8"} pt · linhas e letras 100% pretas em fundo branco</span></div></div>`).join("")}
+        <div class="paper-cap"><span><b>Fonte:</b> ${tb.modelo==="linear"?"título “INFORMAÇÃO NUTRICIONAL” 8 pt negrito · demais informações 6 pt":`título “INFORMAÇÃO NUTRICIONAL” ${R.tabela.reduzida?"8":"10"} pt negrito · porções, colunas e nutrientes ${R.tabela.reduzida?"6":"8"} pt · valores 8 pt · rodapé 6 pt`} (Anexo XII, IN 75/2020)</span><span>Arial, Arial Narrow, Helvetica ou Helvetica Condensed · 100% preto em fundo branco</span></div></div>`).join("")}
       <div><span class="eyebrow">Lista de ingredientes e advertências</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(dec,z)}</div>
-        <div class="paper-cap"><span class="num">${brFix(dec.w,1)} × ${brFix(dec.h,1)} mm</span><span>Ingredientes ${br(Sz.ingPt,1)} pt · advertências ${br(Sz.avisoPt,1)} pt negrito (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)</span></div></div>
+        <div class="paper-cap"><span><b>Ingredientes:</b> ${br(Sz.ingPt,1)} pt (letras com ${brFix(Sz.ingAltX,2)} mm; mínimo 1 mm)</span><span><b>Alérgicos, lactose e glúten:</b> ${br(Sz.avisoPt,1)} pt negrito, caixa alta (${brFix(Sz.avisoAlt,2)} mm; mínimo ${Sz.minAvisoMM} mm e nunca menor que a lista de ingredientes — RDC 727/2022, art. 15)</span></div>${Sz.ingPtPedido<Sz.ingPtMin?`<div class="alert warn" style="margin-top:6px">A fonte pedida (${br(Sz.ingPtPedido,1)} pt) daria letras menores que 1 mm; usei ${br(Sz.ingPt,1)} pt.</div>`:""}</div>
     </div>
     <div class="stack">
       <div><span class="eyebrow">Rotulagem nutricional frontal</span>
@@ -1093,9 +1203,9 @@ function viewRotulo(R,C){
       </div>
       ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(),z*0.6)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">Símbolo e expressão no painel principal (Decreto 4.680/2003). Confira o tamanho na Portaria MJ 2.658/2003.</p></div>`:""}
       <div class="card stack"><h3>Painel principal</h3>
-        <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont} (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
+        <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação${C.lupa.precisa?"; com lupa, fora da metade superior do painel principal e com letras não maiores que as da lupa (RDC 429/2020, art. 30)":""}</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${C.temDren&&P.drenado?` · <b>peso drenado ${esc(P.drenado)} ${esc(P.unidade)}</b>`:""}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont} (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
         <h3>Demais informações</h3>
-        <dl class="kv"><dt>Conservação</dt><dd>${esc(P.conservacao||"—")}</dd><dt>Validade</dt><dd>${esc(P.validade||"—")}${P.validadeAberto?` · após aberto: ${esc(P.validadeAberto)}`:""}</dd><dt>Origem</dt><dd>${esc(P.origem||"—")}</dd></dl></div>
+        <dl class="kv"><dt>Conservação</dt><dd>${esc(P.conservacao||"—")}</dd><dt>Validade</dt><dd>${esc(P.validade||"—")}${P.validadeAberto?` · após aberto: ${esc(P.validadeAberto)}`:""}</dd><dt>Origem</dt><dd>${esc(origemTexto(R)||"—")}</dd>${fraseRegistro(R)?`<dt>Registro</dt><dd>${esc(fraseRegistro(R))}</dd>`:""}</dl></div>
     </div>
   </div>
   <div class="card stack"><div class="sec-t"><h2>Textos gerados</h2><span class="small muted">Edite só se precisar ajustar a redação; o original fica guardado.</span></div>
@@ -1151,30 +1261,28 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...LARANJA); doc.text("Consultoria Isadora Andrade",M,16);
   doc.setFontSize(19); doc.setTextColor(...TINTA); const tit=doc.splitTextToSize(P.nome||"Rótulo",W-36).slice(0,2); tit.forEach((l,i)=>doc.text(l,M,26+i*7.5));
   let y=26+tit.length*7.5+1.5;
-  doc.setFontSize(10.5); doc.setTextColor(...CINZA);
-  [["Documento","Ficha do rótulo"],["Tipo de cálculo",TIPOS[R.tipo].t]].forEach(([k,v])=>{doc.setFont("helvetica","bold");doc.text(k+":",M,y);doc.setFont("helvetica","normal");doc.text(String(v),M+31,y);y+=6});
-  y=Math.max(y+2,44);
+  y=Math.max(y+4,44);
   const need=h=>{if(y+h>BASE){doc.addPage();y=M}};
   const h2=t=>{need(12);y+=3;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
-  // resumo em destaque, como o "Total de horas" do extrato
-  {const res=[`Porção ${br(C.porcao,1)} ${C.un}`,tabs.map((tb,i)=>`Tabela ${tabs.length>1?(i+1)+"ª ":""}${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm`).join("   ·   "),C.lupa.precisa?`Lupa: ALTO EM ${C.lupa.nutrientes.join(", ")}`:"Sem lupa"].join("   ·   ");
-    doc.setFillColor(...CLARO); doc.roundedRect(M,y,W,12,2,2,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...TINTA);
-    doc.text(doc.splitTextToSize(res,W-10)[0],M+5,y+7.6); y+=17}
-  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if(alegLac(R)) kv("Alegação de lactose",`${alegLac(R)} — junto à denominação de venda (RDC 135/2017). Teor: ${br(C.b100.lac*1000,0)} mg de lactose por 100 ${C.un}.`); kv("Marca",P.marca); kv("Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:"");
+  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if(alegLac(R)) kv("Alegação de lactose",`${alegLac(R)} — junto à denominação de venda (RDC 135/2017). Teor: ${br(C.b100.lac*1000,0)} mg de lactose por 100 ${C.un}.${C.lupa.precisa?" Como o produto tem lupa, a alegação não pode ficar na metade superior do painel principal nem ter letras maiores que as da lupa (RDC 429/2020, art. 30).":""}`); kv("Marca",P.marca); kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""); if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} (produto sólido em meio líquido — declarar PESO LÍQUIDO e PESO DRENADO, Portaria Inmetro 249/2021)`);
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
-  para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8,cor:CINZA});
-  tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]}) — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;});
-  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Validade",P.validade+(P.validadeAberto?` · após aberto: ${P.validadeAberto}`:"")); kv("Identificação de origem",P.origem); if(P.descricao) kv("Descrição",P.descricao);
-  h2("Base do cálculo"); kv("Porção",`${br(C.porcao,1)} ${C.un}${C.medida?` (${C.medida})`:""}${C.individual?" — embalagem individual":""}`); kv("Porções",C.porcoesTxt||"Não se aplica"); kv("Massa final",`${br(C.massaFinal,1)} g`);
-  if(R.tipo==="balanco") kv("Balanço",`Tanque ${br(C.extra.massaTanque,1)} g; produto-base ${br(C.extra.massaBase,1)} g; ${R.balanco.subproduto||"subproduto"} ${br(C.extra.massaSub,1)} g; adicionado depois ${br(C.extra.massaDepois,1)} g`);
-  if(R.tipo==="concentracao") kv("Concentração",`Entrada ${br(C.extra.massaEntrada,1)} g; água evaporada ${br(C.extra.evaporado,1)} g; fator ${br(C.extra.fator,3)}`);
+  para(`Fontes: a lista de ingredientes não tem tamanho fixado; letras com no mínimo 1 mm (sugestão: ${br(Sz.ingPt,1)} pt). Alérgicos, lactose e glúten: caixa alta e negrito, logo após a lista de ingredientes, altura mínima de ${Sz.minAvisoMM} mm e nunca menor que a letra da lista de ingredientes (RDC 727/2022, arts. 15 e 19; sugestão: ${br(Sz.avisoPt,1)} pt).`,{size:8,cor:CINZA});
+  tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
+    para(tab.modelo==="linear"?`Fonte: título "INFORMAÇÃO NUTRICIONAL" 8 pt negrito; demais informações 6 pt.`:`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${R.tabela.reduzida?8:10} pt negrito; porções, títulos das colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt (Anexo XII, IN 75/2020). Arial, Arial Narrow, Helvetica ou Helvetica Condensed, 100% preto em fundo branco.`,{size:8,cor:CINZA}); y+=2;});
+  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R)); if(P.descricao) kv("Descrição",P.descricao);
+  {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico}`);
+    if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
+    kv("Frase obrigatória",fraseRegistro(R)+" (Decreto 9.013/2017, art. 443, IX)");
+    if(I.servico==="SIF"){const cs=carimboSIF(R,C); kv("Carimbo SIF",`Modelo 3 (circular): “Ministério da Agricultura” na borda superior externa, “Brasil” na parte superior interna, “Inspecionado” ao centro, número ${I.regEstab||"000"} abaixo (sem “nº”) e “S.I.F.” na borda inferior interna; cor única, de preferência preta, em destaque.`); kv("Diâmetro do carimbo",`${cs.d} (${cs.motivo}) — Decreto 9.013/2017, arts. 464 a 467.`);}
+    else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}, com o número de registro do estabelecimento.`);
+  }}
   if(C.E.length||C.W.length){h2("Pendências"); C.E.concat(C.W).forEach(t=>para("• "+t,{size:8.5}))}
-  para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
+  para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
   const emitido=new Date().toLocaleDateString("pt-BR"), n=doc.internal.getNumberOfPages();
   for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
     doc.text(`Emitido em ${emitido}`,M,297-9); doc.text(`Página ${i} de ${n}`,210-M,297-9,{align:"right"})}
@@ -1200,10 +1308,10 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   s1.addRow([]); s1.addRow([]);
   if(logo){const id=wb.addImage({base64:logo.b64,extension:"jpeg"}); s1.addImage(id,{tl:{col:1.8,row:1.3},ext:{width:90,height:90}})}
   secao(s1.addRow(["PAINEL PRINCIPAL"]));
-  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
+  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],...(C.temDren?[["Peso drenado",`${P.drenado} ${P.unidade}`]]:[]),["Descrição",P.descricao],["Identificação de origem",origemTexto(R)],["Serviço de inspeção",R.inspecao?.servico&&R.inspecao.servico!=="nenhum"?R.inspecao.servico:""],["Frase de registro",fraseRegistro(R)],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
-  tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm · Arial ${tb.modelo==="linear"||R.tabela.reduzida?"6/8":"8/10"} pt`));
+  tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${tb.modelo==="linear"?"título 8 pt negrito; demais 6 pt":`título ${R.tabela.reduzida?8:10} pt negrito; porções, colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt`}`));
   const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes ${br(Sz.ingPt,1)} pt; advertências ${br(Sz.avisoPt,1)} pt negrito caixa alta (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)`);
   // Aba Tabela nutricional
   const s2=wb.addWorksheet("Tabela nutricional",{views:[{showGridLines:false}]}); s2.columns=[{width:2},{width:30},{width:10},{width:10},{width:8},{width:3},{width:40}];
@@ -1223,21 +1331,79 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   const mm2px=96/25.4; let rowImg=3;
   for(const tb of tabs){const pT=await pngOf(tb,300); const idT=wb.addImage({base64:"data:image/png;base64,"+u8b64(pT.u8),extension:"png"}); s2.addImage(idT,{tl:{col:6,row:rowImg},ext:{width:tb.w*mm2px,height:tb.h*mm2px}}); rowImg+=Math.ceil(tb.h*mm2px/20)+2;}
   if(lup){const pL=await pngOf(lup,300);const idL=wb.addImage({base64:"data:image/png;base64,"+u8b64(pL.u8),extension:"png"});s2.addImage(idL,{tl:{col:6,row:rowImg},ext:{width:lup.w*mm2px,height:lup.h*mm2px}})}
-  // Aba Cálculos
-  const s3=wb.addWorksheet("Cálculos"); const hdr=["Ingrediente","Qtd (g)","% formulação",...KEYS.map(k=>COMP_LBL[k]),"Fonte"].concat(R.tipo==="balanco"?["Etapa"]:[]);
-  secao(s3.addRow(["COMPOSIÇÃO DOS INGREDIENTES (por 100 g)"])); const hr=s3.addRow(hdr); hr.font=A(9,true); cab(hr);
-  C.ings.forEach(i=>{const c=compOf(i);s3.addRow([i.nome,nz(i.qtd),C.tot.massa?nz(i.qtd)/C.tot.massa*100:0,...KEYS.map(k=>c[k]),i.fonte].concat(R.tipo==="balanco"?[i.etapa==="depois"?"adicionado depois":"tanque"]:[])).font=A(9)});
-  s3.addRow([]); secao(s3.addRow(["CONTRIBUIÇÃO NA FORMULAÇÃO (quantidade × valor/100)"])); {const r=s3.addRow(["Ingrediente","Qtd (g)",...KEYS.map(k=>COMP_LBL[k])]);r.font=A(9,true);cab(r)}
-  C.ings.forEach(i=>{const c=compOf(i),q=nz(i.qtd);s3.addRow([i.nome,q,...KEYS.map(k=>q*c[k]/100)]).font=A(9)});
-  {const r=s3.addRow(["Total",C.tot.massa,...KEYS.map(k=>C.tot.n[k])]);r.font=A(9,true);r.eachCell(c=>c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F4F2"}})}
+  // Aba Cálculos — com fórmulas, para conferir de onde sai cada número
+  const s3=wb.addWorksheet("Cálculos"); wb.calcProperties={fullCalcOnLoad:true};
+  const L=n=>{let s="";n++;while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s}; // índice 0 → A
+  const KK=[...OBRIG,...EXTRA_K.filter(k=>C.ings.some(i=>extrasOf(i).includes(k)))];
+  const F=(f,v)=>({formula:f,result:typeof v==="number"?(isFinite(v)?v:0):v});
+  const hdrRow=(arr)=>{const r=s3.addRow(arr);r.font=A(9,true);cab(r);return r};
+  const nota=txt=>{const r=s3.addRow([txt]);r.font={name:"Arial",size:8,italic:true,color:{argb:CZ}};};
+  const bal=R.tipo==="balanco", conc=R.tipo==="concentracao";
+  // 1) composição por 100 g
+  secao(s3.addRow(["1. COMPOSIÇÃO DOS INGREDIENTES (por 100 g) — valores informados"]));
+  hdrRow(["Ingrediente","Qtd (g)","% da formulação",...KK.map(k=>COMP_LBL[k]),...(bal?["Etapa"]:[]),"Fonte"]);
+  const r0=s3.rowCount+1, nI=C.ings.length, r1=r0+nI-1;
+  C.ings.forEach((ing,ix)=>{const c=compOf(ing), rr=r0+ix;
+    s3.addRow([ing.nome,nz(ing.qtd),F(`B${rr}/SUM($B$${r0}:$B$${r1})*100`,C.tot.massa?nz(ing.qtd)/C.tot.massa*100:0),...KK.map(k=>c[k]),...(bal?[ing.etapa==="depois"?"depois":"tanque"]:[]),ing.fonte||""]).font=A(9)});
+  const colK=k=>L(3+KK.indexOf(k)); const colEt=L(3+KK.length);
+  nota("Açúcares adicionados em branco num ingrediente marcado como fonte de açúcar adicionado = açúcares totais (ou carboidratos) desse ingrediente.");
   s3.addRow([]);
-  if(R.tipo==="balanco"){const X=C.extra;secao(s3.addRow(["BALANÇO DE MASSA"]));[["Massa no tanque (g)",X.massaTanque],["Massa do produto-base (g)",X.massaBase],[`Massa de ${R.balanco.subproduto||"subproduto"} (g)`,X.massaSub],["Rendimento (%)",X.rendPct],["Adicionado depois (g)",X.massaDepois]].forEach(a=>s3.addRow(a).font=A(9));
-    s3.addRow([`Composição do ${R.balanco.subproduto||"subproduto"} /100 g`,"",...KEYS.map(k=>nz(R.balanco.comp[k]))]).font=A(9); s3.addRow(["Produto-base /100 g","",...KEYS.map(k=>X.base100[k])]).font=A(9); s3.addRow([])}
-  if(R.tipo==="concentracao"){const X=C.extra;secao(s3.addRow(["CONCENTRAÇÃO"]));[["Massa de entrada (g)",X.massaEntrada],["Massa final (g)",C.massaFinal],["Água evaporada (g)",X.evaporado],["Fator de concentração",X.fator]].forEach(a=>s3.addRow(a).font=A(9));s3.addRow([])}
-  secao(s3.addRow(["RESULTADO"])); {const r=s3.addRow(["Nutriente",`Calculado /100 ${C.un}`,"Calculado /porção",`Rótulo 100 ${C.un}`,"Rótulo porção","%VD"]);r.font=A(9,true);cab(r)}
-  C.linhas.forEach(x=>s3.addRow([x.l,x.raw100,x.rawP,x.v100,x.vp,x.vd]).font=A(9));
-  s3.addRow([]); s3.addRow([`Porção ${br(C.porcao,1)} ${C.un}; massa final ${br(C.massaFinal,1)} g; valor energético = 4×(carboidratos+proteínas) + 9×gorduras + 2×fibras (IN 75/2020).`]).font=A(9);
-  s3.getColumn(1).width=34; for(let i=2;i<=15;i++) s3.getColumn(i).width=13;
+  // 2) contribuição
+  secao(s3.addRow(["2. CONTRIBUIÇÃO DE CADA INGREDIENTE (quantidade × valor por 100 g ÷ 100)"]));
+  hdrRow(["Ingrediente","Qtd (g)","",...KK.map(k=>COMP_LBL[k]),...(bal?["Etapa"]:[])]);
+  const c0=s3.rowCount+1, c1=c0+nI-1;
+  C.ings.forEach((ing,ix)=>{const rr=r0+ix, cr=c0+ix; const c=compOf(ing),q=nz(ing.qtd);
+    s3.addRow([F(`A${rr}`,ing.nome),F(`B${rr}`,q),"",...KK.map(k=>F(`$B${cr}*${colK(k)}${rr}/100`,q*c[k]/100)),...(bal?[F(`${colEt}${rr}`,ing.etapa==="depois"?"depois":"tanque")]:[])]).font=A(9)});
+  const tot=s3.addRow(["Total",F(`SUM(B${c0}:B${c1})`,C.tot.massa),"",...KK.map(k=>F(`SUM(${colK(k)}${c0}:${colK(k)}${c1})`,C.tot.n[k]))]); tot.font=A(9,true); tot.eachCell(c=>c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF2F4F2"}});
+  const rTot=tot.number; s3.addRow([]);
+  // 3) massa final e nutrientes do produto
+  secao(s3.addRow([bal?"3. BALANÇO DE MASSA":conc?"3. CONCENTRAÇÃO":"3. MASSA FINAL"]));
+  let rMF, rN; const N0={};
+  if(bal){const X=C.extra, B=R.balanco;
+    const rTq=s3.addRow(["Massa no tanque (g)",F(`SUMIF(${colEt}${c0}:${colEt}${c1},"tanque",B${c0}:B${c1})`,X.massaTanque)]).number;
+    const rDp=s3.addRow(["Adicionado depois (g)",F(`SUMIF(${colEt}${c0}:${colEt}${c1},"depois",B${c0}:B${c1})`,X.massaDepois)]).number;
+    const rBase=B.modo==="massa"? s3.addRow(["Massa do produto-base obtida (g) — informada",nz(B.massaBase)]).number
+      : (()=>{const rr=s3.addRow(["Rendimento (%) — informado",nz(B.rendimento)]).number; return s3.addRow(["Massa do produto-base (g)",F(`B${rTq}*B${rr}/100`,X.massaBase)]).number})();
+    const rSub=s3.addRow([`Massa de ${B.subproduto||"subproduto"} retirada (g)`,F(`B${rTq}-B${rBase}`,X.massaSub)]).number;
+    rMF=s3.addRow(["Massa final do produto (g)",F(`B${rBase}+B${rDp}`,C.massaFinal)]).number;
+    s3.addRow([]); hdrRow(["",`${B.subproduto||"Subproduto"} /100 g (informado)`,"",...KK.map(k=>COMP_LBL[k])]);
+    const rSc=s3.addRow(["Composição do subproduto","","",...KK.map(k=>nz(B.comp[k]))]).number;
+    hdrRow(["","","",...KK.map(k=>COMP_LBL[k])]);
+    rN=s3.addRow(["Nutrientes no produto final","","",...KK.map(k=>F(`MAX(0,SUMIF($${colEt}$${c0}:$${colEt}$${c1},"tanque",${colK(k)}${c0}:${colK(k)}${c1})-$B$${rSub}*${colK(k)}${rSc}/100)+SUMIF($${colEt}$${c0}:$${colEt}$${c1},"depois",${colK(k)}${c0}:${colK(k)}${c1})`,C.N[k]))]).number;
+    nota("Nutrientes = (o que entrou no tanque − o que saiu com o subproduto) + o que foi adicionado depois.");
+  } else if(conc){
+    rMF=s3.addRow(["Massa final obtida (g) — informada (pesar o produto pronto)",C.massaFinal]).number;
+    s3.addRow(["Água evaporada (g)",F(`B${rTot}-B${rMF}`,C.extra.evaporado)]); s3.addRow(["Fator de concentração",F(`B${rTot}/B${rMF}`,C.extra.fator)]);
+    hdrRow(["","","",...KK.map(k=>COMP_LBL[k])]);
+    rN=s3.addRow(["Nutrientes no produto final","","",...KK.map(k=>F(`${colK(k)}${rTot}`,C.N[k]))]).number;
+    nota("Na concentração só sai água: os nutrientes são os mesmos que entraram e a massa é a final pesada.");
+  } else {
+    rMF=s3.addRow(["Massa final (g) = soma dos ingredientes",F(`B${rTot}`,C.massaFinal)]).number;
+    hdrRow(["","","",...KK.map(k=>COMP_LBL[k])]);
+    rN=s3.addRow(["Nutrientes no produto final","","",...KK.map(k=>F(`${colK(k)}${rTot}`,C.N[k]))]).number;
+  }
+  s3.addRow([]);
+  // 4) resultado por 100 g e por porção
+  secao(s3.addRow([`4. RESULTADO POR 100 ${C.un.toUpperCase()} E POR PORÇÃO`]));
+  const rDen=s3.addRow([C.liquido?"Densidade (g/ml)":"Base de cálculo",C.liquido?C.dens:"100 g"]).number;
+  const rPor=s3.addRow([`Porção declarada (${C.un})`,C.porcao]).number;
+  hdrRow(["Nutriente",`Por 100 ${C.un}`,"Por porção","VDR","%VD (calculado)","Rótulo 100 "+C.un,"Rótulo porção","Rótulo %VD"]);
+  const rowOf={};
+  KK.forEach(k=>{const d=NUT[k]; const rr=s3.rowCount+1; rowOf[k]=rr;
+    const f100=`${colK(k)}${rN}/$B$${rMF}*100`+(C.liquido?`*$B$${rDen}`:"");
+    const ln=C.linhas.find(x=>x.k===k)||{};
+    s3.addRow([`${d.l} (${d.u})`,F(f100,C.b100[k]),F(`B${rr}*$B$${rPor}/100`,C.pv[k]),d.vdr||"",d.vdr?F(`ROUND(C${rr}/D${rr}*100,0)`,C.pv[k]/d.vdr*100):"",ln.v100??"(não declarado)",ln.vp??"",ln.vd??""]).font=A(9)});
+  {const rr=s3.rowCount+1; const g=k=>rowOf[k];
+    s3.addRow(["Valor energético (kcal)",F(`4*B${g("carb")}+4*B${g("prot")}+9*B${g("gord")}+2*B${g("fibra")}`,C.e100),F(`4*C${g("carb")}+4*C${g("prot")}+9*C${g("gord")}+2*C${g("fibra")}`,C.eP),2000,F(`ROUND(C${rr}/D${rr}*100,0)`,C.eP/20),C.linhas[0].v100,C.linhas[0].vp,C.linhas[0].vd]).font=A(9,true);}
+  nota("Valor energético = 4 × (carboidratos + proteínas) + 9 × gorduras totais + 2 × fibras (Anexo XXII, IN 75/2020).");
+  nota("As colunas “Rótulo” trazem os valores já arredondados pelo sistema (Anexo III) e zerados quando não significativos (Anexo IV).");
+  s3.addRow([]);
+  // 5) lupa
+  secao(s3.addRow(["5. ROTULAGEM NUTRICIONAL FRONTAL (Anexo XV, IN 75/2020)"]));
+  hdrRow(["Nutriente",`Por 100 ${C.un}`,"Limite","Acima do limite?","No rótulo"]);
+  [["acAdd","AÇÚCAR ADICIONADO"],["sat","GORDURA SATURADA"],["sodio","SÓDIO"]].forEach(([k,nm])=>{const rr=s3.rowCount+1; const lim=C.lupa.lim[k];
+    s3.addRow([NUT[k].l,F(`B${rowOf[k]}`,C.b100[k]),lim,F(`IF(B${rr}>=C${rr},"SIM","não")`,C.b100[k]>=lim?"SIM":"não"),C.lupa.nutrientes.includes(nm)?"ALTO EM "+nm:C.lupa.vedados.includes(nm)?"Vedada (Anexo XVI)":"—"]).font=A(9)});
+  s3.getColumn(1).width=44; for(let i=2;i<=KK.length+5;i++) s3.getColumn(i).width=14;
   const buf=await wb.xlsx.writeBuffer(); return new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
 }
 function u8b64(u8){let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s)}
@@ -1320,15 +1486,16 @@ async function relatorioPDF(R,C,T){
   doc.splitTextToSize(nomeRel.toUpperCase(),480).forEach(l=>{doc.text(l,59.5,yc);yc+=36});
   doc.setFontSize(20); doc.text(`Versão ${versao} - ${dataBR}`,378.8,774.4); doc.text(RD.cidade||"Blumenau - SC",378.8,802.2);
   // ================= PAINEL FRONTAL =================
-  const pesoMin=(()=>{const c=C.cont;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
+  const pesoMin=(()=>{const c=C.contPeso;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
   cabecalho("Dizeres de Rotulagem","PAINEL FRONTAL");
   bloco("Denominação de venda:",(P.denominacao||"").toUpperCase(),"A informação deve estar legível, visível, em cor contrastante com a do fundo do rótulo (ou do alimento, caso a embalagem seja transparente), uniformes em corpo e cor, sem intercalação de desenhos e outros dizeres.\nA altura mínima das letras não deverá ser inferior a 1/3 da maior inscrição do rótulo incluindo a marca."); espaco();
   if((RD.fantasia||"").trim()){bloco("Denominação consagrada, de fantasia, de fábrica ou marca registrada",RD.fantasia.toUpperCase(),"A informação não poderá encontrar-se em caracteres superiores a 2/3 dois terços da denominação de venda do produto."); espaco();}
-  bloco(C.liquido?"Volume líquido:":"Peso líquido:",P.conteudo?`${P.conteudo} ${P.unidade}`:"",[{t:"A informação deve estar legível, visível, em cor contrastante com a do fundo do rótulo (ou do alimento, caso a embalagem seja transparente).\nA altura da fonte com que a informação deve ser escrita, deve ser de, no mínimo, "},{t:pesoMin,c:REL.laranja},{t:".\nOs caracteres utilizados para a grafia dos símbolos das unidades de medida deverão ter a altura mínima de 2/3 (dois terços) da altura dos algarismos.\nA largura dos caracteres alfanuméricos da indicação quantitativa do conteúdo líquido não poderá ser inferior a 2/3 (dois terços) de sua altura."}]);
+  bloco(C.liquido?"Volume líquido:":"Peso líquido:",P.conteudo?`${P.conteudo} ${P.unidade}`+(C.temDren&&P.drenado?`
+PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar legível, visível, em cor contrastante com a do fundo do rótulo (ou do alimento, caso a embalagem seja transparente).\nA altura da fonte com que a informação deve ser escrita, deve ser de, no mínimo, "},{t:pesoMin,c:REL.laranja},{t:".\nOs caracteres utilizados para a grafia dos símbolos das unidades de medida deverão ter a altura mínima de 2/3 (dois terços) da altura dos algarismos.\nA largura dos caracteres alfanuméricos da indicação quantitativa do conteúdo líquido não poderá ser inferior a 2/3 (dois terços) de sua altura."}]);
   if((RD.alegacaoLactose||"").trim()){
     cabecalho("Dizeres de Rotulagem","PAINEL FRONTAL");
     bullet("Alegação nutricional sobre lactose:"); y+=LH*0.0; precisa(LH*2); y=escrever([{t:RD.alegacaoLactose.toUpperCase(),f:"PoppinsLight"}],X0,y+LH,{center:true})+LH;
-    guia(`A alegação nutricional sobre "${RD.alegacaoLactose.toUpperCase()}", pode ser utilizada em destaque, no painel frontal ou demais painéis.`);
+    guia(C.lupa.precisa?`Como o produto tem rotulagem nutricional frontal (lupa), a alegação "${RD.alegacaoLactose.toUpperCase()}" não pode ficar na metade superior do painel principal nem ter caracteres maiores que os da lupa (RDC 429/2020, art. 30). Pode ficar na metade inferior do painel principal ou nos demais painéis.`:`A alegação nutricional sobre "${RD.alegacaoLactose.toUpperCase()}", pode ser utilizada em destaque, no painel frontal ou demais painéis.`);
   }
   // ================= DEMAIS PAINÉIS =================
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
@@ -1341,17 +1508,21 @@ async function relatorioPDF(R,C,T){
   if((P.conservacao||"").trim()){bullet("Conservação"); valor({t:P.conservacao.toUpperCase(),f:"PoppinsLight"}); espaco();}
   if(T.ogm){bloco("Declaração de transgênicos",T.ogm,"A expressão deve estar no painel principal, junto ao símbolo “T” (triângulo amarelo com a letra T em preto), conforme o Decreto 4.680/2003 e a Portaria 2.658/2003. A espécie doadora do gene deve constar na lista de ingredientes."); espaco();}
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
-  bullet("Identificação de origem:"); valor({t:P.origem||"",f:"PoppinsLight"});
+  bullet("Identificação de origem:"); valor({t:origemTexto(R),f:"PoppinsLight"});
   y+=LH; guia("As informações devem estar legíveis, visíveis, fontes de no mínimo 1 mm e em cor contrastantes com a do fundo do rótulo."); espaco();
   if((RD.redes||"").trim()){bullet("Informações de redes sociais"); valor({t:RD.redes,f:"PoppinsLight"});}
   if((RD.observacao||"").trim()){espaco(); valor({t:RD.observacao,f:"PoppinsLight",c:REL.vermelho});}
   if((RD.codigoBarras||"").trim()){espaco(); bullet("Código de barras"); valor({t:RD.codigoBarras,f:"PoppinsLight"});}
-  if((RD.expressao||"").trim()){espaco(); bullet("Indicação da expressão"); valor({t:RD.expressao,f:"PoppinsLight"});}
-  if(RD.sif){
+  const INS=R.inspecao||{}, frase=fraseRegistro(R);
+  if(frase){espaco(); bloco("Indicação da expressão (registro):",[{t:frase,f:"PoppinsLight"}],"Obrigatória no rótulo: indicação do número de registro do produto junto ao serviço de inspeção (Decreto 9.013/2017, art. 443, IX).");}
+  if(INS.servico==="SIF"){
     cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
+    const cs=carimboSIF(R,C);
     bullet("Carimbo oficial da Inspeção Federal"); y+=LH;
-    y=escrever([{t:`O carimbo deve seguir o modelo abaixo, com o número de registro do estabelecimento ${RD.registroSif||"000"}.`}],X0,y)+LH*0.4;
+    y=escrever([{t:`O carimbo deve seguir o modelo abaixo (modelo 3, circular), com o número de registro do estabelecimento ${INS.regEstab||"000"}, em cor única, de preferência preta. Diâmetro: `},{t:cs.d,f:"Poppins",c:REL.vermelho},{t:` (${cs.motivo}) — Decreto 9.013/2017, arts. 464 a 467.`}],X0,y)+LH*0.4;
     if(A.carimbo) doc.addImage(A.carimbo,"PNG",134.8,y,291.1,183.1,"carimbo","FAST");
+  } else if(INS.servico==="SIE"||INS.servico==="SIM"){
+    espaco(); bloco(`Carimbo do ${INS.servico}:`,[{t:`Carimbo do ${INS.servico==="SIE"?"Serviço de Inspeção Estadual":"Serviço de Inspeção Municipal"}${INS.orgao?` (${INS.orgao})`:""} com o número de registro do estabelecimento ${INS.regEstab||"000"}.`,f:"PoppinsLight"}],"Modelo, dimensões e dizeres conforme o regulamento do serviço de inspeção do estado ou do município.");
   }
   // ================= TABELAS =================
   const modelos=modelosTab(R);
@@ -1385,7 +1556,7 @@ async function relatorioPDF(R,C,T){
     const alvo=[[mk.titleBase-4,"negrito"],[mk.thickY,"linha espessura grossa"],[mk.headBase-3,"negrito"],[mk.mediumY,"linha espessura média"]].sort((a,b)=>a[0]-b[0]);
     let prox=-99; alvo.forEach(([yy,tx])=>{if(yy<prox) yy=prox; const fim=r(yy,tx); prox=Math.max(yy+15,fim+13)});
     const yb=oy+lay.h*k; seta(106,yb+8,140,yb+44,-12);
-    escrever([{t:`demais informações: `},{t:`${fs}pt`,f:"Poppins"}],154.1,yb+52,{width:400});
+    escrever([{t:`porções, colunas e nutrientes: `},{t:`${fs}pt`,f:"Poppins"},{t:` · valores: `},{t:`8pt`,f:"Poppins"},{t:` · rodapé: `},{t:`6pt`,f:"Poppins"}],120,yb+52,{width:440});
   }
   function paginaLinear(lay){
     const larg=412, k=larg/lay.w; const ox=65, oy=380;
@@ -1503,14 +1674,14 @@ document.addEventListener("click",e=>{
   if(d.act==="sair"){(async()=>{await gravar();await DBR.sb.auth.signOut();location.reload()})();return}
   if(d.act==="enviarLocais"){enviarLocais();return}
   if(d.act==="importar"){$("#impfile").click();return}
-  if(d.step!=null){S.step=+d.step;render();window.scrollTo(0,0);return}
+  if(d.step!=null){const alvo=+d.step; if(alvo>=2){const f=pendDecl(S.R); if(f.length){S.step=1; f.forEach(x=>S.open[S.R.ingredientes[x.ix].id]=true); render(); toast(`Responda antes de continuar: ${f.map(x=>`${x.nome} (${x.f.join(", ")})`).join("; ")}.`); const el=document.querySelector(`[data-ing="${S.R.ingredientes[f[0].ix].id}"]`); el&&el.scrollIntoView({behavior:"smooth",block:"start"}); return}} S.step=alvo;render();window.scrollTo(0,0);return}
   if(d.act==="addIng"){const i=novoIng();S.R.ingredientes.push(i);S.open[i.id]=true;salvar();render();setTimeout(()=>{const el=document.getElementById(`f-ingredientes.${S.R.ingredientes.length-1}.nome`);el&&el.focus()},30);return}
   if(d.deli!=null){if(b.dataset.armed){S.R.ingredientes.splice(+d.deli,1);if(!S.R.ingredientes.length)S.R.ingredientes.push(novoIng());salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar remoção"}return}
   if(d.dupi!=null){const src=S.R.ingredientes[+d.dupi];const c=JSON.parse(JSON.stringify(src));c.id=uid();c.nome+=" (cópia)";S.R.ingredientes.splice(+d.dupi+1,0,c);S.open[c.id]=true;salvar();render();return}
   if(d.mv){const [ix,dir]=d.mv.split("|").map(Number);const a=S.R.ingredientes;const j=ix+dir;if(j<0||j>=a.length)return;[a[ix],a[j]]=[a[j],a[ix]];salvar();render();return}
   if(d.algadd!=null){const ix=+d.algadd;const k=$("#algk-"+ix).value,v=$("#algs-"+ix).value;if(!k||!v){toast(!k?"Selecione o alergênico.":"Selecione a situação do alergênico.");return}const ing=S.R.ingredientes[ix];ing.alerg[k]=v;
-    if(k==="leite"&&(v==="c"||v==="cd")&&!ing.lactose){ing.lactose=true;toast("Marcado também como “Lactose: sim”. Desmarque se o leite for zero lactose.")}
-    if(["trigo","centeio","cevada","aveia"].includes(k)&&v!=="p"&&!ing.gluten){ing.gluten=true;toast("Marcado também como “contém glúten”.")}
+    ing.alergR="sim"; if(k==="leite"&&(v==="c"||v==="cd")&&!ing.lactose){ing.lactose=true;ing.lactoseR="sim";toast("Marcado também como “Lactose: sim”. Desmarque se o leite for zero lactose.")}
+    if(["trigo","centeio","cevada","aveia"].includes(k)&&v!=="p"&&!ing.gluten){ing.gluten=true;ing.glutenR="sim";toast("Marcado também como “contém glúten”.")}
     S.open[ing.id]=true;salvar();render();return}
   if(d.nexadd!=null){const ix=+d.nexadd,k=$("#nex-"+ix).value;if(!k){toast("Escolha o nutriente.");return}const ing=S.R.ingredientes[ix];ing.extras=[...new Set([...(ing.extras||[]),k])];if(ing.comp[k]==null)ing.comp[k]="";S.open[ing.id]=true;salvar();render();setTimeout(()=>{const el=document.getElementById(`f-ingredientes.${ix}.comp.${k}`);el&&el.focus()},30);return}
   if(d.nexdel){const [ix,k]=d.nexdel.split("|");const ing=S.R.ingredientes[+ix];ing.extras=(ing.extras||[]).filter(x=>x!==k);delete ing.comp[k];S.open[ing.id]=true;salvar();render();return}
