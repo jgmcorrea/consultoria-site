@@ -1100,11 +1100,6 @@ function viewRotulo(R,C){
       <button data-exp="rel"><span class="fmt">PDF</span><b>Relatório Dizeres de Rotulagem</b><small>No modelo da Isadora, para enviar ao cliente</small></button>
       <button data-exp="xlsx"><span class="fmt">EXCEL</span><b>Planilha completa</b><small>Rótulo, tabela formatada, cálculos e imagens</small></button>
       <button data-exp="pdf"><span class="fmt">PDF</span><b>Ficha do rótulo</b><small>Todos os textos, tabela e lupa em tamanho real</small></button>
-      ${tabs.map(tb=>`<button data-exp="pdfTab:${tb.modelo}"><span class="fmt">PDF</span><b>Tabela ${esc(NOME_MODELO[tb.modelo].split(",")[0])}</b><small>${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm, vetorial</small></button>`).join("")}
-      ${lup?`<button data-exp="pdfLupa"><span class="fmt">PDF</span><b>Só a lupa</b><small>${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, vetorial</small></button>`:""}
-      ${tabs.map(tb=>`<button data-exp="pngTab:${tb.modelo}"><span class="fmt">PNG</span><b>Tabela ${esc(NOME_MODELO[tb.modelo].split(",")[0])}</b><small>600 dpi, tamanho real</small></button>`).join("")}
-      ${lup?`<button data-exp="pngLupa"><span class="fmt">PNG</span><b>Lupa</b><small>600 dpi, tamanho real</small></button>`:""}
-      <button data-exp="pngDec"><span class="fmt">PNG</span><b>Ingredientes e advertências</b><small>600 dpi, largura ${brFix(dec.w,0)} mm</small></button>
       <button data-exp="json"><span class="fmt">JSON</span><b>Backup do rótulo</b><small>Para reabrir ou mover para outro computador</small></button>
     </div></div>
   </div>`;
@@ -1156,7 +1151,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
   // resumo em destaque, como o "Total de horas" do extrato
-  {const res=[`Porção ${br(C.porcao,1)} ${C.un}`,`Tabela ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm`,C.lupa.precisa?`Lupa: ALTO EM ${C.lupa.nutrientes.join(", ")}`:"Sem lupa"].join("   ·   ");
+  {const res=[`Porção ${br(C.porcao,1)} ${C.un}`,tabs.map((tb,i)=>`Tabela ${tabs.length>1?(i+1)+"ª ":""}${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm`).join("   ·   "),C.lupa.precisa?`Lupa: ALTO EM ${C.lupa.nutrientes.join(", ")}`:"Sem lupa"].join("   ·   ");
     doc.setFillColor(...CLARO); doc.roundedRect(M,y,W,12,2,2,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...TINTA);
     doc.text(doc.splitTextToSize(res,W-10)[0],M+5,y+7.6); y+=17}
   h2("Painel principal"); kv("Denominação de venda",P.denominacao); kv("Marca",P.marca); kv("Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:"");
@@ -1165,7 +1160,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
     para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
   para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8,cor:CINZA});
-  tabs.forEach((tab,i)=>{h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]}) — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;});
+  tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]}) — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;});
   h2("Demais informações"); kv("Conservação",P.conservacao); kv("Validade",P.validade+(P.validadeAberto?` · após aberto: ${P.validadeAberto}`:"")); kv("Identificação de origem",P.origem); if(P.descricao) kv("Descrição",P.descricao);
   h2("Base do cálculo"); kv("Porção",`${br(C.porcao,1)} ${C.un}${C.medida?` (${C.medida})`:""}${C.individual?" — embalagem individual":""}`); kv("Porções",C.porcoesTxt||"Não se aplica"); kv("Massa final",`${br(C.massaFinal,1)} g`);
   if(R.tipo==="balanco") kv("Balanço",`Tanque ${br(C.extra.massaTanque,1)} g; produto-base ${br(C.extra.massaBase,1)} g; ${R.balanco.subproduto||"subproduto"} ${br(C.extra.massaSub,1)} g; adicionado depois ${br(C.extra.massaDepois,1)} g`);
@@ -1200,7 +1195,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   [["Denominação de venda",P.denominacao],["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
-  add("Tabela nutricional",`${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm · Arial ${R.tabela.reduzida?"6/8":"8/10"} pt`);
+  tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm · Arial ${tb.modelo==="linear"||R.tabela.reduzida?"6/8":"8/10"} pt`));
   const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes ${br(Sz.ingPt,1)} pt; advertências ${br(Sz.avisoPt,1)} pt negrito caixa alta (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)`);
   // Aba Tabela nutricional
   const s2=wb.addWorksheet("Tabela nutricional",{views:[{showGridLines:false}]}); s2.columns=[{width:2},{width:30},{width:10},{width:10},{width:8},{width:3},{width:40}];
