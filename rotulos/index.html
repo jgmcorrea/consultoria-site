@@ -216,7 +216,8 @@ function novoRotulo(tipo){
     concentracao:{massaFinal:""},
     porcao:{anexo:"",ref:"",medida:"",individualMedida:""},
     painel:{largura:"",altura:""},
-    tabela:{modelo:"vertical",reduzida:false,lactoseGal:false,largLinear:"90"},
+    tabela:{modelos:["vertical"],reduzida:false,lactoseGal:false,largLinear:"90"},
+    relatorio:{versao:"1",data:"",cidade:"Blumenau - SC",nome:"",cliente:"",fantasia:"",alegacaoLactose:"",redes:"",observacao:"",codigoBarras:"",expressao:"",sif:false,registroSif:""},
     lupa:{modelo:"vertical",vedada:false},
     textos:{tamIng:"7",largura:"80",ingOverride:"",algOverride:""}
   };
@@ -375,92 +376,144 @@ function textos(R,C){
 /* ===================== MEDIÇÃO DE TEXTO ===================== */
 const mctx=document.createElement("canvas").getContext("2d");
 function tw(s,sizeMM,bold,scaleX=1,italic=false){mctx.font=`${italic?"italic ":""}${bold?"bold ":""}100px Arial, Helvetica, "Liberation Sans", sans-serif`;return mctx.measureText(s).width/100*sizeMM*scaleX}
-// quebra de linha com trechos em itálico: devolve linhas de segmentos {s,i,x}
-function wrapRich(text,sizeMM,bold,width){
+// quebra de linha com trechos (itálico / negrito): devolve linhas de segmentos {s,i,b,x}
+function wrapRuns(runs,sizeMM,bold,width){
   const words=[]; let cur=[]; const push=()=>{if(cur.length){words.push(cur);cur=[]}};
-  parseRich(text).forEach(r=>{const parts=r.t.split(/(\s+)/); parts.forEach(pt=>{if(!pt)return; if(/^\s+$/.test(pt)){push();return} const last=cur[cur.length-1]; if(last&&last.i===r.i) last.s+=pt; else cur.push({s:pt,i:r.i})})}); push();
-  const ww=w=>w.reduce((a,g)=>a+tw(g.s,sizeMM,bold,1,g.i),0), sp=tw(" ",sizeMM,bold);
+  runs.forEach(r=>{const parts=String(r.t).split(/(\s+)/); parts.forEach(pt=>{if(!pt)return; if(/^\s+$/.test(pt)){push();return} const last=cur[cur.length-1]; if(last&&last.i===!!r.i&&last.b===!!r.b) last.s+=pt; else cur.push({s:pt,i:!!r.i,b:!!r.b})})}); push();
+  const m=g=>tw(g.s,sizeMM,bold||g.b,1,g.i);
+  const ww=w=>w.reduce((a,g)=>a+m(g),0), sp=tw(" ",sizeMM,bold);
   const lines=[]; let line=[], lw=0;
-  words.forEach(w=>{const W2=ww(w); if(line.length&&lw+sp+W2>width){lines.push(line);line=[];lw=0} if(line.length) lw+=sp; let x=lw; w.forEach(g=>{line.push({s:g.s,i:g.i,x});x+=tw(g.s,sizeMM,bold,1,g.i)}); lw+=W2});
+  words.forEach(w=>{const W2=ww(w); if(line.length&&lw+sp+W2>width){lines.push(line);line=[];lw=0} if(line.length) lw+=sp; let x=lw; w.forEach(g=>{line.push({...g,x});x+=m(g)}); lw+=W2});
   if(line.length) lines.push(line); return lines;
 }
+function wrapRich(text,sizeMM,bold,width){return wrapRuns(parseRich(text),sizeMM,bold,width)}
 function wrap(text,sizeMM,bold,width){
   const words=String(text).split(/\s+/).filter(Boolean); const lines=[]; let cur="";
   words.forEach(w=>{const t=cur?cur+" "+w:w; if(tw(t,sizeMM,bold)<=width||!cur) cur=t; else {lines.push(cur);cur=w}}); if(cur)lines.push(cur); return lines;
 }
 const LW={thin:0.18,med:0.53,thick:1.06};
 
-/* ===================== LAYOUT: TABELA NUTRICIONAL ===================== */
-function layTabela(R,C){
-  const red=!!R.tabela.reduzida; const fs=(red?6:8)*PT, ft=(red?8:10)*PT, ff=6*PT;
-  const rowH=fs*1.55, titleH=ft*1.75, footH=ff*1.9, pad=1.1, ind=tw("n",fs,false);
-  const cols=["100 "+C.un, `${br(C.porcao,1)} ${C.un}`, "%VD*"];
-  const L=C.linhas, ops=[];
-  const base=(y,h,s)=>y+h/2+s*0.36;
-  if(R.tabela.modelo==="linear") return layLinear(R,C);
-  if(R.tabela.modelo==="quebrado"){
-    const left=L.filter(x=>["energia","carb","acTot","acAdd","lac","gal"].includes(x.k)), right=L.filter(x=>!["energia","carb","acTot","acAdd","lac","gal"].includes(x.k));
-    const n=Math.max(left.length,right.length);
-    const nameW=a=>Math.max(...a.map(x=>tw(x.l,fs,false)+x.lvl*ind))+2*pad;
-    const colW=Math.max(9,...cols.map(c=>tw(c,fs,true)+2*pad),...L.flatMap(x=>[x.v100,x.vp,x.vd]).map(v=>tw(v,fs,false)+2*pad));
-    const nw1=nameW(left),nw2=nameW(right); const blockW1=nw1+3*colW, blockW2=nw2+3*colW;
-    const sub=[C.porcoesTxt,C.porcTxt].filter(Boolean).join(" ● ");
-    const subLines=wrap(sub,fs,false,blockW1+blockW2-2*pad);
-    const W=Math.max(blockW1+blockW2,tw("INFORMAÇÃO NUTRICIONAL",ft,true)+4*pad);
-    let y=0; ops.push({t:"text",x:W/2,y:base(y,titleH,ft),s:"INFORMAÇÃO NUTRICIONAL",size:ft,bold:true,anchor:"middle"}); y+=titleH;
-    ops.push({t:"line",x1:0,y1:y,x2:W,y2:y,sw:LW.thin});
-    subLines.forEach(s=>{ops.push({t:"text",x:pad,y:base(y,rowH,fs),s,size:fs});y+=rowH});
-    ops.push({t:"rect",x:0,y,w:W,h:LW.thick,fill:"#000"}); y+=LW.thick;
-    const drawBlock=(x0,nw,rows)=>{let yy=y;
-      cols.forEach((c,i)=>ops.push({t:"text",x:x0+nw+colW*i+colW/2,y:base(yy,rowH,fs),s:c,size:fs,bold:true,anchor:"middle"}));
-      yy+=rowH; ops.push({t:"line",x1:x0,y1:yy,x2:x0+nw+3*colW,y2:yy,sw:LW.thin});
-      for(let r=0;r<n;r++){const x=rows[r]; if(x){ops.push({t:"text",x:x0+pad+x.lvl*ind,y:base(yy,rowH,fs),s:x.l,size:fs});[x.v100,x.vp,x.vd].forEach((v,i)=>ops.push({t:"text",x:x0+nw+colW*i+colW/2,y:base(yy,rowH,fs),s:v,size:fs,anchor:"middle"}))}
-        yy+=rowH; ops.push({t:"line",x1:x0,y1:yy,x2:x0+nw+3*colW,y2:yy,sw:r===n-1?LW.med:LW.thin})}
-      for(let i=0;i<3;i++) ops.push({t:"line",x1:x0+nw+colW*i,y1:y,x2:x0+nw+colW*i,y2:yy,sw:LW.thin});
-      return yy};
-    const yEnd=drawBlock(0,nw1,left); drawBlock(blockW1,nw2,right);
-    ops.push({t:"line",x1:blockW1,y1:y,x2:blockW1,y2:yEnd,sw:LW.med});
-    y=yEnd; ops.push({t:"text",x:pad,y:y+ff*1.25,s:"*Percentual de valores diários fornecidos pela porção.",size:ff}); y+=footH;
-    ops.push({t:"rect",x:0,y:0,w:W,h:y,stroke:"#000",sw:LW.thin});
-    return {w:W,h:y,ops};
-  }
-  const nameW=Math.max(...L.map(x=>tw(x.l,fs,false)+x.lvl*ind))+2*pad;
-  const colW=Math.max(9,...cols.map(c=>tw(c,fs,true)+2*pad),...L.flatMap(x=>[x.v100,x.vp,x.vd]).map(v=>tw(v,fs,false)+2*pad));
-  let W=nameW+3*colW;
+/* ===================== LAYOUT: TABELA NUTRICIONAL =====================
+   Medidas tiradas dos vetores do Anexo IX da IN 75/2020 (modelos oficiais da Anvisa), em pontos.
+   Em formatação reduzida (art. 16, §3º) as fontes vão para 8/6 pt e as distâncias são reduzidas na mesma proporção. */
+const MODELOS_TAB=[["vertical","Vertical"],["horizontal","Horizontal"],["vquebrado","Vertical quebrado"],["hquebrado","Horizontal quebrado"],["linear","Linear"]];
+const NOME_MODELO={vertical:"vertical, tradicional",horizontal:"horizontal",vquebrado:"vertical quebrado",hquebrado:"horizontal quebrado",linear:"linear"};
+const LWT={fina:0.25,media:1,grossa:3,borda:0.5}; // espessuras em pt (Anexo IX)
+function modelosTab(R){let m=R.tabela.modelos; if(!Array.isArray(m)||!m.length) m=[R.tabela.modelo==="quebrado"?"vquebrado":(R.tabela.modelo||"vertical")]; const ok=MODELOS_TAB.map(x=>x[0]); return ok.filter(k=>m.includes(k))}
+const ABREV={acAdd:"Aç adicionados (g)",sat:"Gord saturadas (g)",trans:"Gord trans (g)",fibra:"Fibras (g)"};
+function linhasTab(R,C){const red=!!R.tabela.reduzida;return C.linhas.map(x=>({...x,l:red&&ABREV[x.k]?ABREV[x.k]:x.l}))}
+function layTabela(R,C,modelo){
+  modelo=modelo||modelosTab(R)[0]||"vertical";
+  if(modelo==="linear") return layLinear(R,C);
+  const red=!!R.tabela.reduzida, g=red?0.75:1, ft=red?8:10, fs=red?6:8, ff=6;
+  const L=linhasTab(R,C), ops=[], P=v=>v*PT;
+  const twp=(s,size,bold)=>tw(s,P(size),bold)/PT; // largura em pt
+  const cols=["100 "+C.un,`${br(C.porcao,1)} ${C.un}`,"%VD*"];
+  const ind=3.4*g;
+  const nameW=rows=>Math.max(...rows.map(x=>x?twp(x.l,fs,false)+x.lvl*ind:0))+3*g;
+  const colW=Math.max(26.08*g,...cols.map(c=>twp(c,fs,true)+5.2*g),...L.flatMap(x=>[x.v100,x.vp,x.vd]).map(v=>twp(v,fs,false)+5.2*g));
+  const T=(x,y,s,size,o={})=>ops.push({t:"text",x:P(x),y:P(y),s,size:P(size),...o});
+  const H=(x1,x2,y,lw)=>ops.push({t:"line",x1:P(x1),y1:P(y),x2:P(x2),y2:P(y),sw:P(lw)});
+  const V=(x,y1,y2)=>ops.push({t:"line",x1:P(x),y1:P(y1),x2:P(x),y2:P(y2),sw:P(LWT.fina)});
+  const marks={}; const footW=twp("*Percentual de valores diários fornecidos pela porção.",ff,false);
+  // bloco de colunas (cabeçalho + linhas); devolve y da linha média
+  const bloco=(x0,nw,rows,yHead0,headBase,headRule,R0,baseOff,nLin)=>{
+    cols.forEach((c,i)=>T(x0+nw+colW*i+colW/2,headBase,c,fs,{bold:true,anchor:"middle"}));
+    const xEnd=x0+nw+3*colW; H(x0,xEnd,headRule,LWT.fina);
+    for(let i=0;i<3;i++) V(x0+nw+colW*i,yHead0,headRule-0.12);
+    let y=headRule;
+    for(let r=0;r<nLin;r++){const x=rows[r]; const yb=y+R0;
+      if(x){T(x0+x.lvl*ind,y+baseOff,x.l,fs);[x.v100,x.vp,x.vd].forEach((v,i)=>T(x0+nw+colW*i+colW/2,y+baseOff,v,fs,{anchor:"middle"}))}
+      const ult=r===nLin-1; H(x0,xEnd,yb,ult?LWT.media:LWT.fina);
+      for(let i=0;i<3;i++) V(x0+nw+colW*i,y+0.12,yb-(ult?0.5:0.12));
+      y=yb;}
+    return y;
+  };
+  let W,Ht;
   const subs=[C.porcoesTxt,C.porcTxt].filter(Boolean);
-  W=Math.max(W,tw("INFORMAÇÃO NUTRICIONAL",ft,true)+4*pad,...subs.map(s=>tw(s,fs,false)+2*pad));
-  const nW=W-3*colW;
-  let y=0;
-  ops.push({t:"text",x:W/2,y:base(y,titleH,ft),s:"INFORMAÇÃO NUTRICIONAL",size:ft,bold:true,anchor:"middle"}); y+=titleH;
-  ops.push({t:"line",x1:0,y1:y,x2:W,y2:y,sw:LW.thin});
-  subs.forEach(s=>{ops.push({t:"text",x:pad,y:base(y,rowH,fs),s,size:fs});y+=rowH});
-  ops.push({t:"rect",x:0,y,w:W,h:LW.thick,fill:"#000"}); y+=LW.thick;
-  const yTop=y;
-  cols.forEach((c,i)=>ops.push({t:"text",x:nW+colW*i+colW/2,y:base(y,rowH,fs),s:c,size:fs,bold:true,anchor:"middle"}));
-  y+=rowH; ops.push({t:"line",x1:0,y1:y,x2:W,y2:y,sw:LW.thin});
-  L.forEach((x,r)=>{ops.push({t:"text",x:pad+x.lvl*ind,y:base(y,rowH,fs),s:x.l,size:fs});
-    [x.v100,x.vp,x.vd].forEach((v,i)=>ops.push({t:"text",x:nW+colW*i+colW/2,y:base(y,rowH,fs),s:v,size:fs,anchor:"middle"}));
-    y+=rowH; ops.push({t:"line",x1:0,y1:y,x2:W,y2:y,sw:r===L.length-1?LW.med:LW.thin})});
-  for(let i=0;i<3;i++) ops.push({t:"line",x1:nW+colW*i,y1:yTop,x2:nW+colW*i,y2:y,sw:LW.thin});
-  ops.push({t:"text",x:pad,y:y+ff*1.25,s:"*Percentual de valores diários fornecidos pela porção.",size:ff}); y+=footH;
-  ops.push({t:"rect",x:0,y:0,w:W,h:y,stroke:"#000",sw:LW.thin});
-  return {w:W,h:y,ops};
+  if(modelo==="vertical"){
+    const M=2.75*g, nw=nameW(L);
+    W=Math.max(M+nw+3*colW+M, twp("INFORMAÇÃO NUTRICIONAL",ft,true)+4*M, footW+2*M, ...subs.map(s=>twp(s,fs,false)+2*M));
+    const nw2=W-2*M-3*colW;
+    const tb=2.8*g+ft; T(W/2,tb,"INFORMAÇÃO NUTRICIONAL",ft,{bold:true,anchor:"middle"}); marks.titleBase=tb;
+    const rt=tb+2.88*g; H(M,W-M,rt,LWT.fina);
+    let y=rt+8.48*g; subs.forEach((s,i)=>{T(M,y,s,fs); marks.subBase=y; if(i<subs.length-1) y+=9.6*g});
+    const th=y+4.03*g; H(M,W-M,th,LWT.grossa); marks.thickY=th;
+    marks.headBase=th+15.19*g;
+    const med=bloco(M,nw2,L,th+3.63*g,th+15.19*g,th+18.09*g,10.77*g,8.29*g,L.length); marks.mediumY=med;
+    const fb=med+7.21; T(M,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+    Ht=fb+5.3;
+  } else if(modelo==="vquebrado"){
+    const M=2.6*g, gap=3*g;
+    const esq=L.filter(x=>["energia","carb","acTot","acAdd","lac","gal","prot"].includes(x.k)), dir=L.filter(x=>!["energia","carb","acTot","acAdd","lac","gal","prot"].includes(x.k));
+    const n=Math.max(esq.length,dir.length), nw1=nameW(esq), nw2=nameW(dir);
+    const sub=subs.join(" ● ");
+    W=Math.max(M+nw1+3*colW+gap+nw2+3*colW+M, twp(sub,fs,false)+2*M, footW+2*M);
+    const tb=2.7*g+ft; T(W/2,tb,"INFORMAÇÃO NUTRICIONAL",ft,{bold:true,anchor:"middle"}); marks.titleBase=tb;
+    const rt=tb+2.84*g; H(M,W-M,rt,LWT.fina);
+    const sb=rt+9.39*g; T(M,sb,sub,fs); marks.subBase=sb;
+    const th=sb+4.94*g; H(M,W-M,th,LWT.grossa); marks.thickY=th; marks.headBase=th+16.36*g;
+    const x2=W-M-3*colW-nw2;
+    const med=bloco(M,nw1,esq,th+4.83*g,th+16.36*g,th+19.22*g,11.49*g,8.66*g,n);
+    bloco(x2,nw2,dir,th+4.83*g,th+16.36*g,th+19.22*g,11.49*g,8.66*g,n); marks.mediumY=med;
+    const fb=med+7.2; T(M,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+    Ht=fb+7.75;
+  } else { // horizontal e horizontal quebrado: bloco do título à esquerda
+    const M=2.6*g, lw=Math.max(twp("INFORMAÇÃO",ft,true),twp("NUTRICIONAL",ft,true))+2.5*g, gapL=5.67*g;
+    const t1=12.7*g, t2=t1+1.2*ft; T(M,t1,"INFORMAÇÃO",ft,{bold:true}); T(M,t2,"NUTRICIONAL",ft,{bold:true}); marks.titleBase=t1;
+    const th=t2+4.25*g; H(M,M+lw,th,LWT.grossa); marks.thickY=th;
+    const txtEsq=[]; if(!C.individual&&C.porcoesTxt) txtEsq.push(C.porcoesTxt.replace("Porções por embalagem","Porções por emb.")); txtEsq.push(C.porcTxt);
+    let ly=th+12.92*g; txtEsq.forEach(s=>wrap(s,P(fs),false,P(lw)).forEach(l=>{T(M,ly,l,fs); marks.subBase=marks.subBase||ly; ly+=11*g}));
+    const x1=M+lw+gapL;
+    if(modelo==="horizontal"){
+      const nw=Math.max(nameW(L),footW-3*colW+1); W=x1+nw+3*colW+2.9*g;
+      marks.headBase=16.92*g;
+      const med=bloco(x1,nw,L,5.42*g,16.92*g,19.75*g,11.49*g,8.66*g,L.length); marks.mediumY=med;
+      const fb=med+7.62; T(x1,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+      Ht=Math.max(fb+5.42, ly-11*g+6);
+    } else {
+      const esq=L.filter(x=>["energia","carb","acTot","acAdd","lac","gal","prot"].includes(x.k)), dir=L.filter(x=>!["energia","carb","acTot","acAdd","lac","gal","prot"].includes(x.k));
+      const n=Math.max(esq.length,dir.length), nw1=nameW(esq), nw2=nameW(dir), gap=3*g;
+      W=x1+nw1+3*colW+gap+nw2+3*colW+2.7*g;
+      marks.headBase=15.5*g;
+      const med=bloco(x1,nw1,esq,5.42*g,15.5*g,19.75*g,11.49*g,8.66*g,n);
+      bloco(x1+nw1+3*colW+gap,nw2,dir,5.42*g,15.5*g,19.75*g,11.49*g,8.66*g,n); marks.mediumY=med;
+      const fb=med+7.6; T(x1,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+      Ht=Math.max(fb+5.4, ly-11*g+6);
+    }
+  }
+  ops.push({t:"rect",x:0,y:0,w:P(W),h:P(Ht),stroke:"#000",sw:P(LWT.borda)});
+  Object.keys(marks).forEach(k=>marks[k]=P(marks[k]));
+  return {w:P(W),h:P(Ht),ops,marks,modelo};
 }
-function linearTexto(C){
-  const L=Object.fromEntries(C.linhas.map(x=>[x.k,x])); const p=`${br(C.porcao,1)} ${C.un}`;
-  const f=(k,nome,u,vd=true)=>{const x=L[k]; return `${nome} ${x.v100} ${u} (${x.vp} ${u}${vd?`, ${x.vd}%`:""})`};
-  let s=[C.porcoesTxt,C.porcTxt].filter(Boolean).join(" ● ")+` ● Por 100 ${C.un} (${p}, %VD*): `;
-  s+=`Valor energético ${L.energia.v100} kcal (${L.energia.vp} kcal, ${L.energia.vd}%) ● ${f("carb","Carboidratos","g")}, dos quais: ${f("acTot","Açúcares totais","g",false)}, ${f("acAdd","Açúcares adicionados","g")}`;
-  if(L.lac) s+=`, ${f("lac","Lactose","g",false)}, ${f("gal","Galactose","g",false)}`;
-  s+=` ● ${f("prot","Proteínas","g")} ● ${f("gord","Gorduras totais","g")}, das quais: ${f("sat","Gorduras saturadas","g")}, ${f("trans","Gorduras trans","g")} ● ${f("fibra","Fibras alimentares","g")} ● ${f("sodio","Sódio","mg")}. *Percentual de valores diários fornecidos pela porção.`;
-  return s;
+// texto do modelo linear em trechos (regular / negrito)
+function linearRuns(R,C){
+  const L=Object.fromEntries(C.linhas.map(x=>[x.k,x])); const red=true;
+  const p=`${br(C.porcao,1)} ${C.un}`; const runs=[]; const t=(s,b=false)=>runs.push({t:s,b});
+  const f=(k,nome,u,vd=true)=>{const x=L[k]; t(`${nome} ${x.v100} ${u} (`); t(`${x.vp} ${u}`,true); t(vd?`, ${x.vd}%)`:")")};
+  t(`Por 100 ${C.un} (`); t(p,true); t(", %VD*): ");
+  t(`Valor energético ${L.energia.v100} kcal (`); t(`${L.energia.vp} kcal`,true); t(`, ${L.energia.vd}%) ● `);
+  f("carb","Carboidratos","g"); t(", dos quais: "); f("acTot","Açúcares totais","g",false); t(", "); f("acAdd","Aç adicionados","g");
+  if(L.lac){t(", ");f("lac","Lactose","g",false);t(", ");f("gal","Galactose","g",false)}
+  t(" ● "); f("prot","Proteínas","g"); t(" ● "); f("gord","Gorduras totais","g"); t(", das quais: "); f("sat","Gord saturadas","g"); t(", "); f("trans","Gord trans","g");
+  t(" ● "); f("fibra","Fibras","g"); t(" ● "); f("sodio","Sódio","mg"); t(".");
+  return runs;
 }
+function linearTexto(C,R){return linearRuns(R||S.R,C).map(r=>r.t).join("")}
 function layLinear(R,C){
-  const W=Math.max(40,nz(R.tabela.largLinear)||90), pad=1.1, ft=8*PT, fs=6*PT, ops=[];
-  let y=pad+ft; ops.push({t:"text",x:pad,y,s:"INFORMAÇÃO NUTRICIONAL",size:ft,bold:true}); y+=fs*0.6;
-  wrap(linearTexto(C),fs,false,W-2*pad).forEach(l=>{y+=fs*1.3;ops.push({t:"text",x:pad,y,s:l,size:fs})});
-  y+=pad+fs*0.3; ops.push({t:"rect",x:0,y:0,w:W,h:y,stroke:"#000",sw:LW.thin});
-  return {w:W,h:y,ops};
+  const P=v=>v*PT; const Wmm=Math.max(40,nz(R.tabela.largLinear)||90), W=Wmm/PT, M=2.6, ops=[], marks={};
+  const T=(x,y,s,size,o={})=>ops.push({t:"text",x:P(x),y:P(y),s,size:P(size),...o});
+  const H=(y,lw)=>ops.push({t:"line",x1:P(M),y1:P(y),x2:P(W-M),y2:P(y),sw:P(lw)});
+  let y=2.4+8; T(M,y,"INFORMAÇÃO NUTRICIONAL",8,{bold:true}); marks.titleBase=P(y);
+  y+=2.2; H(y,LWT.fina);
+  const sub=[C.porcoesTxt,C.porcTxt].filter(Boolean).join(" ● "); y+=7.2; T(M,y,sub,6); marks.subBase=P(y);
+  y+=3.4; H(y,2); marks.thickY=P(y); y+=1.4;
+  const linhas=wrapRuns(linearRuns(R,C),P(6),false,P(W-2*M));
+  linhas.forEach(l=>{y+=6*1.55; l.forEach(g=>ops.push({t:"text",x:g.x+P(M),y:P(y),s:g.s,size:P(6),bold:!!g.b}))}); marks.bodyBase=P(y);
+  y+=3.4; H(y,LWT.media); marks.mediumY=P(y);
+  y+=7; T(M,y,"*Percentual de valores diários fornecidos pela porção.",6); marks.footBase=P(y);
+  y+=3.6; ops.push({t:"rect",x:0,y:0,w:P(W),h:P(y),stroke:"#000",sw:P(LWT.borda)});
+  return {w:P(W),h:P(y),ops,marks,modelo:"linear"};
 }
 
 /* ===================== LAYOUT: LUPA (Anexos XVII/XVIII, IN 75/2020) =====================
@@ -574,7 +627,7 @@ function pdfDraw(doc,lay,ox,oy){
       o.d.forEach(c=>{ if(c[0]==="M"){flush();seg=[];sx0=cx=c[1];sy0=cy=c[2]} else if(c[0]==="L"){seg.push([c[1]-cx,c[2]-cy]);cx=c[1];cy=c[2]} else if(c[0]==="C"){seg.push([c[1]-cx,c[2]-cy,c[3]-cx,c[4]-cy,c[5]-cx,c[6]-cy]);cx=c[5];cy=c[6]} else if(c[0]==="Z"){flush()} }); flush(); }
     else if(o.t==="poly"){doc.setFillColor(255,212,0);doc.setDrawColor(0);doc.setLineWidth(o.sw);doc.setLineJoin("round");const p=o.pts;doc.triangle(ox+p[0][0],oy+p[0][1],ox+p[1][0],oy+p[1][1],ox+p[2][0],oy+p[2][1],"FD")}
     else if(o.t==="text"){
-      doc.setFont("helvetica",o.bold&&o.italic?"bolditalic":o.bold?"bold":o.italic?"italic":"normal"); doc.setFontSize(o.size/PT);
+      doc.setFont("helvetica",o.bold&&o.italic?"bolditalic":o.bold?"bold":o.italic?"italic":"normal"); doc.setFontSize(o.size*doc.internal.scaleFactor);
       const fc=o.fill==="#fff"?255:0; doc.setTextColor(fc,fc,fc); doc.setFillColor(fc,fc,fc);
       const sx=o.scaleX||1; const parts=String(o.s).split("●"); const bulletW=o.size*0.55;
       const wPart=t=>doc.getTextWidth(t)*sx; const total=parts.reduce((a,t)=>a+wPart(t),0)+(parts.length-1)*bulletW;
@@ -707,6 +760,10 @@ function exemplo(tipo){
       novoIng({nome:"açúcar",qtd:"8000",acucarAdic:true,comp:{carb:"99.98",acTot:"99.91",prot:"0",gord:"0",sat:"0",trans:"0",fibra:"0",sodio:"0"},fonte:"Tabela IBGE"}),
       novoIng({nome:"bicarbonato de sódio",qtd:"150",aditivo:true,funcao:"regulador de acidez",comp:{carb:"0",prot:"0",gord:"0",sodio:"27360"}})];
     R.concentracao.massaFinal="28000";
+    R.produto.conservacao="Conservar em local seco e arejado. Após aberto manter refrigerado de 1ºC a 10ºC e consumir em até 10 dias.";
+    R.produto.origem="Fabricado em: Pomerode Alimentos LTDA, Unidade de Beneficiamento de Leite e Derivados, Rua dos Atiradores, 71, Centro, Pomerode, SC, Brasil. CEP 89355-272. CNPJ: 04.630.689/0001-99. INDÚSTRIA BRASILEIRA. (47) 3387-3983. contato@queijospomerode.com.br";
+    R.tabela.modelos=["vertical","linear"]; R.tabela.reduzida=true;
+    R.relatorio={versao:"1",data:"",cidade:"Blumenau - SC",nome:"DOCE DE LEITE 400g",cliente:"Queijos Pomerode",fantasia:"",alegacaoLactose:"",redes:"@queijospomerode\nqueijospomerode.com.br",observacao:"",codigoBarras:"7898361662882",expressao:"Registro no Ministério da Agricultura SIF/DIPOA sob nº 0110/1414.",sif:true,registroSif:"1414"};
     Object.assign(R.porcao,{anexo:"Doces em pasta (abóbora, goiaba, leite, banana, mocotó)",ref:"20",medida:"1 colher de sopa"});
     Object.assign(R.painel,{largura:"10",altura:"8"});
   }
@@ -784,6 +841,24 @@ function viewProduto(R,C){
       ${inp("produto.validade","Prazo de validade")}
       ${inp("produto.validadeAberto","Validade após aberto")}
       ${inp("produto.especieLeite","Espécie do leite (se não for vaca)",{hint:"Usado na advertência de alérgicos: ex. “cabra” vira “LEITE DE CABRA”."})}
+    </div></div>
+  <div class="card stack"><div><span class="eyebrow">Relatório para o cliente</span><h2>Dados do relatório “Dizeres de Rotulagem”</h2><p class="muted small">Aparecem no PDF do relatório, no modelo da Isadora. Os campos em branco não entram.</p></div>
+    <div class="grid3">
+      ${inp("relatorio.nome","Nome do produto no relatório",{ph:R.produto.nome||"DOCE DE LEITE 400g",hint:"Vai na capa e no topo de cada página. Em branco = nome do produto."})}
+      ${inp("relatorio.versao","Versão",{n:true})}
+      <label class="f">Data<input type="date" data-bind="relatorio.data" id="f-relatorio.data" value="${esc(R.relatorio?.data||"")}"><span class="hint">Em branco = data do dia.</span></label>
+      ${inp("relatorio.cidade","Cidade",{ph:"Blumenau - SC"})}
+      ${inp("relatorio.cliente","Cliente na capa",{ph:nomeCliente(R.clienteId)||R.produto.marca||"QUEIJOS POMERODE",hint:"Em branco = cliente selecionado."})}
+    </div>
+    <div class="grid2">
+      ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS."})}
+      ${inp("relatorio.alegacaoLactose","Alegação nutricional sobre lactose",{hint:"Ex.: ZERO LACTOSE. Em branco = não entra."})}
+      ${inp("relatorio.codigoBarras","Código de barras",{n:true})}
+      ${inp("relatorio.expressao","Indicação da expressão (registro)",{ph:"Registro no Ministério da Agricultura SIF/DIPOA sob nº 0000/0000."})}
+      ${inp("relatorio.redes","Redes sociais e site",{area:true,ph:"@queijospomerode\nqueijospomerode.com.br"})}
+      ${inp("relatorio.observacao","Observação em destaque (sai em vermelho)",{area:true,ph:"- verificar com o cliente se será a marca X ou Y"})}
+      ${chk("relatorio.sif","Incluir página do carimbo do SIF (Inspeção Federal)")}
+      ${R.relatorio?.sif?inp("relatorio.registroSif","Número de registro do estabelecimento",{n:true}):""}
     </div></div></div>`;
 }
 function compInputs(base,obj,o={}){
@@ -886,8 +961,8 @@ function viewPorcao(R,C){
   </div>
   <div class="card stack"><h2>Modelos e textos</h2>
     <div class="grid3">
-      ${sel("tabela.modelo","Modelo da tabela",[["vertical","Vertical (padrão)"],["quebrado","Vertical quebrado"],["linear","Linear"]],{re:true,hint:"Use o linear só quando a tabela não couber (RDC 429/2020, art. 17)."})}
-      ${R.tabela.modelo==="linear"?inp("tabela.largLinear","Largura do modelo linear (mm)",{n:true}):""}
+      <div class="f span2"><span>Modelos da tabela (pode marcar mais de um)</span><div class="row" style="gap:6px 16px">${MODELOS_TAB.map(([k,n])=>`<label class="check"><input type="checkbox" data-modelo="${k}" id="mod-${k}" ${modelosTab(R).includes(k)?"checked":""}><span>${n}</span></label>`).join("")}</div><span class="hint">A ordem acima é a ordem de prioridade no relatório. Use o linear só quando a tabela não couber (RDC 429/2020, art. 17).</span></div>
+      ${modelosTab(R).includes("linear")?inp("tabela.largLinear","Largura do modelo linear (mm)",{n:true}):""}
       ${(()=>{const n=C.lupa.nutrientes.length;const ops=Object.entries(LUPA_LAYOUTS).filter(([k,v])=>v.ok(Math.max(n,1))).map(([k,v])=>[k,v.t]);const cur=lupaModelo(R,Math.max(n,1));if(R.lupa.modelo!==cur)R.lupa.modelo=cur;return sel("lupa.modelo","Disposição da lupa",ops,{re:true,hint:n?`Variações da malha construtiva da Anvisa para ${n+1} blocos.`:"Este produto não precisa de lupa."})})()}
       ${inp("textos.tamIng","Fonte da lista de ingredientes (pt)",{n:true})}
       ${inp("textos.largura","Largura do bloco de textos (mm)",{n:true})}
@@ -900,7 +975,7 @@ function viewPorcao(R,C){
   </div></div>`;
 }
 function viewRotulo(R,C){
-  const T=textos(R,C); const tab=layTabela(R,C); const lup=layLupa(R,C); const dec=layDecl(R,C,T); const Sz=tamanhos(R,C);
+  const T=textos(R,C); const tabs=modelosTab(R).map(m=>layTabela(R,C,m)); const tab=tabs[0]; const lup=layLupa(R,C); const dec=layDecl(R,C,T); const Sz=tamanhos(R,C);
   const z=S.real?3.7795:S.zoom*3.7795; const P=R.produto;
   const conteudoTxt=P.conteudo?`${P.conteudo} ${P.unidade}`:"—";
   const altCont=(()=>{const c=C.cont;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
@@ -909,9 +984,9 @@ function viewRotulo(R,C){
   <div class="row" style="justify-content:space-between"><h2>Prévia do rótulo</h2><div class="seg"><button class="${!S.real?"on":""}" data-zoom="0">Ampliado</button><button class="${S.real?"on":""}" data-zoom="1">Tamanho real</button></div></div>
   <div class="two">
     <div class="stack">
-      <div><span class="eyebrow">Tabela nutricional · ${R.tabela.modelo==="linear"?"linear":R.tabela.modelo==="quebrado"?"vertical quebrado":"vertical"}${R.tabela.reduzida?" · reduzida":""}</span>
-        <div class="paper ${S.real?"":"fit"}">${svgOf(tab,z)}</div>
-        <div class="paper-cap"><span class="num">${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm</span><span>Arial ${R.tabela.reduzida?"6/8":"8/10"} pt · linhas e letras 100% pretas em fundo branco</span></div></div>
+      ${tabs.map((tb,i)=>`<div><span class="eyebrow">Tabela nutricional · ${i+1}ª opção · ${esc(NOME_MODELO[tb.modelo])}${R.tabela.reduzida&&tb.modelo!=="linear"?" · reduzida":""}</span>
+        <div class="paper ${S.real?"":"fit"}">${svgOf(tb,z)}</div>
+        <div class="paper-cap"><span class="num">${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm</span><span>Arial ${tb.modelo==="linear"||R.tabela.reduzida?"8/6":"10/8"} pt · linhas e letras 100% pretas em fundo branco</span></div></div>`).join("")}
       <div><span class="eyebrow">Lista de ingredientes e advertências</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(dec,z)}</div>
         <div class="paper-cap"><span class="num">${brFix(dec.w,1)} × ${brFix(dec.h,1)} mm</span><span>Ingredientes ${br(Sz.ingPt,1)} pt · advertências ${br(Sz.avisoPt,1)} pt negrito (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)</span></div></div>
@@ -936,11 +1011,12 @@ function viewRotulo(R,C){
   </div>
   <div class="card stack"><div><span class="eyebrow">Exportar</span><h2>Arquivos do rótulo</h2><p class="muted small">PDFs em vetor e PNGs a 600 dpi, com as medidas reais em milímetros.</p></div>
     <div class="exports">
+      <button data-exp="rel"><span class="fmt">PDF</span><b>Relatório Dizeres de Rotulagem</b><small>No modelo da Isadora, para enviar ao cliente</small></button>
       <button data-exp="xlsx"><span class="fmt">EXCEL</span><b>Planilha completa</b><small>Rótulo, tabela formatada, cálculos e imagens</small></button>
       <button data-exp="pdf"><span class="fmt">PDF</span><b>Ficha do rótulo</b><small>Todos os textos, tabela e lupa em tamanho real</small></button>
-      <button data-exp="pdfTab"><span class="fmt">PDF</span><b>Só a tabela</b><small>${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm, vetorial</small></button>
+      ${tabs.map(tb=>`<button data-exp="pdfTab:${tb.modelo}"><span class="fmt">PDF</span><b>Tabela ${esc(NOME_MODELO[tb.modelo].split(",")[0])}</b><small>${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm, vetorial</small></button>`).join("")}
       ${lup?`<button data-exp="pdfLupa"><span class="fmt">PDF</span><b>Só a lupa</b><small>${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, vetorial</small></button>`:""}
-      <button data-exp="pngTab"><span class="fmt">PNG</span><b>Tabela</b><small>600 dpi, tamanho real</small></button>
+      ${tabs.map(tb=>`<button data-exp="pngTab:${tb.modelo}"><span class="fmt">PNG</span><b>Tabela ${esc(NOME_MODELO[tb.modelo].split(",")[0])}</b><small>600 dpi, tamanho real</small></button>`).join("")}
       ${lup?`<button data-exp="pngLupa"><span class="fmt">PNG</span><b>Lupa</b><small>600 dpi, tamanho real</small></button>`:""}
       <button data-exp="pngDec"><span class="fmt">PNG</span><b>Ingredientes e advertências</b><small>600 dpi, largura ${brFix(dec.w,0)} mm</small></button>
       <button data-exp="json"><span class="fmt">JSON</span><b>Backup do rótulo</b><small>Para reabrir ou mover para outro computador</small></button>
@@ -951,16 +1027,17 @@ function viewRotulo(R,C){
 /* ===================== EXPORTAÇÕES ===================== */
 function nomeArq(ext,suf=""){return `${slug(S.R.produto.nome)}${suf?"-"+suf:""}.${ext}`}
 async function exportar(tipo){
-  const R=S.R,C=calc(R),T=textos(R,C),tab=layTabela(R,C),lup=layLupa(R,C),dec=layDecl(R,C,T);
+  const R=S.R,C=calc(R),T=textos(R,C),lup=layLupa(R,C),dec=layDecl(R,C,T); const [tipoBase,modTab]=tipo.split(":"); tipo=tipoBase; const tab=layTabela(R,C,modTab); const tabs=modelosTab(R).map(m=>layTabela(R,C,m));
   try{
     if(tipo==="json") return saveFile(nomeArq("json"),new Blob([JSON.stringify(R,null,2)],{type:"application/json"}));
-    if(tipo==="pngTab") return saveFile(nomeArq("png","tabela"),(await pngOf(tab)).blob);
+    if(tipo==="pngTab") return saveFile(nomeArq("png","tabela-"+tab.modelo),(await pngOf(tab)).blob);
+    if(tipo==="rel"){ if(!window.jspdf) return toast("A biblioteca de PDF não carregou. Recarregue a página."); toast("Gerando o relatório…"); return saveFile(`dizeres-de-rotulagem-${slug(R.relatorio?.nome||R.produto.nome)}-v${R.relatorio?.versao||1}.pdf`,await relatorioPDF(R,C,T)); }
     if(tipo==="pngLupa") return saveFile(nomeArq("png","lupa"),(await pngOf(lup)).blob);
     if(tipo==="pngDec") return saveFile(nomeArq("png","ingredientes"),(await pngOf(dec)).blob);
     const {jsPDF}=window.jspdf||{}; if((tipo.startsWith("pdf"))&&!jsPDF) return toast("A biblioteca de PDF não carregou. Verifique a internet e recarregue.");
-    if(tipo==="pdfTab"||tipo==="pdfLupa"){const L=tipo==="pdfTab"?tab:lup; const m=2; const doc=new jsPDF({unit:"mm",format:[L.w+2*m,L.h+2*m],orientation:L.w>L.h?"l":"p"}); pdfDraw(doc,L,m,m); return saveFile(nomeArq("pdf",tipo==="pdfTab"?"tabela":"lupa"),doc.output("blob"))}
-    if(tipo==="pdf") return saveFile(nomeArq("pdf","ficha"),await pdfFicha(R,C,T,tab,lup,dec));
-    if(tipo==="xlsx") return saveFile(nomeArq("xlsx"),await excel(R,C,T,tab,lup,dec));
+    if(tipo==="pdfTab"||tipo==="pdfLupa"){const L=tipo==="pdfTab"?tab:lup; const m=2; const doc=new jsPDF({unit:"mm",format:[L.w+2*m,L.h+2*m],orientation:L.w>L.h?"l":"p"}); pdfDraw(doc,L,m,m); return saveFile(nomeArq("pdf",tipo==="pdfTab"?"tabela-"+tab.modelo:"lupa"),doc.output("blob"))}
+    if(tipo==="pdf") return saveFile(nomeArq("pdf","ficha"),await pdfFicha(R,C,T,tabs,lup,dec));
+    if(tipo==="xlsx") return saveFile(nomeArq("xlsx"),await excel(R,C,T,tabs,lup,dec));
   }catch(e){console.error(e);toast("Não foi possível gerar o arquivo: "+(e.message||e))}
 }
 /* mesmo estilo dos documentos do sistema (extrato de horas): faixa laranja, logo, título escuro, rodapé com data e página */
@@ -977,7 +1054,7 @@ function carregarLogo(){
     img.onerror=()=>ok(null); img.src="../imagens/logo.png";
   }));
 }
-async function pdfFicha(R,C,T,tab,lup,dec){
+async function pdfFicha(R,C,T,tabs,lup,dec){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15, W=210-2*M, BASE=297-18; const P=R.produto; const Sz=tamanhos(R,C);
   const logo=await carregarLogo();
   doc.setFillColor(...LARANJA); doc.rect(0,0,210,4,"F");
@@ -1002,7 +1079,7 @@ async function pdfFicha(R,C,T,tab,lup,dec){
     para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${R.lupa.vedada?" ATENÇÃO: lupa vedada para este produto (Anexo XVI) — não aplicar.":""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
   para(`Tamanhos: ingredientes ${br(Sz.ingPt,1)} pt; advertências em caixa alta e negrito, ${br(Sz.avisoPt,1)} pt (altura ${brFix(Sz.avisoAlt,2)} mm, mínimo ${Sz.minAvisoMM} mm, RDC 727/2022 arts. 15 e 19), logo após a lista de ingredientes.`,{size:8,cor:CINZA});
-  h2(`Tabela nutricional — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;
+  tabs.forEach((tab,i)=>{h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]}) — ${brFix(tab.w,1)} × ${brFix(tab.h,1)} mm (tamanho real)`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+5;});
   h2("Demais informações"); kv("Conservação",P.conservacao); kv("Validade",P.validade+(P.validadeAberto?` · após aberto: ${P.validadeAberto}`:"")); kv("Identificação de origem",P.origem); if(P.descricao) kv("Descrição",P.descricao);
   h2("Base do cálculo"); kv("Porção",`${br(C.porcao,1)} ${C.un}${C.medida?` (${C.medida})`:""}${C.individual?" — embalagem individual":""}`); kv("Porções",C.porcoesTxt||"Não se aplica"); kv("Massa final",`${br(C.massaFinal,1)} g`);
   if(R.tipo==="balanco") kv("Balanço",`Tanque ${br(C.extra.massaTanque,1)} g; produto-base ${br(C.extra.massaBase,1)} g; ${R.balanco.subproduto||"subproduto"} ${br(C.extra.massaSub,1)} g; adicionado depois ${br(C.extra.massaDepois,1)} g`);
@@ -1014,7 +1091,7 @@ async function pdfFicha(R,C,T,tab,lup,dec){
     doc.text(`Emitido em ${emitido}`,M,297-9); doc.text(`Página ${i} de ${n}`,210-M,297-9,{align:"right"})}
   return doc.output("blob");
 }
-async function excel(R,C,T,tab,lup,dec){
+async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   if(!window.ExcelJS) throw new Error("A biblioteca do Excel não carregou");
   const wb=new ExcelJS.Workbook(); wb.creator="Consultoria Isadora Andrade"; const P=R.produto;
   const thin={style:"thin",color:{argb:"FF000000"}}, med={style:"medium",color:{argb:"FF000000"}}, thick={style:"thick",color:{argb:"FF000000"}};
@@ -1054,9 +1131,9 @@ async function excel(R,C,T,tab,lup,dec){
   s2.mergeCells(`B${r}:E${r}`); Object.assign(s2.getCell("B"+r),{value:"*Percentual de valores diários fornecidos pela porção.",font:A(6)});
   ["B","C","D","E"].forEach(c=>s2.getCell(c+r).border={bottom:thin,left:c==="B"?thin:undefined,right:c==="E"?thin:undefined});
   s2.getCell("G2").value="Imagens em tamanho real (600 dpi) abaixo."; s2.getCell("G2").font=A(9);
-  const pT=await pngOf(tab,300); const idT=wb.addImage({base64:"data:image/png;base64,"+u8b64(pT.u8),extension:"png"});
-  const mm2px=96/25.4; s2.addImage(idT,{tl:{col:6,row:3},ext:{width:tab.w*mm2px,height:tab.h*mm2px}});
-  if(lup){const pL=await pngOf(lup,300);const idL=wb.addImage({base64:"data:image/png;base64,"+u8b64(pL.u8),extension:"png"});s2.addImage(idL,{tl:{col:6,row:4+Math.ceil(tab.h*mm2px/20)},ext:{width:lup.w*mm2px,height:lup.h*mm2px}})}
+  const mm2px=96/25.4; let rowImg=3;
+  for(const tb of tabs){const pT=await pngOf(tb,300); const idT=wb.addImage({base64:"data:image/png;base64,"+u8b64(pT.u8),extension:"png"}); s2.addImage(idT,{tl:{col:6,row:rowImg},ext:{width:tb.w*mm2px,height:tb.h*mm2px}}); rowImg+=Math.ceil(tb.h*mm2px/20)+2;}
+  if(lup){const pL=await pngOf(lup,300);const idL=wb.addImage({base64:"data:image/png;base64,"+u8b64(pL.u8),extension:"png"});s2.addImage(idL,{tl:{col:6,row:rowImg},ext:{width:lup.w*mm2px,height:lup.h*mm2px}})}
   // Aba Cálculos
   const s3=wb.addWorksheet("Cálculos"); const hdr=["Ingrediente","Qtd (g)","% formulação",...KEYS.map(k=>COMP_LBL[k]),"Fonte"].concat(R.tipo==="balanco"?["Etapa"]:[]);
   secao(s3.addRow(["COMPOSIÇÃO DOS INGREDIENTES (por 100 g)"])); const hr=s3.addRow(hdr); hr.font=A(9,true); cab(hr);
@@ -1075,6 +1152,212 @@ async function excel(R,C,T,tab,lup,dec){
   const buf=await wb.xlsx.writeBuffer(); return new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
 }
 function u8b64(u8){let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s)}
+
+/* ===================== RELATÓRIO "DIZERES DE ROTULAGEM" (modelo da Isadora) =====================
+   Reproduz os modelos enviados (Canva): capa laranja, páginas com faixa diagonal, logo, texto vertical
+   "ISADORA ANDRADE | ANO", fontes Poppins e Alice. Medidas em pt (A4 595,5 × 842,25). */
+const REL={laranja:[214,98,68],linha:[221,111,68],vermelho:[255,49,49],cinza:[59,59,59],
+  fone:"47 991336033",email:"consultoriaisadoraandrade@gmail.com",
+  fontes:{"Poppins-Light.ttf":["PoppinsLight","normal"],"Poppins-LightItalic.ttf":["PoppinsLight","italic"],"Poppins-Regular.ttf":["Poppins","normal"],"Poppins-Italic.ttf":["Poppins","italic"],"Alice-Regular.ttf":["Alice","normal"]},
+  url:f=>[`https://raw.githubusercontent.com/google/fonts/main/ofl/${f.startsWith("Alice")?"alice":"poppins"}/${f}`,`https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/${f.startsWith("Alice")?"alice":"poppins"}/${f}`]};
+const relCache={};
+async function relBin(urls){for(const u of [].concat(urls)){try{const r=await fetch(u);if(r.ok)return new Uint8Array(await r.arrayBuffer())}catch(e){}}return null}
+async function relAssets(){
+  if(relCache.ok) return relCache;
+  const fontes={}; await Promise.all(Object.keys(REL.fontes).map(async f=>{const b=await relBin(REL.url(f)); if(b) fontes[f]=u8b64(b)}));
+  const img=async n=>{const b=await relBin(`img/${n}`);return b?"data:image/png;base64,"+u8b64(b):null};
+  const [logo,circ,faixa,carimbo]=await Promise.all(["logo.png","logo-circulo.png","capa-faixa.png","carimbo-sif.png"].map(img));
+  Object.assign(relCache,{fontes,logo,circ,faixa,carimbo,ok:Object.keys(fontes).length===5}); return relCache;
+}
+async function relatorioPDF(R,C,T){
+  const A=await relAssets(); if(!A.ok) toast("Algumas fontes do relatório não carregaram; usei Helvetica no lugar.");
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"pt",format:[595.5,842.25]});
+  Object.entries(REL.fontes).forEach(([f,[fam,st]])=>{if(A.fontes[f]){doc.addFileToVFS(f,A.fontes[f]);doc.addFont(f,fam,st)}});
+  const tem=f=>!!A.fontes[f];
+  const F=(fam,st="normal")=>{const ok={PoppinsLight:{normal:"Poppins-Light.ttf",italic:"Poppins-LightItalic.ttf"},Poppins:{normal:"Poppins-Regular.ttf",italic:"Poppins-Italic.ttf"},Alice:{normal:"Alice-Regular.ttf"}}[fam]?.[st];
+    if(ok&&tem(ok)) doc.setFont(fam,st); else doc.setFont("helvetica",st==="italic"?"italic":"normal")};
+  const cor=c=>doc.setTextColor(...c), PRETO=[0,0,0], BRANCO=[255,255,255];
+  const RD=R.relatorio||{}; const P=R.produto;
+  const ano=String((RD.data||new Date().toISOString().slice(0,10)).slice(0,4));
+  const dataBR=(()=>{const d=(RD.data||new Date().toISOString().slice(0,10)).split("-");return `${d[2]}/${d[1]}/${d[0].slice(2)}`})();
+  const versao=RD.versao||"1"; const nomeRel=(RD.nome||P.nome||"").trim();
+  const sub=`${nomeRel} - VERSÃO ${versao}`;
+  const X0=16.7, XMAX=561, LH=24.75, YMAX=812;
+  // ---------- texto corrido com quebra (trechos com fonte/cor/itálico) ----------
+  const medir=(r)=>{F(r.f||"PoppinsLight",r.i?"italic":"normal");doc.setFontSize(r.s||14);return s=>doc.getTextWidth(s)};
+  function linhasDe(runs,width){
+    const words=[];let cur=[];const push=()=>{if(cur.length){words.push(cur);cur=[]}};
+    runs.forEach(r=>String(r.t).split(/(\n|\s+)/).forEach(p=>{if(!p)return;if(p==="\n"){push();words.push("\n");return}if(/^\s+$/.test(p)){push();return}cur.push({...r,t:p})}));push();
+    const lines=[];let line=[],lw=0;const sp=medir({})(" ");
+    words.forEach(w=>{if(w==="\n"){lines.push(line);line=[];lw=0;return}const ww=w.reduce((a,g)=>a+medir(g)(g.t),0);
+      if(line.length&&lw+sp+ww>width){lines.push(line);line=[];lw=0} if(line.length)lw+=sp; let x=lw; w.forEach(g=>{line.push({...g,x});x+=medir(g)(g.t)}); lw+=ww});
+    if(line.length)lines.push(line); return lines;
+  }
+  function escrever(runs,x,y,{width=XMAX-x,lh=LH,center=false}={}){
+    const ls=linhasDe(runs,width); ls.forEach((l,i)=>{ let off=0; if(center&&l.length){const last=l[l.length-1]; off=(width-(last.x+medir(last)(last.t)))/2}
+      l.forEach(g=>{F(g.f||"PoppinsLight",g.i?"italic":"normal");doc.setFontSize(g.s||14);cor(g.c||PRETO);doc.text(g.t,x+off+g.x,y+i*lh)})}); return y+(ls.length-1)*lh;
+  }
+  const alturaTexto=(runs,width=XMAX-X0,lh=LH)=>linhasDe(runs,width).length*lh;
+  // ---------- cabeçalho das páginas internas ----------
+  let pagTitulo="",pagSecao="",y=0,temLogo=true;
+  function cabecalho(titulo,secao,{subtitulo=true,logo=true,ytit=106.1}={}){
+    doc.addPage(); pagTitulo=titulo; pagSecao=secao; temLogo=logo;
+    doc.setFillColor(...REL.laranja); doc.lines([[507,0],[-79,69.8],[-428,0]],0,0,[1,1],"F",true);
+    if(logo&&A.circ) doc.addImage(A.circ,"PNG",13,3.5,63,63);
+    doc.setFillColor(...REL.linha); doc.rect(577.9,214.5,1.5,628,"F");
+    F("PoppinsLight"); doc.setFontSize(9.5); cor(REL.cinza); doc.text(`ISADORA ANDRADE | ${ano}`,578,210,{angle:90,charSpace:1.6});
+    F("Poppins"); doc.setFontSize(29); cor(REL.laranja); doc.text(titulo,13.2,ytit);
+    let yy=ytit;
+    if(subtitulo){F("Poppins");doc.setFontSize(17);cor(PRETO);doc.text(sub,16.7,ytit+24.7);yy=ytit+24.7}
+    if(secao){F("Poppins");doc.setFontSize(17);cor(REL.laranja);doc.text(secao,16.7,172.4);yy=172.4}
+    y=yy+39; return y;
+  }
+  const precisa=h=>{if(y+h>YMAX){cabecalho(pagTitulo,pagSecao,{logo:temLogo});}};
+  const norm=(runs,f)=>[].concat(runs).map(r=>typeof r==="string"?{t:r,f}:{f,...r});
+  const bloco=(label,val,g)=>{const h=LH+(val!=null?alturaTexto(norm(val,"Poppins")):0)+(g?LH+alturaTexto(norm(g)):0); if(y+h>YMAX&&y>230) cabecalho(pagTitulo,pagSecao,{logo:temLogo}); bullet(label); if(val!=null) valor(val); if(g) guia(g)};
+  const bullet=(label,xb=27.6,xl=40.5)=>{precisa(LH*2);doc.setFillColor(0,0,0);doc.circle(xb,y-4.7,2.65,"F");F("Poppins");doc.setFontSize(14);cor(PRETO);doc.text(label,xl,y);y+=LH};
+  const valor=(runs)=>{runs=[].concat(runs).map(r=>typeof r==="string"?{t:r,f:"Poppins"}:{f:"Poppins",...r}); precisa(alturaTexto(runs)); y=escrever(runs,X0,y)+LH};
+  const guia=(runs)=>{runs=[].concat(runs).map(r=>typeof r==="string"?{t:r}:r); y+=LH; precisa(alturaTexto(runs)); y=escrever(runs,X0,y)+LH};
+  const espaco=()=>{y+=LH};
+  const itensRich=s=>parseRich(s).map(r=>({t:r.t,f:"Poppins",i:r.i}));
+  // ================= CAPA =================
+  doc.setFillColor(...REL.laranja); doc.rect(0,0,595.5,842.25,"F");
+  if(A.faixa) doc.addImage(A.faixa,"PNG",-13.2,117.9,622,323.4); else {doc.setFillColor(254,253,253);doc.rect(0,136.1,595.5,291,"F")}
+  if(A.logo) doc.addImage(A.logo,"PNG",169.6,148.5,256.9,256.9);
+  F("PoppinsLight"); doc.setFontSize(24); cor(BRANCO); doc.text("Consultora Isadora Andrade",59.2,80.4);
+  F("Alice"); doc.setFontSize(60); doc.text("DIZERES",59.5,529.4); doc.text("ROTULAGEM",59.5,595.4);
+  const cliente=(RD.cliente||nomeCliente(R.clienteId)||P.marca||"").toUpperCase();
+  F("PoppinsLight"); doc.setFontSize(26); let yc=646.2; if(cliente){doc.text(cliente,59.5,yc);yc+=36}
+  doc.splitTextToSize(nomeRel.toUpperCase(),480).forEach(l=>{doc.text(l,59.5,yc);yc+=36});
+  doc.setFontSize(20); doc.text(`Versão ${versao} - ${dataBR}`,378.8,774.4); doc.text(RD.cidade||"Blumenau - SC",378.8,802.2);
+  // ================= PAINEL FRONTAL =================
+  const pesoMin=(()=>{const c=C.cont;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
+  cabecalho("Dizeres de Rotulagem","PAINEL FRONTAL");
+  bloco("Denominação de venda:",(P.denominacao||"").toUpperCase(),"A informação deve estar legível, visível, em cor contrastante com a do fundo do rótulo (ou do alimento, caso a embalagem seja transparente), uniformes em corpo e cor, sem intercalação de desenhos e outros dizeres.\nA altura mínima das letras não deverá ser inferior a 1/3 da maior inscrição do rótulo incluindo a marca."); espaco();
+  if((RD.fantasia||"").trim()){bloco("Denominação consagrada, de fantasia, de fábrica ou marca registrada",RD.fantasia.toUpperCase(),"A informação não poderá encontrar-se em caracteres superiores a 2/3 dois terços da denominação de venda do produto."); espaco();}
+  bloco(C.liquido?"Volume líquido:":"Peso líquido:",P.conteudo?`${P.conteudo} ${P.unidade}`:"",[{t:"A informação deve estar legível, visível, em cor contrastante com a do fundo do rótulo (ou do alimento, caso a embalagem seja transparente).\nA altura da fonte com que a informação deve ser escrita, deve ser de, no mínimo, "},{t:pesoMin,c:REL.laranja},{t:".\nOs caracteres utilizados para a grafia dos símbolos das unidades de medida deverão ter a altura mínima de 2/3 (dois terços) da altura dos algarismos.\nA largura dos caracteres alfanuméricos da indicação quantitativa do conteúdo líquido não poderá ser inferior a 2/3 (dois terços) de sua altura."}]);
+  if((RD.alegacaoLactose||"").trim()){
+    cabecalho("Dizeres de Rotulagem","PAINEL FRONTAL");
+    bullet("Alegação nutricional sobre lactose:"); y+=LH*0.0; precisa(LH*2); y=escrever([{t:RD.alegacaoLactose.toUpperCase(),f:"PoppinsLight"}],X0,y+LH,{center:true})+LH;
+    guia(`A alegação nutricional sobre "${RD.alegacaoLactose.toUpperCase()}", pode ser utilizada em destaque, no painel frontal ou demais painéis.`);
+  }
+  // ================= DEMAIS PAINÉIS =================
+  cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
+  bloco("Lista de Ingredientes:",itensRich(T.ing),"A lista de ingredientes deve ser exatamente nesta ordem e não pode ser modificada. Deve estar localizada no mesmo painel da tabela de informação nutricional."); espaco();
+  const textoAviso="A declaração deve estar logo após a lista de ingredientes, em caixa alta, negrito, cor contrastante com a do fundo do rótulo (ou do alimento, caso a embalagem seja transparente) e fonte de no mínimo 2 mm. Caso a fonte da lista de ingredientes seja maior que 2 mm, essa declaração deve ter o mesmo tamanho de fonte. Essa informação não pode estar encoberta e nem em local de selagem ou que seja prejudicada pela abertura da embalagem.";
+  if(T.alg){bloco("Declaração de alergênicos:",T.alg,textoAviso); espaco();}
+  if(T.lac){bloco("Advertência sobre lactose",T.lac,textoAviso); espaco();}
+  cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
+  bloco("Declaração de glúten:",T.gluten,"A declaração deve estar em caixa alta e negrito, de forma visível e legível. Essa declaração não pode estar encoberta e nem em local de selagem ou que seja prejudicada pela abertura da embalagem. Caso optem por colocá-la abaixo da lista de ingredientes, manter após a declaração de alergênicos e lactose."); espaco();
+  if((P.conservacao||"").trim()){bullet("Conservação"); valor({t:P.conservacao.toUpperCase(),f:"PoppinsLight"}); espaco();}
+  if(T.ogm){bloco("Declaração de transgênicos",T.ogm,"A expressão deve estar no painel principal, junto ao símbolo “T” (triângulo amarelo com a letra T em preto), conforme o Decreto 4.680/2003 e a Portaria 2.658/2003. A espécie doadora do gene deve constar na lista de ingredientes."); espaco();}
+  cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
+  bullet("Identificação de origem:"); valor({t:P.origem||"",f:"PoppinsLight"});
+  y+=LH; guia("As informações devem estar legíveis, visíveis, fontes de no mínimo 1 mm e em cor contrastantes com a do fundo do rótulo."); espaco();
+  if((RD.redes||"").trim()){bullet("Informações de redes sociais"); valor({t:RD.redes,f:"PoppinsLight"});}
+  if((RD.observacao||"").trim()){espaco(); valor({t:RD.observacao,f:"PoppinsLight",c:REL.vermelho});}
+  if((RD.codigoBarras||"").trim()){espaco(); bullet("Código de barras"); valor({t:RD.codigoBarras,f:"PoppinsLight"});}
+  if((RD.expressao||"").trim()){espaco(); bullet("Indicação da expressão"); valor({t:RD.expressao,f:"PoppinsLight"});}
+  if(RD.sif){
+    cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
+    bullet("Carimbo oficial da Inspeção Federal"); y+=LH;
+    y=escrever([{t:`O carimbo deve seguir o modelo abaixo, com o número de registro do estabelecimento ${RD.registroSif||"000"}.`}],X0,y)+LH*0.4;
+    if(A.carimbo) doc.addImage(A.carimbo,"PNG",134.8,y,291.1,183.1);
+  }
+  // ================= TABELAS =================
+  const modelos=modelosTab(R);
+  modelos.forEach((m,i)=>{
+    const lay=layTabela(R,C,m), red=!!R.tabela.reduzida, compact=red||m==="linear";
+    cabecalho(compact?"Compactação Tabela Nutricional":"Tabela Nutricional","",{ytit:108.1});
+    F("Poppins");doc.setFontSize(17);cor(REL.laranja);doc.text("Tabela Nutricional",16.7,164.1);
+    const prox=modelos[i+1];
+    const intro=prox?`Priorizar o modelo ${NOME_MODELO[m]}, caso não caiba, e usar o modelo ${NOME_MODELO[prox]} abaixo`:`Utilizar o modelo a seguir${compact?" já com a compactação":""}, no modelo ${NOME_MODELO[m]}:`;
+    escrever([{t:intro}],12.7,189.2,{width:548,lh:19.5});
+    if(m==="linear") paginaLinear(lay); else paginaTabela(lay,red);
+    // fontes permitidas
+    F("Poppins");doc.setFontSize(17);cor(REL.laranja);
+    [["Fontes que podem ser utilizadas:",709.9],["Arial",733.1],["Arial Narrow",756.4],["Helvetica",779.6],["Helvetica Condensed",802.9]].forEach(([s,yy])=>doc.text(s,286,yy,{align:"center"}));
+  });
+  function seta(x1,y1,x2,y2,curva=0){ // seta laranja (reta ou curva)
+    doc.setDrawColor(...REL.laranja);doc.setFillColor(...REL.laranja);doc.setLineWidth(1.4);
+    const mx=(x1+x2)/2+curva, my=(y1+y2)/2-Math.abs(curva)*0.2;
+    if(curva) doc.lines([[ (mx-x1)*0.9,(my-y1)*0.9,(mx-x1)*1.1+(x2-mx)*0.1,(my-y1)*1.1+(y2-my)*0.1,x2-x1,y2-y1]],x1,y1,[1,1],"S",false); else doc.line(x1,y1,x2,y2);
+    const ang=Math.atan2(y2-(curva?my:y1),x2-(curva?mx:x1)), L=7, a=0.45;
+    doc.line(x2,y2,x2-L*Math.cos(ang-a),y2-L*Math.sin(ang-a)); doc.line(x2,y2,x2-L*Math.cos(ang+a),y2-L*Math.sin(ang+a));
+  }
+  function paginaTabela(lay,red){
+    const larg=357, k=Math.min(larg/lay.w,(560-290)/lay.h); const ox=16.7, oy=290;
+    pdfDraw(doc,escalar(lay,k),ox,oy);
+    const mk=Object.fromEntries(Object.entries(lay.marks).map(([a,v])=>[a,oy+v*k])); const xr=ox+lay.w*k;
+    const ft=red?8:10, fs=red?6:8;
+    seta(112,oy+lay.h*0.03+3,128,247,10);
+    escrever([{t:"título "},{t:`INFORMAÇÃO NUTRICIONAL: ${ft}pt`,f:"Poppins"}],143,254.6,{width:400});
+    const r=(yy,txt)=>{seta(xr-10,yy,xr+30,yy);escrever([{t:txt}],xr+33,yy+5,{width:XMAX-xr-30,lh:16.7})};
+    const alvo=[[mk.titleBase-4,"negrito"],[mk.thickY,"linha espessura grossa"],[mk.headBase-3,"negrito"],[mk.mediumY,"linha espessura média"]].sort((a,b)=>a[0]-b[0]);
+    let ult=-99; alvo.forEach(([yy,tx])=>{if(yy-ult<15) yy=ult+15; r(yy,tx); ult=yy});
+    const yb=oy+lay.h*k; seta(106,yb+8,140,yb+44,-12);
+    escrever([{t:`demais informações: `},{t:`${fs}pt`,f:"Poppins"}],154.1,yb+52,{width:400});
+  }
+  function paginaLinear(lay){
+    const larg=412, k=larg/lay.w; const ox=65, oy=380;
+    pdfDraw(doc,escalar(lay,k),ox,oy);
+    escrever([{t:"INFORMAÇÃO NUTRICIONAL:",f:"Poppins"},{t:"\nnegrito, caixa alta, com corpo de 8pt, alinhamento a esquerda"}],235.1,261,{width:300,lh:19.5});
+    seta(357,oy-30,350,300,8);
+    escrever([{t:"Porções por embalagem, porção e medida caseira: corpo de 6pt, alinhamento a esquerda."}],16.7,285.4,{width:200,lh:19.5});
+    seta(112,oy-6,100,330,-6);
+    const yb=oy+lay.h*k;
+    escrever([{t:"Símbolo separador: Black Circle"}],485.6,543.3,{width:80,lh:19.5}); seta(478,yb-20,520,yb+4,6);
+    escrever([{t:"Combinação de regular e negrito e de caixa alta e baixa. Corpo: 6 pt. Alinhamento à esquerda."}],10.4,yb+72,{width:225,lh:19.5}); seta(128,yb+4,90,yb+34,-6);
+    escrever([{t:"A legenda de *Percentual de valores diários fornecidos pela porção: corpo de 6 pt."}],249.8,yb+106,{width:300,lh:19.5}); seta(410,yb+34,445,yb+78,8);
+  }
+  // ================= ROTULAGEM FRONTAL =================
+  const lup=layLupa(R,C);
+  if(lup&&!R.lupa.vedada){
+    cabecalho("Rotulagem nutricional frontal","",{ytit:108.1});
+    const Rv={...R,lupa:{...R.lupa,modelo:"vertical"}}, lv=layLupa(Rv,C); const kv=180/lv.w; pdfDraw(doc,escalar(lv,kv),28,190);
+    const M=lup.M, faixa=M.area>100?"maior que 100 cm²":"de 35 cm² até 100 cm²";
+    const area=M.area>0?`${br(M.pct,2)}% (${br(M.area*M.pct/100,2)} cm²)`:`${M.pct?br(M.pct,2)+"%":"o percentual do Anexo XVIII"}`;
+    const ys=[167,268,348]; ys.forEach(yy=>seta(232,yy,297,yy));
+    escrever([{t:"A área da LUPA deve ocupar ",f:"Poppins"},{t:area,f:"Poppins",c:REL.vermelho},{t:` da área total do painel principal. (se a área do painel principal for ${faixa})`,f:"Poppins"}],322.2,159.7,{width:240,lh:19.5});
+    escrever([{t:M.area>100?"A fonte utilizada no texto precisa ser Arial Narrow, com corpo entre 9 pt e 15 pt.":"A fonte utilizada no texto precisa ser Arial Narrow, com corpo de no MÁXIMO 9 pt.",f:"Poppins"}],322.2,260.4,{width:240,lh:19.5});
+    escrever([{t:"A FOP deve estar localizada na metade superior do painel principal, em uma única superfície contínua.",f:"Poppins"}],322.2,336.5,{width:240,lh:19.5});
+    const nut=C.lupa.nutrientes.map(n=>`"${n}"`).join(", ");
+    let yb=445.5; [ `"ALTO EM" deve ser escrito em cor preta, com fundo branco, em negrito, caixa alta, alinhamento horizontal e vertical centralizado.`,
+      `${nut} deve${C.lupa.nutrientes.length>1?"m":""} ser escrito${C.lupa.nutrientes.length>1?"s":""} em cor branca, com fundo preto, em negrito, caixa alta e alinhamento vertical e horizontal centralizado.`,
+      "Ela precisa ter a mesma orientação do texto das demais informações","Seguir uma das estéticas da FOP apresentadas abaixo."].forEach(t=>{doc.setFillColor(0,0,0);doc.circle(34.9,yb-4.7,2.65,"F");yb=escrever([{t,f:"Poppins"}],47.8,yb,{width:510,lh:19.5})+39});
+    const Rh={...R,lupa:{...R.lupa,modelo:"horizontal"}}, lh=layLupa(Rh,C);
+    const kv2=Math.min(120/lv.w,95/lv.h); const lvS=escalar(lv,kv2); pdfDraw(doc,lvS,297.75-lvS.w/2,Math.max(yb-10,612));
+    const kh=Math.min(300/lh.w,60/lh.h); const lhS=escalar(lh,kh); pdfDraw(doc,lhS,297.75-lhS.w/2,Math.max(yb-10,612)+lvS.h+8);
+    // página de medidas de referência
+    cabecalho("Rotulagem Nutricional Frontal","",{subtitulo:false,logo:false,ytit:108.1});
+    F("Poppins");doc.setFontSize(17);cor(PRETO);doc.text("Medidas de referência:",16.7,164.1);
+    F("PoppinsLight");[["Y: equivalente a altura da letra \"A\" no texto ALTO EM.",187.4],["Z: equivalente a largura da letra \"I\" no texto SÓDIO.",210.6]].forEach(([t,yy])=>{doc.setFillColor(0,0,0);doc.circle(33.9,yy-5.6,2.65,"F");F("PoppinsLight");doc.setFontSize(17);cor(PRETO);doc.text(t,45.7,yy)});
+    const C4={...C,lupa:{...C.lupa,nutrientes:["AÇÚCAR ADICIONADO","GORDURA SATURADA","SÓDIO"]}}; const l4=layLupa(Rv,C4); const k4=210/l4.w; const l4s=escalar(l4,k4); pdfDraw(doc,l4s,175,292);
+    escrever([{t:"A borda externa deve ter cantos arredondados e espessura de 1Z.",f:"Poppins"}],258.3,252,{width:300,lh:19.5}); seta(205,294,250,252,-10);
+    doc.saveGraphicsState?.(); F("PoppinsLight");doc.setFontSize(14);cor(PRETO);
+    ["A lupa deve estar posicionada na lateral","esquerda do bloco informativo de ALTO EM,","com distância de 1Z da borda do bloco,","inclinação de 30 graus e altura de 3Y."].forEach((t,i)=>doc.text(t,75+i*19.5,620,{angle:90}));
+    seta(140,360,180,335,8);
+    escrever([{t:"A borda interna deve ter espessura de 2Z."}],422.6,407.5,{width:120,lh:19.5}); seta(300,440,415,440);
+    escrever([{t:"O módulo do título e dos nutrientes deve ter uma altura de 3Y, largura de 8Y e cantos arredondados."}],418,560,{width:150,lh:19.5}); seta(360,575,412,555,-8);
+    let yy=672; ["CABO DA LUPA: Comprimento de 1,3Y, espessura de 2,6Z e bordas arredondadas.","LENTE DA LUPA: Diâmetro de 1,7Y e espessura de 1,4Z.","Conexão entre a lente e cabo: Comprimento de 1,2Z, espessura de 1,5Z e altura 1,2Z.","Exemplo: caso a altura de A seja 1 mm e a largura de I 0,5 mm, Y=1 mm  e Z=0,5 mm."].forEach(t=>{doc.setFillColor(0,0,0);doc.circle(42,yy-4.7,2.65,"F");yy=escrever([{t,f:"PoppinsLight"}],54,yy,{width:500,lh:19.5})+19.5});
+  }
+  // ================= CONTRACAPA =================
+  doc.addPage(); doc.setFillColor(...REL.laranja); doc.rect(0,0,595.5,842.25,"F");
+  if(doc.GState){for(let i=0;i<8;i++){doc.setGState(new doc.GState({opacity:0.05}));doc.setFillColor(0,0,0);doc.rect(417-8+i,0,8-i,842.25,"F")}doc.setGState(new doc.GState({opacity:1}))}
+  doc.setFillColor(255,255,255); doc.rect(417,0,178.5,842.25,"F");
+  if(A.logo) doc.addImage(A.logo,"PNG",424,615,168,168);
+  F("PoppinsLight"); doc.setFontSize(16.5); cor(BRANCO); doc.text("EM CASO DE DÚVIDAS, ENTRE EM CONTATO",28,264);
+  // ícone WhatsApp
+  doc.setDrawColor(255,255,255);doc.setFillColor(255,255,255);doc.setLineWidth(3.2);doc.circle(44,337,19,"S");doc.triangle(25,358,30,345,38,354,"F");
+  doc.setLineWidth(5);doc.setLineCap("round");doc.lines([[2,8,9,15,17,15]],36,331,[1,1],"S",false);doc.setLineCap("butt");
+  doc.text(REL.fone,75,344);
+  // ícone e-mail
+  doc.setLineWidth(3);doc.roundedRect(22,407,44,33,3,3,"S");doc.lines([[22,17],[22,-17]],22,409,[1,1],"S",false);
+  doc.text(REL.email,75,429);
+  return doc.output("blob");
+}
+function escalar(lay,k){const sc=o=>{const n={...o};["x","y","w","h","x1","y1","x2","y2","cx","cy","r","ry","sw","size"].forEach(a=>{if(n[a]!=null)n[a]*=k});if(n.pts)n.pts=n.pts.map(p=>p.map(v=>v*k));if(n.d)n.d=n.d.map(c=>c.length>1?[c[0],...c.slice(1).map(v=>v*k)]:c);return n};
+  return {...lay,w:lay.w*k,h:lay.h*k,ops:lay.ops.map(sc)}}
 
 /* ===================== AUTOCOMPLETE ===================== */
 let acBox=null;
@@ -1113,6 +1396,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{const el=e.target;
   if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
+  if(el.dataset.modelo){let m=modelosTab(S.R); m=el.checked?[...new Set([...m,el.dataset.modelo])]:m.filter(x=>x!==el.dataset.modelo); if(!m.length){m=["vertical"];toast("Deixe pelo menos um modelo marcado.")} S.R.tabela.modelos=m; salvar(); render(); return}
   if(el.id==="trocaTipo"){S.R.tipo=el.value;salvar();render();toast("Tipo alterado para "+TIPOS[el.value].t+".");return}
   if(el.id==="impfile"&&el.files[0]){const fr=new FileReader();fr.onload=()=>{try{const R=JSON.parse(fr.result);if(!R.tipo||!R.produto)throw 0;R.id=novoUUID();R.clienteId=R.clienteId&&DBR.clientes.some(c=>c.id===R.clienteId)?R.clienteId:"";abrir(R);salvar();toast("Rótulo importado.")}catch(x){toast("Esse arquivo não é um backup de rótulo válido.")}};fr.readAsText(el.files[0])}
   if(el.tagName==="SELECT"&&el.dataset.bind&&!el.dataset.rerender) updateLive();
