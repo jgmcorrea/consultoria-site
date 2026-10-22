@@ -224,11 +224,35 @@ function fraseRegistro(R){
 // carimbo do SIF (Decreto 9.013/2017, art. 467, III — modelo 3) pelo peso da embalagem
 function carimboSIF(R,C){
   const area=C.area, g=C.contPeso;
-  if(area>0&&area<=10) return {d:"1 cm",motivo:"superfície visível para rotulagem de até 10 cm²"};
-  if(!(g>0)) return {d:"—",motivo:"informe o conteúdo líquido"};
-  if(g<=1000) return {d:"2 cm ou 3 cm",motivo:"embalagem de até 1 kg"};
-  if(g<=10000) return {d:"4 cm",motivo:"embalagem acima de 1 kg até 10 kg"};
-  return {d:"5 cm",motivo:"embalagem acima de 10 kg"};
+  const esc23=String(R.inspecao?.diamSIF||"2")==="3"?30:20;
+  if(area>0&&area<=10) return {d:"1 cm",mm:10,motivo:"superfície visível para rotulagem de até 10 cm²"};
+  if(!(g>0)) return {d:"—",mm:20,motivo:"informe o conteúdo líquido"};
+  if(g<=1000) return {d:`${esc23/10} cm`,mm:esc23,motivo:"embalagem de até 1 kg: 2 cm ou 3 cm",escolha:true};
+  if(g<=10000) return {d:"4 cm",mm:40,motivo:"embalagem acima de 1 kg até 10 kg"};
+  return {d:"5 cm",mm:50,motivo:"embalagem acima de 10 kg"};
+}
+// desenha o carimbo SIF modelo 3 (Memorando-Circular nº 13/2017/DIPOA): círculo com diâmetro D; "MINISTÉRIO DA AGRICULTURA" por fora,
+// "BRASIL" no arco superior interno, "INSPECIONADO" e o número ao centro, "S.I.F." no arco inferior interno. k = unidades do documento por mm.
+function desenharCarimbo(doc,cx,cy,Dmm,num,k){
+  const D=Dmm*k, r=D/2, ptPor=k*0.352778; // unidades do doc por pt
+  const fs=capH=>capH/0.72/ptPor; // tamanho de fonte (pt) para uma altura de maiúscula
+  doc.setDrawColor(0,0,0); doc.setTextColor(0,0,0); doc.setLineWidth(D*0.022); doc.circle(cx,cy,r,"S");
+  doc.setFont("helvetica","bold");
+  const arco=(txt,R0,ang0,ang1,size,topo)=>{ // topo: texto acima da linha de base, lendo da esquerda para a direita
+    doc.setFontSize(size); const ws=[...txt].map(ch=>doc.getTextWidth(ch)); const tot=ws.reduce((a,b)=>a+b,0);
+    const span=Math.abs(ang1-ang0)*Math.PI/180, gap=(span*R0-tot)/Math.max(1,txt.length-1);
+    let s=0; [...txt].forEach((ch,i)=>{ const mid=s+ws[i]/2; const f=(mid+i*gap)/(span*R0);
+      const phi=(topo? ang0-(ang0-ang1)*f : ang0+(ang1-ang0)*f)*Math.PI/180;
+      const px=cx+R0*Math.cos(phi), py=cy-R0*Math.sin(phi);
+      const tx=topo?Math.sin(phi):-Math.sin(phi), ty=topo?Math.cos(phi):-Math.cos(phi);
+      const rot=topo?phi*180/Math.PI-90:phi*180/Math.PI+90;
+      doc.text(ch,px-tx*ws[i]/2,py-ty*ws[i]/2,{angle:rot}); s+=ws[i]; });
+  };
+  arco("MINISTÉRIO DA AGRICULTURA",r+D*0.035,205,-25,fs(D*0.085),true);
+  arco("BRASIL",r*0.62,138,42,fs(D*0.1),true);
+  doc.setFontSize(fs(D*0.07)); doc.text("INSPECIONADO",cx,cy+D*0.01,{align:"center"});
+  doc.setFontSize(fs(D*0.075)); doc.text(String(num||"000"),cx,cy+D*0.115,{align:"center"});
+  arco("S.I.F.",r*0.66,238,302,fs(D*0.1),false);
 }
 const KEYS = [...OBRIG, ...EXTRA_K];
 const NUT = {
@@ -1036,6 +1060,7 @@ function viewProduto(R,C){
       ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.orgao",R.inspecao.servico==="SIE"?"Órgão estadual":"Município / órgão",{ph:R.inspecao.servico==="SIE"?"Ex.: CIDASC":"Ex.: Prefeitura de Pomerode"}):""}
       ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regEstab","Nº de registro do estabelecimento",{n:true}):""}
       ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regProduto","Nº de registro do produto",{n:true,hint:"Quando aplicável."}):""}
+      ${R.inspecao.servico==="SIF"&&carimboSIF(R,calc(R)).escolha?sel("inspecao.diamSIF","Diâmetro do carimbo SIF",[["2","2 cm"],["3","3 cm"]],{re:true,hint:"Embalagens de até 1 kg: 2 ou 3 cm (Decreto 9.013/2017, art. 467, III). É o diâmetro do círculo; “Ministério da Agricultura” fica por fora."}):""}
       ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.frase","Frase de registro (opcional)",{span:true,ph:fraseRegistro({inspecao:{...R.inspecao,frase:""}}),hint:"Em branco = frase padrão acima. Edite se o serviço exigir outro texto."}):""}
     </div>
   </div>
@@ -1287,7 +1312,8 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico}`);
     if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
     kv("Frase obrigatória",fraseRegistro(R)+" (Decreto 9.013/2017, art. 443, IX)");
-    if(I.servico==="SIF"){const cs=carimboSIF(R,C); kv("Carimbo SIF",`Modelo 3 (circular): “Ministério da Agricultura” na borda superior externa, “Brasil” na parte superior interna, “Inspecionado” ao centro, número ${I.regEstab||"000"} abaixo (sem “nº”) e “S.I.F.” na borda inferior interna; cor única, de preferência preta, em destaque.`); kv("Diâmetro do carimbo",`${cs.d} (${cs.motivo}) — Decreto 9.013/2017, arts. 464 a 467.`);}
+    if(I.servico==="SIF"){const cs=carimboSIF(R,C); kv("Carimbo SIF",`Modelo 3 (circular): “Ministério da Agricultura” na borda superior externa, “Brasil” na parte superior interna, “Inspecionado” ao centro, número ${I.regEstab||"000"} abaixo (sem “nº”) e “S.I.F.” na borda inferior interna; cor única, de preferência preta, em destaque.`); kv("Diâmetro do carimbo",`${cs.d} (${cs.motivo}) — diâmetro do círculo; “Ministério da Agricultura” fica por fora. Decreto 9.013/2017, art. 467, III, e Memorando-Circular nº 13/2017/DIPOA.`);
+      need(cs.mm+14); para("Carimbo em tamanho real:",{size:8,cor:CINZA}); desenharCarimbo(doc,M+cs.mm/2+6,y+cs.mm/2+5,cs.mm,I.regEstab,1); y+=cs.mm+12;}
     else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}, com o número de registro do estabelecimento.`);
   }}
   if(C.E.length||C.W.length){h2("Pendências"); C.E.concat(C.W).forEach(t=>para("• "+t,{size:8.5}))}
@@ -1528,8 +1554,11 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
     cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
     const cs=carimboSIF(R,C);
     bullet("Carimbo oficial da Inspeção Federal"); y+=LH;
-    y=escrever([{t:`O carimbo deve seguir o modelo abaixo (modelo 3, circular), com o número de registro do estabelecimento ${INS.regEstab||"000"}, em cor única, de preferência preta. Diâmetro: `},{t:cs.d,f:"Poppins",c:REL.vermelho},{t:` (${cs.motivo}) — Decreto 9.013/2017, arts. 464 a 467.`}],X0,y)+LH*0.4;
-    if(A.carimbo) doc.addImage(A.carimbo,"PNG",134.8,y,291.1,183.1,"carimbo","FAST");
+    y=escrever([{t:`O carimbo deve seguir o modelo abaixo (modelo 3, circular), com o número de registro do estabelecimento ${INS.regEstab||"000"}, em cor única, de preferência preta. Diâmetro: `},{t:cs.d,f:"Poppins",c:REL.vermelho},{t:` (${cs.motivo}). A medida é o diâmetro do círculo; “Ministério da Agricultura” fica por fora — Decreto 9.013/2017, art. 467, e Memorando-Circular nº 13/2017/DIPOA.`}],X0,y)+LH*0.4;
+    { const kpt=72/25.4, esc=Math.min(60,Math.max(cs.mm,40)); // ampliado para leitura + tamanho real ao lado
+      desenharCarimbo(doc,200,y+esc*kpt/2+30,esc,INS.regEstab,kpt);
+      if(cs.mm<esc) desenharCarimbo(doc,420,y+esc*kpt/2+30,cs.mm,INS.regEstab,kpt);
+      y+=esc*kpt+70; escrever([{t:cs.mm<esc?`À esquerda, ampliado para leitura; à direita, no tamanho real (${cs.d} de diâmetro).`:`Tamanho real: ${cs.d} de diâmetro.`,f:"PoppinsLight"}],X0,y,{width:500}); }
   } else if(INS.servico==="SIE"||INS.servico==="SIM"){
     espaco(); bloco(`Carimbo do ${INS.servico}:`,[{t:`Carimbo do ${INS.servico==="SIE"?"Serviço de Inspeção Estadual":"Serviço de Inspeção Municipal"}${INS.orgao?` (${INS.orgao})`:""} com o número de registro do estabelecimento ${INS.regEstab||"000"}.`,f:"PoppinsLight"}],"Modelo, dimensões e dizeres conforme o regulamento do serviço de inspeção do estado ou do município.");
   }
