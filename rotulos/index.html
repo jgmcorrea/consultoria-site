@@ -167,6 +167,9 @@ const EXTRAS = [
   ["colina","Colina","","mg",550,0,"zn","outro"]
 ];
 const EXTRA_K = EXTRAS.map(e=>e[0]);
+// alegações sobre lactose (RDC 135/2017): "zero" até 100 mg/100 g ou ml; "baixo" acima de 100 mg até 1 g/100 g ou ml
+const ALEG_LAC = [["","Sem alegação sobre lactose",null],["ZERO LACTOSE","Zero lactose",0.1],["ISENTO DE LACTOSE","Isento de lactose",0.1],["SEM LACTOSE","Sem lactose",0.1],["0% LACTOSE","0% lactose",0.1],["NÃO CONTÉM LACTOSE","Não contém lactose",0.1],["BAIXO TEOR DE LACTOSE","Baixo teor de lactose",1],["BAIXO EM LACTOSE","Baixo em lactose",1]];
+const alegLac = R=>String(R.relatorio?.alegacaoLactose||"").trim().toUpperCase();
 const KEYS = [...OBRIG, ...EXTRA_K];
 const NUT = {
   carb:{l:"Carboidratos",u:"g",vdr:300,ns:0.5},
@@ -306,7 +309,7 @@ function calc(R){
   const e100=kcal(b100), eP=kcal(pv);
   // quantidades não significativas (Anexo IV, IN 75/2020): por 100 g/ml e por porção
   const ns = k=>NUT[k].ns!=null && b100[k]<=NUT[k].ns+1e-9 && pv[k]<=NUT[k].ns+1e-9;
-  const claimLac = !!R.tabela.lactoseGal;
+  const aLac = alegLac(R); const claimLac = !!aLac || !!R.tabela.lactoseGal;
   // nutrientes não obrigatórios a declarar: lactose/galactose só com alegação (art. 5º, §4º); demais quando informados em algum ingrediente (art. 6º)
   const usados=new Set(ings.flatMap(extrasOf));
   const declarar=EXTRA_K.filter(k=>{
@@ -369,7 +372,12 @@ function calc(R){
   if(b100.lac>0.1+1e-9) lactose="CONTÉM LACTOSE";
   else if(semValorLac.length){lactose="CONTÉM LACTOSE"; W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
   if(b100.lac+b100.gal>b100.acTot+0.05) W.push("Lactose + galactose passam dos açúcares totais. Lactose e galactose são açúcares: confira os açúcares totais dos ingredientes.");
-  if(claimLac && b100.lac>0.1) W.push("Há alegação de restrição de lactose marcada, mas o produto tem mais de 100 mg de lactose por 100 "+un+".");
+  if(R.tabela.lactoseGal && !aLac) W.push("Escolha qual é a alegação sobre lactose (etapa Produto): zero lactose, baixo teor de lactose etc.");
+  if(aLac){ const al=ALEG_LAC.find(a=>a[0]===aLac); const lim=al?al[2]:null; const mg=b100.lac*1000;
+    if(lim!=null && b100.lac>lim+1e-9) E.push(`A alegação “${aLac}” exige no máximo ${lim<1?"100 mg":"1 g"} de lactose por 100 ${un}; o produto tem ${br(mg,0)} mg (RDC 135/2017).`);
+    else if(lim===1 && b100.lac<=0.1+1e-9) I.push(`Com ${br(mg,0)} mg de lactose por 100 ${un}, o produto também atende “ZERO LACTOSE” (até 100 mg/100 ${un}).`);
+    if(semValorLac.length) W.push(`Para confirmar a alegação “${aLac}”, informe a lactose (g/100 g) de ${joinE(semValorLac.map(i=>`“${i.nome}”`))}.`);
+    if(lactose) E.push(`“${aLac}” não pode aparecer junto com “CONTÉM LACTOSE”.`); }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
   return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area};
@@ -895,6 +903,7 @@ function viewProduto(R,C){
       ${inp("produto.nome","Nome do produto (uso interno)")}
       ${sel("clienteId","Cliente",[["","Sem cliente"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===R.clienteId).map(c=>[c.id,c.nome])],{hint:"Os rótulos ficam agrupados por cliente na lista."})}
       ${inp("produto.denominacao","Denominação de venda",{hint:"Conforme o padrão de identidade e qualidade. Vai no painel principal (RDC 727/2022, art. 9)."})}
+      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Vai junto da denominação de venda (RDC 135/2017). Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})})()}
       ${inp("produto.marca","Marca")}
       ${inp("produto.descricao","Descrição",{span:true,area:true})}
     </div></div>
@@ -923,7 +932,6 @@ function viewProduto(R,C){
     </div>
     <div class="grid2">
       ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS."})}
-      ${inp("relatorio.alegacaoLactose","Alegação nutricional sobre lactose",{hint:"Ex.: ZERO LACTOSE. Em branco = não entra."})}
       ${inp("relatorio.codigoBarras","Código de barras",{n:true})}
       ${inp("relatorio.expressao","Indicação da expressão (registro)",{ph:"Registro no Ministério da Agricultura SIF/DIPOA sob nº 0000/0000."})}
       ${inp("relatorio.redes","Redes sociais e site",{area:true,ph:"@queijospomerode\nqueijospomerode.com.br"})}
@@ -1045,7 +1053,7 @@ function viewPorcao(R,C){
     </div>
     <div class="grid2">
       ${chk("tabela.reduzida","Usar formatação reduzida (6 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
-      ${chk("tabela.lactoseGal","Produto com alegação de restrição de lactose",{hint:"Inclui lactose e galactose na tabela (RDC 429/2020, art. 5º, §4º)."})}
+      ${R.tabela.lactoseGal&&!alegLac(R)?chk("tabela.lactoseGal","Produto com alegação de restrição de lactose",{hint:"Escolha a alegação na etapa Produto; depois desmarque aqui."}):`<div class="small muted">${alegLac(R)?`Alegação “${esc(alegLac(R))}”: a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º).`:"Sem alegação sobre lactose (escolha na etapa Produto, se houver)."}</div>`}
     </div>
     <div class="grid2">
       ${sel("lupa.anexo16","Enquadramento no Anexo XVI (IN 75/2020)",[["","Não está no Anexo XVI (regra geral)"],["cond","Itens 1 a 6 (queijos, leites fermentados, carnes…)"],["total","Itens 7 a 18 (leites, óleos, sal…): sempre vedada"]],{re:true,hint:"Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170)."})}
@@ -1085,7 +1093,7 @@ function viewRotulo(R,C){
       </div>
       ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(),z*0.6)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">Símbolo e expressão no painel principal (Decreto 4.680/2003). Confira o tamanho na Portaria MJ 2.658/2003.</p></div>`:""}
       <div class="card stack"><h3>Painel principal</h3>
-        <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd><dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont} (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
+        <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont} (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
         <h3>Demais informações</h3>
         <dl class="kv"><dt>Conservação</dt><dd>${esc(P.conservacao||"—")}</dd><dt>Validade</dt><dd>${esc(P.validade||"—")}${P.validadeAberto?` · após aberto: ${esc(P.validadeAberto)}`:""}</dd><dt>Origem</dt><dd>${esc(P.origem||"—")}</dd></dl></div>
     </div>
@@ -1154,7 +1162,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   {const res=[`Porção ${br(C.porcao,1)} ${C.un}`,tabs.map((tb,i)=>`Tabela ${tabs.length>1?(i+1)+"ª ":""}${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm`).join("   ·   "),C.lupa.precisa?`Lupa: ALTO EM ${C.lupa.nutrientes.join(", ")}`:"Sem lupa"].join("   ·   ");
     doc.setFillColor(...CLARO); doc.roundedRect(M,y,W,12,2,2,"F"); doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...TINTA);
     doc.text(doc.splitTextToSize(res,W-10)[0],M+5,y+7.6); y+=17}
-  h2("Painel principal"); kv("Denominação de venda",P.denominacao); kv("Marca",P.marca); kv("Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:"");
+  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if(alegLac(R)) kv("Alegação de lactose",`${alegLac(R)} — junto à denominação de venda (RDC 135/2017). Teor: ${br(C.b100.lac*1000,0)} mg de lactose por 100 ${C.un}.`); kv("Marca",P.marca); kv("Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:"");
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
@@ -1192,7 +1200,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   s1.addRow([]); s1.addRow([]);
   if(logo){const id=wb.addImage({base64:logo.b64,extension:"jpeg"}); s1.addImage(id,{tl:{col:1.8,row:1.3},ext:{width:90,height:90}})}
   secao(s1.addRow(["PAINEL PRINCIPAL"]));
-  [["Denominação de venda",P.denominacao],["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
+  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],["Descrição",P.descricao],["Identificação de origem",P.origem],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
   tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${brFix(tb.w,1)} × ${brFix(tb.h,1)} mm · Arial ${tb.modelo==="linear"||R.tabela.reduzida?"6/8":"8/10"} pt`));
