@@ -183,7 +183,8 @@ const CLASSIF_EST = [
 const ANEXO16=["Frutas, hortaliças, leguminosas, tubérculos, cereais, nozes, castanhas, sementes e cogumelos","Farinhas","Carnes e pescados embalados, refrigerados ou congelados","Ovos","Leites fermentados","Queijos","Leites de todas as espécies de animais mamíferos","Leite em pó","Azeite de oliva e outros óleos vegetais, prensados a frio ou refinados","Sal destinado ao consumo humano","Fórmulas infantis","Fórmulas para nutrição enteral","Alimentos para controle de peso","Suplementos alimentares","Bebidas alcoólicas","Produtos destinados exclusivamente ao processamento industrial","Produtos destinados exclusivamente aos serviços de alimentação","Aditivos alimentares e coadjuvantes de tecnologia"];
 const UFS="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" ");
 // serviços de inspeção
-const SERVICOS=[["","Selecionar…"],["SIF","SIF — Serviço de Inspeção Federal (MAPA)"],["SIE","SIE — Serviço de Inspeção Estadual"],["SIM","SIM — Serviço de Inspeção Municipal"],["nenhum","Não se aplica (produto sem inspeção de origem animal)"]];
+const SERVICOS=[["","Selecionar…"],["SIF","SIF — Serviço de Inspeção Federal (MAPA)"],["SIE-SC","SIE/SC — Serviço de Inspeção Estadual de Santa Catarina (CIDASC)"],["SIE","SIE — outro estado"],["SIM","SIM — Serviço de Inspeção Municipal"],["nenhum","Não se aplica (produto sem inspeção de origem animal)"]];
+const temCarimboModelo3 = s=>s==="SIF"||s==="SIE-SC";
 // respostas obrigatórias por ingrediente: glúten, lactose e alergênicos
 function respIng(i){
   if(i.glutenR==null||i.glutenR==="") i.glutenR=i.gluten?"sim":(i.glutenR||"");
@@ -212,14 +213,16 @@ function origemTexto(R){
   const o=R.origemD||{}; if(!o.razao) return (R.produto.origem||"").trim();
   const loc=[o.municipio,o.uf].filter(Boolean).join("/");
   const partes=[`${o.expressao||"Fabricado em"}: ${o.razao}`, o.classificacao, o.endereco, loc, o.cep?`CEP ${o.cep}`:"", o.pais||"Brasil"].filter(Boolean).join(", ")+".";
-  return [partes, o.cnpj?`CNPJ: ${o.cnpj}.`:"", o.industria!==false&&fold(o.pais||"brasil")==="brasil"?"INDÚSTRIA BRASILEIRA.":"", o.telefone?`Tel.: ${o.telefone}.`:"", o.email?`E-mail: ${o.email}.`:""].filter(Boolean).join(" ");
+  return [partes, o.cnpj?`CNPJ: ${o.cnpj}.`:"", o.industria!==false&&fold(o.pais||"brasil")==="brasil"?"INDÚSTRIA BRASILEIRA.":"", o.telefone||"", o.email||""].filter(Boolean).join(" ");
 }
 function fraseRegistro(R){
-  const I=R.inspecao||{}; if(I.frase&&I.frase.trim()) return I.frase.trim();
-  const n=[I.regProduto,I.regEstab].filter(x=>String(x||"").trim()).join("/"); if(!I.servico||I.servico==="nenhum") return "";
-  if(I.servico==="SIF") return `Registro no Ministério da Agricultura SIF/DIPOA sob nº ${n||"0000/0000"}.`;
-  if(I.servico==="SIE") return `Registro no ${I.orgao||"Serviço de Inspeção Estadual"} SIE sob nº ${n||"0000/0000"}.`;
-  return `Registro no ${I.orgao||"Serviço de Inspeção Municipal"} SIM sob nº ${n||"0000/0000"}.`;
+  const I=R.inspecao||{}; const est=String(I.regEstab||"").trim(), prod=String(I.regProduto||"").trim();
+  if(!I.servico||I.servico==="nenhum") return "";
+  // SIF: Decreto 9.013/2017, art. 443, IX — nº do produto / nº do estabelecimento
+  if(I.servico==="SIF") return `Registro no Ministério da Agricultura SIF/DIPOA sob nº ${prod||"XXXX"}/${est||"XXXX"}`;
+  // SIE/SC: Manual de Rotulagem SIE/CIDASC (POPSIE 02, Anexo V) — nº do estabelecimento-sequencial do rótulo
+  if(I.servico==="SIE-SC") return `RÓTULO REGISTRADO NA SAR/CIDASC/DEINP – SC SOB Nº ${est||"XXXX"}-${prod?(prod.length<3?prod.padStart(3,"0"):prod):"YYY"}`;
+  return String(I.frase||"").trim();
 }
 // carimbo do SIF (Decreto 9.013/2017, art. 467, III — modelo 3) pelo peso da embalagem
 function carimboSIF(R,C){
@@ -233,26 +236,26 @@ function carimboSIF(R,C){
 }
 // desenha o carimbo SIF modelo 3 (Memorando-Circular nº 13/2017/DIPOA): círculo com diâmetro D; "MINISTÉRIO DA AGRICULTURA" por fora,
 // "BRASIL" no arco superior interno, "INSPECIONADO" e o número ao centro, "S.I.F." no arco inferior interno. k = unidades do documento por mm.
-function desenharCarimbo(doc,cx,cy,Dmm,num,k){
+function desenharCarimbo(doc,cx,cy,Dmm,num,k,tipo="SIF"){
   const D=Dmm*k, r=D/2, ptPor=k*0.352778; // unidades do doc por pt
   const fs=capH=>capH/0.72/ptPor; // tamanho de fonte (pt) para uma altura de maiúscula
-  doc.setDrawColor(0,0,0); doc.setTextColor(0,0,0); doc.setLineWidth(D*0.022); doc.circle(cx,cy,r,"S");
+  doc.setDrawColor(0,0,0); doc.setTextColor(0,0,0); doc.setLineWidth(D*0.016); doc.circle(cx,cy,r,"S");
   doc.setFont("helvetica","bold");
-  const arco=(txt,R0,ang0,ang1,size,topo)=>{ // topo: texto acima da linha de base, lendo da esquerda para a direita
-    doc.setFontSize(size); const ws=[...txt].map(ch=>doc.getTextWidth(ch)); const tot=ws.reduce((a,b)=>a+b,0);
-    const span=Math.abs(ang1-ang0)*Math.PI/180, gap=(span*R0-tot)/Math.max(1,txt.length-1);
-    let s=0; [...txt].forEach((ch,i)=>{ const mid=s+ws[i]/2; const f=(mid+i*gap)/(span*R0);
-      const phi=(topo? ang0-(ang0-ang1)*f : ang0+(ang1-ang0)*f)*Math.PI/180;
+  // texto em arco, centrado no ângulo c (graus), com espaçamento extra ls entre letras; topo=true: lido por cima (letras para fora)
+  const arco=(txt,R0,c,size,topo,ls)=>{
+    doc.setFontSize(size); const ch=[...txt], ws=ch.map(x=>doc.getTextWidth(x)); const tot=ws.reduce((a,b)=>a+b,0)+ls*(ch.length-1);
+    const span=tot/R0*180/Math.PI; let s=0;
+    ch.forEach((x,i)=>{ const f=(s+ws[i]/2)/tot; const phi=(topo? c+span/2-span*f : c-span/2+span*f)*Math.PI/180;
       const px=cx+R0*Math.cos(phi), py=cy-R0*Math.sin(phi);
       const tx=topo?Math.sin(phi):-Math.sin(phi), ty=topo?Math.cos(phi):-Math.cos(phi);
-      const rot=topo?phi*180/Math.PI-90:phi*180/Math.PI+90;
-      doc.text(ch,px-tx*ws[i]/2,py-ty*ws[i]/2,{angle:rot}); s+=ws[i]; });
+      doc.text(x,px-tx*ws[i]/2,py-ty*ws[i]/2,{angle:topo?phi*180/Math.PI-90:phi*180/Math.PI+90}); s+=ws[i]+ls; });
   };
-  arco("MINISTÉRIO DA AGRICULTURA",r+D*0.035,205,-25,fs(D*0.085),true);
-  arco("BRASIL",r*0.62,138,42,fs(D*0.1),true);
-  doc.setFontSize(fs(D*0.07)); doc.text("INSPECIONADO",cx,cy+D*0.01,{align:"center"});
-  doc.setFontSize(fs(D*0.075)); doc.text(String(num||"000"),cx,cy+D*0.115,{align:"center"});
-  arco("S.I.F.",r*0.66,238,302,fs(D*0.1),false);
+  // proporções medidas no modelo 3 do Memorando-Circular nº 13/2017/DIPOA (e no modelo 3 do SIE/SC, CIDASC)
+  if(tipo==="SIF"){ arco("MINISTÉRIO DA AGRICULTURA",r+D*0.03,90,fs(D*0.075),true,D*0.012); arco("BRASIL",r*0.60,90,fs(D*0.085),true,D*0.045); }
+  else arco("SANTA CATARINA",r*0.78,90,fs(D*0.075),true,D*0.004);
+  doc.setFontSize(fs(D*0.07)); doc.text("INSPECIONADO",cx,cy+D*0.035,{align:"center"});
+  doc.setFontSize(fs(D*0.07)); doc.text(String(num||"000"),cx,cy+D*0.14,{align:"center"});
+  arco(tipo==="SIF"?"S.I.F.":"S.I.E.",r*0.62,270,fs(D*0.09),false,D*0.012);
 }
 const KEYS = [...OBRIG, ...EXTRA_K];
 const NUT = {
@@ -438,6 +441,11 @@ function calc(R){
   const LUPA_K=[["acAdd","AÇÚCAR ADICIONADO"],["sat","GORDURA SATURADA"],["sodio","SÓDIO"]];
   const acima=LUPA_K.filter(([k])=>b100[k]>=lim[k]);
   // Anexo XVI (IN 75/2020) + RDC 429/2020, art. 18, §§1º e 2º
+  { const I=R.inspecao||{};
+    if(!I.servico) E.push("Escolha o serviço de inspeção (etapa Produto).");
+    else if(I.servico!=="nenhum"){ if(!String(I.regEstab||"").trim()) E.push("Informe o nº de registro do estabelecimento (etapa Produto).");
+      if(temCarimboModelo3(I.servico)&&!String(I.regProduto||"").trim()) E.push(`Informe o nº de registro do produto${I.servico==="SIE-SC"?" (sequencial do rótulo)":""} (etapa Produto).`);
+      if(!temCarimboModelo3(I.servico)&&!String(I.frase||"").trim()) E.push(`Informe a frase de registro exigida pelo ${I.servico} (etapa Produto).`); } }
   if(R.lupa.anexo16===undefined) R.lupa.anexo16=R.lupa.vedada?"cond":"";
   if(R.lupa.item16!==undefined&&R.lupa.item16!==null){const n=+R.lupa.item16; R.lupa.anexo16=n?(n<=6?"cond":"total"):"";}
   const modo16=R.lupa.anexo16;
@@ -482,7 +490,7 @@ function calc(R){
     else if(lim===1 && b100.lac<=0.1+1e-9) I.push(`Com ${br(mg,0)} mg de lactose por 100 ${un}, o produto também atende “ZERO LACTOSE” (até 100 mg/100 ${un}).`);
     if(semValorLac.length) W.push(`Para confirmar a alegação “${aLac}”, informe a lactose (g/100 g) de ${joinE(semValorLac.map(i=>`“${i.nome}”`))}.`);
     if(lactose) E.push(`“${aLac}” não pode aparecer junto com “CONTÉM LACTOSE”.`);
-    if(lupa.precisa) I.push(`Com lupa, a alegação “${aLac}” não pode ficar na metade superior do painel principal nem ter letras maiores que as da lupa (RDC 429/2020, art. 30).`); }
+    if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`); }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
   return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area};
@@ -579,6 +587,7 @@ const MODELOS_TAB=[["vertical","Vertical"],["horizontal","Horizontal"],["vquebra
 const NOME_MODELO={vertical:"vertical, tradicional",horizontal:"horizontal",vquebrado:"vertical quebrado",hquebrado:"horizontal quebrado",linear:"linear"};
 const LWT={fina:0.25,media:1,grossa:3,borda:0.5}; // espessuras em pt (Anexo IX)
 function modelosTab(R){let m=R.tabela.modelos; if(!Array.isArray(m)||!m.length) m=[R.tabela.modelo==="quebrado"?"vquebrado":(R.tabela.modelo||"vertical")]; const ok=MODELOS_TAB.map(x=>x[0]); return ok.filter(k=>m.includes(k))}
+const fontesTab=(red=>red?"Arial, Arial Narrow, Helvetica ou Helvetica Condensed":"Arial ou Helvetica");
 const ABREV={acAdd:"Aç adicionados (g)",sat:"Gord saturadas (g)",trans:"Gord trans (g)",fibra:"Fibras (g)"};
 EXTRAS.forEach(e=>{if(e[2])ABREV[e[0]]=`${e[2]} (${e[3]})`});
 // divide as linhas em duas colunas equilibradas, mantendo a ordem e sem separar um subitem do nutriente principal
@@ -587,7 +596,7 @@ function linhasTab(R,C){const red=!!R.tabela.reduzida;return C.linhas.map(x=>({.
 function layTabela(R,C,modelo){
   modelo=modelo||modelosTab(R)[0]||"vertical";
   if(modelo==="linear") return layLinear(R,C);
-  const red=!!R.tabela.reduzida, g=red?0.75:1, ft=red?8:10, fs=red?6:8, ff=6, fv=8; // Anexo XII: valores nutricionais 8 pt também na formatação reduzida
+  const red=!!R.tabela.reduzida, g=red?0.75:1, ft=red?8:10, fs=red?6:8, ff=6, fv=red?6:8; // Anexo XII (retificado em 2022): valores 6 pt na formatação reduzida
   const L=linhasTab(R,C), ops=[], P=v=>v*PT;
   const twp=(s,size,bold)=>tw(s,P(size),bold)/PT; // largura em pt
   const cols=["100 "+C.un,`${br(C.porcao,1)} ${C.un}`,"%VD*"];
@@ -1054,14 +1063,16 @@ function viewProduto(R,C){
     </div>
     <div class="small"><span class="muted">Como vai sair:</span> ${esc(origemTexto(R)||"—")}</div>
   </div>
-  <div class="card stack"><div><h2>Serviço de inspeção</h2><p class="muted small">Carimbo e frase de registro (Decreto 9.013/2017, arts. 443, IX, e 464 a 467 para o SIF; SIE e SIM seguem o regulamento do estado ou município).</p></div>
+  <div class="card stack"><div><h2>Serviço de inspeção</h2><p class="muted small">Carimbo e frase de registro. SIF: Decreto 9.013/2017, arts. 443, IX, e 464 a 467. SIE/SC: manuais de rotulagem e de carimbos da CIDASC. Outros SIE e SIM: regulamento do estado ou município.</p></div>
     <div class="grid3">
       ${sel("inspecao.servico","Serviço de inspeção",SERVICOS,{re:true})}
-      ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.orgao",R.inspecao.servico==="SIE"?"Órgão estadual":"Município / órgão",{ph:R.inspecao.servico==="SIE"?"Ex.: CIDASC":"Ex.: Prefeitura de Pomerode"}):""}
+      ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.orgao",R.inspecao.servico==="SIE"?"Estado / órgão":"Município / órgão",{ph:R.inspecao.servico==="SIE"?"Ex.: IMA/MG":"Ex.: Prefeitura de Pomerode"}):""}
       ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regEstab","Nº de registro do estabelecimento",{n:true}):""}
-      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regProduto","Nº de registro do produto",{n:true,hint:"Quando aplicável."}):""}
-      ${R.inspecao.servico==="SIF"&&carimboSIF(R,calc(R)).escolha?sel("inspecao.diamSIF","Diâmetro do carimbo SIF",[["2","2 cm"],["3","3 cm"]],{re:true,hint:"Embalagens de até 1 kg: 2 ou 3 cm (Decreto 9.013/2017, art. 467, III). É o diâmetro do círculo; “Ministério da Agricultura” fica por fora."}):""}
-      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.frase","Frase de registro (opcional)",{span:true,ph:fraseRegistro({inspecao:{...R.inspecao,frase:""}}),hint:"Em branco = frase padrão acima. Edite se o serviço exigir outro texto."}):""}
+      ${temCarimboModelo3(R.inspecao.servico)?inp("inspecao.regProduto",R.inspecao.servico==="SIE-SC"?"Nº sequencial do rótulo (produto)":"Nº de registro do produto",{n:true,hint:R.inspecao.servico==="SIE-SC"?"Ex.: 8º produto do SIE 2500 → 2500-008.":""}):""}
+      ${temCarimboModelo3(R.inspecao.servico)&&carimboSIF(R,calc(R)).escolha?sel("inspecao.diamSIF","Diâmetro do carimbo",[["2","2 cm"],["3","3 cm"]],{re:true,hint:"Embalagens de até 1 kg: 2 ou 3 cm."}):""}
+      ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.frase","Frase de registro (obrigatória)",{span:true,hint:"Use o texto exigido pelo regulamento do serviço de inspeção."}):""}
+    </div>
+    ${temCarimboModelo3(R.inspecao.servico)?`<div class="small"><span class="muted">Frase de registro (obrigatória):</span> <b>${esc(fraseRegistro(R))}</b></div>`:""}
     </div>
   </div>
   <div class="card stack"><div><span class="eyebrow">Relatório para o cliente</span><h2>Dados do relatório “Dizeres de Rotulagem”</h2><p class="muted small">Aparecem no PDF do relatório, no modelo da Isadora. Os campos em branco não entram.</p></div>
@@ -1192,8 +1203,6 @@ function viewPorcao(R,C){
       <div class="f span2"><span>Modelos da tabela (pode marcar mais de um)</span><div class="row" style="gap:6px 16px">${MODELOS_TAB.map(([k,n])=>`<label class="check"><input type="checkbox" data-modelo="${k}" id="mod-${k}" ${modelosTab(R).includes(k)?"checked":""}><span>${n}</span></label>`).join("")}</div><span class="hint">A ordem acima é a ordem de prioridade no relatório. Use o linear só quando a tabela não couber (RDC 429/2020, art. 17).</span></div>
       ${modelosTab(R).includes("linear")?inp("tabela.largLinear","Largura do modelo linear (mm)",{n:true}):""}
       ${(()=>{const n=C.lupa.nutrientes.length;const ops=Object.entries(LUPA_LAYOUTS).filter(([k,v])=>v.ok(Math.max(n,1))).map(([k,v])=>[k,v.t]);const cur=lupaModelo(R,Math.max(n,1));if(R.lupa.modelo!==cur)R.lupa.modelo=cur;return sel("lupa.modelo","Disposição da lupa",ops,{re:true,hint:n?`Variações da malha construtiva da Anvisa para ${n+1} blocos.`:"Este produto não precisa de lupa."})})()}
-      ${inp("textos.tamIng","Fonte da lista de ingredientes (pt)",{n:true,hint:"Sem tamanho na legislação; letras com no mínimo 1 mm (a partir de 5,5 pt em Arial)."})}
-      ${inp("textos.largura","Largura do bloco de textos (mm)",{n:true})}
     </div>
     <div class="grid2">
       ${chk("tabela.reduzida","Usar formatação reduzida (título 8 pt, nutrientes 6 pt, valores 8 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
@@ -1224,10 +1233,10 @@ function viewRotulo(R,C){
     <div class="stack">
       ${tabs.map((tb,i)=>`<div><span class="eyebrow">Tabela nutricional · ${i+1}ª opção · ${esc(NOME_MODELO[tb.modelo])}${R.tabela.reduzida&&tb.modelo!=="linear"?" · reduzida":""}</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(tb,z)}</div>
-        <div class="paper-cap"><span><b>Fonte:</b> ${tb.modelo==="linear"?"título “INFORMAÇÃO NUTRICIONAL” 8 pt negrito · demais informações 6 pt":`título “INFORMAÇÃO NUTRICIONAL” ${R.tabela.reduzida?"8":"10"} pt negrito · porções, colunas e nutrientes ${R.tabela.reduzida?"6":"8"} pt · valores 8 pt · rodapé 6 pt`} (Anexo XII, IN 75/2020)</span><span>Arial, Arial Narrow, Helvetica ou Helvetica Condensed · 100% preto em fundo branco</span></div></div>`).join("")}
+        <div class="paper-cap"><span><b>Fonte:</b> ${tb.modelo==="linear"||R.tabela.reduzida?"título “INFORMAÇÃO NUTRICIONAL” 8 pt negrito · demais informações 6 pt":"título “INFORMAÇÃO NUTRICIONAL” 10 pt negrito · demais informações 8 pt · rodapé 6 pt"} (Anexo XII, IN 75/2020)</span><span>${fontesTab(tb.modelo==="linear"||R.tabela.reduzida)} · 100% preto em fundo branco</span></div></div>`).join("")}
       <div><span class="eyebrow">Lista de ingredientes e advertências</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(dec,z)}</div>
-        <div class="paper-cap"><span><b>Ingredientes:</b> ${br(Sz.ingPt,1)} pt (letras com ${brFix(Sz.ingAltX,2)} mm; mínimo 1 mm)</span><span><b>Alérgicos, lactose e glúten:</b> ${br(Sz.avisoPt,1)} pt negrito, caixa alta (${brFix(Sz.avisoAlt,2)} mm; mínimo ${Sz.minAvisoMM} mm e nunca menor que a lista de ingredientes — RDC 727/2022, art. 15)</span></div>${Sz.ingPtPedido<Sz.ingPtMin?`<div class="alert warn" style="margin-top:6px">A fonte pedida (${br(Sz.ingPtPedido,1)} pt) daria letras menores que 1 mm; usei ${br(Sz.ingPt,1)} pt.</div>`:""}</div>
+        <div class="paper-cap"><span><b>Ingredientes:</b> letras com no mínimo 1 mm</span><span><b>Alérgicos, lactose e glúten:</b> ${Sz.minAvisoMM} mm, negrito, caixa alta, nunca menores que a lista de ingredientes (alérgicos e lactose: RDC 727/2022, arts. 15 e 19; glúten: Lei 10.674/2003)</span></div></div>
     </div>
     <div class="stack">
       <div><span class="eyebrow">Rotulagem nutricional frontal</span>
@@ -1237,7 +1246,7 @@ function viewRotulo(R,C){
       </div>
       ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(),z*0.6)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">Símbolo e expressão no painel principal (Decreto 4.680/2003). Confira o tamanho na Portaria MJ 2.658/2003.</p></div>`:""}
       <div class="card stack"><h3>Painel principal</h3>
-        <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação${C.lupa.precisa?"; com lupa, fora da metade superior do painel principal e com letras não maiores que as da lupa (RDC 429/2020, art. 30)":""}</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${C.temDren&&P.drenado?` · <b>peso drenado ${esc(P.drenado)} ${esc(P.unidade)}</b> <span class="muted small">(mesma altura e destaque do peso líquido, na vista principal)</span>`:""}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont}, símbolo da unidade com 2/3 dessa altura, na vista principal (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
+        <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação${C.lupa.precisa?" · com lupa: fora da metade superior do painel principal":""}</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${C.temDren&&P.drenado?` · <b>peso drenado ${esc(P.drenado)} ${esc(P.unidade)}</b> <span class="muted small">(mesma altura e destaque do peso líquido, na vista principal)</span>`:""}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont}, símbolo da unidade com 2/3 dessa altura, na vista principal (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
         <h3>Demais informações</h3>
         <dl class="kv"><dt>Conservação</dt><dd>${esc(P.conservacao||"—")}</dd><dt>Validade</dt><dd>${esc(P.validade||"—")}${P.validadeAberto?` · após aberto: ${esc(P.validadeAberto)}`:""}</dd><dt>Origem</dt><dd>${esc(origemTexto(R)||"—")}</dd>${fraseRegistro(R)?`<dt>Registro</dt><dd>${esc(fraseRegistro(R))}</dd>`:""}</dl></div>
     </div>
@@ -1300,21 +1309,21 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   const h2=t=>{need(12);y+=3;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
-  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if(alegLac(R)) kv("Alegação de lactose",`${alegLac(R)} — junto à denominação de venda (RDC 135/2017). Teor: ${br(C.b100.lac*1000,0)} mg de lactose por 100 ${C.un}.${C.lupa.precisa?" Como o produto tem lupa, a alegação não pode ficar na metade superior do painel principal nem ter letras maiores que as da lupa (RDC 429/2020, art. 30).":""}`); kv("Marca",P.marca); {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — na vista principal; algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");} if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — "PESO LÍQUIDO" e "PESO DRENADO" na vista principal, em caracteres iguais em dimensão e destaque (Portaria Inmetro 249/2021, item 4.2).`);
+  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if(alegLac(R)) kv("Alegação de lactose",`${alegLac(R)} — junto à denominação de venda (RDC 135/2017). Teor: ${br(C.b100.lac*1000,0)} mg de lactose por 100 ${C.un}.${C.lupa.precisa?" Com lupa: a alegação fica fora da metade superior do painel principal (RDC 429/2020, art. 30).":""}`); kv("Marca",P.marca); {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — na vista principal; algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");} if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — "PESO LÍQUIDO" e "PESO DRENADO" na vista principal, em caracteres iguais em dimensão e destaque (Portaria Inmetro 249/2021, item 4.2).`);
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
-  para(`Fontes: a lista de ingredientes não tem tamanho fixado; letras com no mínimo 1 mm (sugestão: ${br(Sz.ingPt,1)} pt). Alérgicos, lactose e glúten: caixa alta e negrito, logo após a lista de ingredientes, altura mínima de ${Sz.minAvisoMM} mm e nunca menor que a letra da lista de ingredientes (RDC 727/2022, arts. 15 e 19; sugestão: ${br(Sz.avisoPt,1)} pt).`,{size:8,cor:CINZA});
+  para(`Ingredientes: letras com no mínimo 1 mm. Alérgicos, lactose e glúten: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes e nunca menores que ela (alérgicos e lactose: RDC 727/2022, arts. 15 e 19; glúten: Lei 10.674/2003).`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
-    para(tab.modelo==="linear"?`Fonte: título "INFORMAÇÃO NUTRICIONAL" 8 pt negrito; demais informações 6 pt.`:`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${R.tabela.reduzida?8:10} pt negrito; porções, títulos das colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt (Anexo XII, IN 75/2020). Arial, Arial Narrow, Helvetica ou Helvetica Condensed, 100% preto em fundo branco.`,{size:8,cor:CINZA}); y+=2;});
-  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R)); if(P.descricao) kv("Descrição",P.descricao);
-  {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico}`);
+    {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
+  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R));
+  {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico==="SIE-SC"?"SIE/SC":I.servico}`);
     if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
-    kv("Frase obrigatória",fraseRegistro(R)+" (Decreto 9.013/2017, art. 443, IX)");
-    if(I.servico==="SIF"){const cs=carimboSIF(R,C); kv("Carimbo SIF",`Modelo 3 (circular): “Ministério da Agricultura” na borda superior externa, “Brasil” na parte superior interna, “Inspecionado” ao centro, número ${I.regEstab||"000"} abaixo (sem “nº”) e “S.I.F.” na borda inferior interna; cor única, de preferência preta, em destaque.`); kv("Diâmetro do carimbo",`${cs.d} (${cs.motivo}) — diâmetro do círculo; “Ministério da Agricultura” fica por fora. Decreto 9.013/2017, art. 467, III, e Memorando-Circular nº 13/2017/DIPOA.`);
-      need(cs.mm+14); para("Carimbo em tamanho real:",{size:8,cor:CINZA}); desenharCarimbo(doc,M+cs.mm/2+6,y+cs.mm/2+5,cs.mm,I.regEstab,1); y+=cs.mm+12;}
-    else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}, com o número de registro do estabelecimento.`);
+    kv("Frase obrigatória",fraseRegistro(R));
+    if(temCarimboModelo3(I.servico)){const cs=carimboSIF(R,C); kv("Carimbo",`Modelo 3 (circular)${I.servico==="SIF"?" do SIF":" do SIE/SC"}, em cor única, de preferência preta.`); kv("Diâmetro do carimbo",cs.d);
+      need(cs.mm+14); para("Carimbo em tamanho real:",{size:8,cor:CINZA}); desenharCarimbo(doc,M+cs.mm/2+8,y+cs.mm/2+6,cs.mm,I.regEstab,1,I.servico==="SIF"?"SIF":"SIE"); y+=cs.mm+14;}
+    else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}.`);
   }}
   if(C.E.length||C.W.length){h2("Pendências"); C.E.concat(C.W).forEach(t=>para("• "+t,{size:8.5}))}
   para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
@@ -1343,11 +1352,11 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   s1.addRow([]); s1.addRow([]);
   if(logo){const id=wb.addImage({base64:logo.b64,extension:"jpeg"}); s1.addImage(id,{tl:{col:1.8,row:1.3},ext:{width:90,height:90}})}
   secao(s1.addRow(["PAINEL PRINCIPAL"]));
-  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],...(C.temDren?[["Peso drenado",`${P.drenado} ${P.unidade}`]]:[]),["Descrição",P.descricao],["Identificação de origem",origemTexto(R)],["Serviço de inspeção",R.inspecao?.servico&&R.inspecao.servico!=="nenhum"?R.inspecao.servico:""],["Frase de registro",fraseRegistro(R)],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
+  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],...(C.temDren?[["Peso drenado",`${P.drenado} ${P.unidade}`]]:[]),["Descrição",P.descricao],["Identificação de origem",origemTexto(R)],["Serviço de inspeção",R.inspecao?.servico&&R.inspecao.servico!=="nenhum"?(R.inspecao.servico==="SIE-SC"?"SIE/SC":R.inspecao.servico):""],...(temCarimboModelo3(R.inspecao?.servico)?[["Diâmetro do carimbo",carimboSIF(R,C).d]]:[]),["Frase de registro",fraseRegistro(R)],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
   tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${tb.modelo==="linear"?"título 8 pt negrito; demais 6 pt":`título ${R.tabela.reduzida?8:10} pt negrito; porções, colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt`}`));
-  const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes ${br(Sz.ingPt,1)} pt; advertências ${br(Sz.avisoPt,1)} pt negrito caixa alta (altura ${brFix(Sz.avisoAlt,2)} mm, mín. ${Sz.minAvisoMM} mm)`);
+  const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes: letras com no mínimo 1 mm. Alérgicos, lactose e glúten: ${Sz.minAvisoMM} mm, negrito, caixa alta, nunca menores que a lista de ingredientes.`);
   // Aba Tabela nutricional
   const s2=wb.addWorksheet("Tabela nutricional",{views:[{showGridLines:false}]}); s2.columns=[{width:2},{width:30},{width:10},{width:10},{width:8},{width:3},{width:40}];
   let r=2; const fs=R.tabela.reduzida?6:8;
@@ -1530,7 +1539,7 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
   if((RD.alegacaoLactose||"").trim()){
     cabecalho("Dizeres de Rotulagem","PAINEL FRONTAL");
     bullet("Alegação nutricional sobre lactose:"); y+=LH*0.0; precisa(LH*2); y=escrever([{t:RD.alegacaoLactose.toUpperCase(),f:"PoppinsLight"}],X0,y+LH,{center:true})+LH;
-    guia(C.lupa.precisa?`Como o produto tem rotulagem nutricional frontal (lupa), a alegação "${RD.alegacaoLactose.toUpperCase()}" não pode ficar na metade superior do painel principal nem ter caracteres maiores que os da lupa (RDC 429/2020, art. 30). Pode ficar na metade inferior do painel principal ou nos demais painéis.`:`A alegação nutricional sobre "${RD.alegacaoLactose.toUpperCase()}", pode ser utilizada em destaque, no painel frontal ou demais painéis.`);
+    guia(C.lupa.precisa?`Como o produto tem lupa, a alegação "${RD.alegacaoLactose.toUpperCase()}" não pode ficar na metade superior do painel principal (RDC 429/2020, art. 30).`:`A alegação nutricional sobre "${RD.alegacaoLactose.toUpperCase()}", pode ser utilizada em destaque, no painel frontal ou demais painéis.`);
   }
   // ================= DEMAIS PAINÉIS =================
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
@@ -1549,15 +1558,15 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
   if((RD.observacao||"").trim()){espaco(); valor({t:RD.observacao,f:"PoppinsLight",c:REL.vermelho});}
   if((RD.codigoBarras||"").trim()){espaco(); bullet("Código de barras"); valor({t:RD.codigoBarras,f:"PoppinsLight"});}
   const INS=R.inspecao||{}, frase=fraseRegistro(R);
-  if(frase){espaco(); bloco("Indicação da expressão (registro):",[{t:frase,f:"PoppinsLight"}],"Obrigatória no rótulo: indicação do número de registro do produto junto ao serviço de inspeção (Decreto 9.013/2017, art. 443, IX).");}
-  if(INS.servico==="SIF"){
+  if(frase){espaco(); bloco("Indicação da expressão (registro):",[{t:frase,f:"PoppinsLight"}],"Obrigatória no rótulo"+(INS.servico==="SIF"?" (Decreto 9.013/2017, art. 443, IX).":INS.servico==="SIE-SC"?", sem abreviar (Manual de Rotulagem SIE/SC, CIDASC).":"."));}
+  if(temCarimboModelo3(INS.servico)){
     cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
-    const cs=carimboSIF(R,C);
-    bullet("Carimbo oficial da Inspeção Federal"); y+=LH;
-    y=escrever([{t:`O carimbo deve seguir o modelo abaixo (modelo 3, circular), com o número de registro do estabelecimento ${INS.regEstab||"000"}, em cor única, de preferência preta. Diâmetro: `},{t:cs.d,f:"Poppins",c:REL.vermelho},{t:` (${cs.motivo}). A medida é o diâmetro do círculo; “Ministério da Agricultura” fica por fora — Decreto 9.013/2017, art. 467, e Memorando-Circular nº 13/2017/DIPOA.`}],X0,y)+LH*0.4;
+    const cs=carimboSIF(R,C), tp=INS.servico==="SIF"?"SIF":"SIE";
+    bullet(tp==="SIF"?"Carimbo oficial da Inspeção Federal":"Carimbo oficial da Inspeção Estadual (SIE/SC)"); y+=LH;
+    y=escrever([{t:`O carimbo deve seguir o modelo abaixo (modelo 3, circular), com o número de registro do estabelecimento ${INS.regEstab||"000"}, em cor única, de preferência preta. Diâmetro: `},{t:cs.d,f:"Poppins",c:REL.vermelho},{t:tp==="SIF"?` (${cs.motivo}). A medida é o diâmetro do círculo; “Ministério da Agricultura” fica por fora — Decreto 9.013/2017, art. 467, e Memorando-Circular nº 13/2017/DIPOA.`:` (${cs.motivo}) — Manual de Carimbos do SIE/SC (CIDASC, POPSIE 02, Anexo IX).`}],X0,y)+LH*0.4;
     { const kpt=72/25.4, esc=Math.min(60,Math.max(cs.mm,40)); // ampliado para leitura + tamanho real ao lado
-      desenharCarimbo(doc,200,y+esc*kpt/2+30,esc,INS.regEstab,kpt);
-      if(cs.mm<esc) desenharCarimbo(doc,420,y+esc*kpt/2+30,cs.mm,INS.regEstab,kpt);
+      desenharCarimbo(doc,200,y+esc*kpt/2+30,esc,INS.regEstab,kpt,tp);
+      if(cs.mm<esc) desenharCarimbo(doc,420,y+esc*kpt/2+30,cs.mm,INS.regEstab,kpt,tp);
       y+=esc*kpt+70; escrever([{t:cs.mm<esc?`À esquerda, ampliado para leitura; à direita, no tamanho real (${cs.d} de diâmetro).`:`Tamanho real: ${cs.d} de diâmetro.`,f:"PoppinsLight"}],X0,y,{width:500}); }
   } else if(INS.servico==="SIE"||INS.servico==="SIM"){
     espaco(); bloco(`Carimbo do ${INS.servico}:`,[{t:`Carimbo do ${INS.servico==="SIE"?"Serviço de Inspeção Estadual":"Serviço de Inspeção Municipal"}${INS.orgao?` (${INS.orgao})`:""} com o número de registro do estabelecimento ${INS.regEstab||"000"}.`,f:"PoppinsLight"}],"Modelo, dimensões e dizeres conforme o regulamento do serviço de inspeção do estado ou do município.");
@@ -1574,7 +1583,7 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
     if(m==="linear") paginaLinear(lay); else paginaTabela(lay,red);
     // fontes permitidas
     F("Poppins");doc.setFontSize(17);cor(REL.laranja);
-    [["Fontes que podem ser utilizadas:",709.9],["Arial",733.1],["Arial Narrow",756.4],["Helvetica",779.6],["Helvetica Condensed",802.9]].forEach(([s,yy])=>doc.text(s,286,yy,{align:"center"}));
+    (compact?[["Fontes que podem ser utilizadas:",709.9],["Arial",733.1],["Arial Narrow",756.4],["Helvetica",779.6],["Helvetica Condensed",802.9]]:[["Fontes que podem ser utilizadas:",709.9],["Arial",733.1],["Helvetica",756.4]]).forEach(([s,yy])=>doc.text(s,286,yy,{align:"center"}));
   });
   function seta(x1,y1,x2,y2,curva=0){ // seta laranja (reta ou curva)
     doc.setDrawColor(...REL.laranja);doc.setFillColor(...REL.laranja);doc.setLineWidth(1.4);
@@ -1594,7 +1603,7 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
     const alvo=[[mk.titleBase-4,"negrito"],[mk.thickY,"linha espessura grossa"],[mk.headBase-3,"negrito"],[mk.mediumY,"linha espessura média"]].sort((a,b)=>a[0]-b[0]);
     let prox=-99; alvo.forEach(([yy,tx])=>{if(yy<prox) yy=prox; const fim=r(yy,tx); prox=Math.max(yy+15,fim+13)});
     const yb=oy+lay.h*k; seta(106,yb+8,140,yb+44,-12);
-    escrever([{t:`porções, colunas e nutrientes: `},{t:`${fs}pt`,f:"Poppins"},{t:` · valores: `},{t:`8pt`,f:"Poppins"},{t:` · rodapé: `},{t:`6pt`,f:"Poppins"}],120,yb+52,{width:440});
+    escrever([{t:`demais informações: `},{t:`${fs}pt`,f:"Poppins"}].concat(red?[]:[{t:` · rodapé: `},{t:`6pt`,f:"Poppins"}]),140,yb+52,{width:440});
   }
   function paginaLinear(lay){
     const larg=412, k=larg/lay.w; const ox=65, oy=380;
