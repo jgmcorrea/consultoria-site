@@ -185,6 +185,8 @@ const UFS="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR 
 // serviços de inspeção
 const SERVICOS=[["","Selecionar…"],["SIF","SIF — Serviço de Inspeção Federal (MAPA)"],["SIE-SC","SIE/SC — Serviço de Inspeção Estadual de Santa Catarina (CIDASC)"],["SIE","SIE — outro estado"],["SIM","SIM — Serviço de Inspeção Municipal"],["nenhum","Não se aplica (produto sem inspeção de origem animal)"]];
 const temCarimboModelo3 = s=>s==="SIF"||s==="SIE-SC";
+const podeSisbi = s=>s==="SIE-SC"||s==="SIE"||s==="SIM";
+const TXT_SISBI = "Estabelecimento aderido ao SISBI-POA: o rótulo leva dois sinais — o carimbo do serviço de inspeção (SIE ou SIM) e o logotipo do SISBI, que complementa e não substitui o carimbo. Usar o arquivo oficial do logotipo, sem alterar proporções, nas versões em cores, preto ou uma cor (Manual de Identidade Visual da Marca SISBI, MAPA; Manual Básico de Rotulagem do SIE/SC, CIDASC).";
 // respostas obrigatórias por ingrediente: glúten, lactose e alergênicos
 function respIng(i){
   if(i.glutenR==null||i.glutenR==="") i.glutenR=i.gluten?"sim":(i.glutenR||"");
@@ -251,11 +253,11 @@ function desenharCarimbo(doc,cx,cy,Dmm,num,k,tipo="SIF"){
       doc.text(x,px-tx*ws[i]/2,py-ty*ws[i]/2,{angle:topo?phi*180/Math.PI-90:phi*180/Math.PI+90}); s+=ws[i]+ls; });
   };
   // proporções medidas no modelo 3 do Memorando-Circular nº 13/2017/DIPOA (e no modelo 3 do SIE/SC, CIDASC)
-  if(tipo==="SIF"){ arco("MINISTÉRIO DA AGRICULTURA",r+D*0.03,90,fs(D*0.075),true,D*0.012); arco("BRASIL",r*0.60,90,fs(D*0.085),true,D*0.045); }
-  else arco("SANTA CATARINA",r*0.78,90,fs(D*0.075),true,D*0.004);
-  doc.setFontSize(fs(D*0.07)); doc.text("INSPECIONADO",cx,cy+D*0.035,{align:"center"});
-  doc.setFontSize(fs(D*0.07)); doc.text(String(num||"000"),cx,cy+D*0.14,{align:"center"});
-  arco(tipo==="SIF"?"S.I.F.":"S.I.E.",r*0.62,270,fs(D*0.09),false,D*0.012);
+  if(tipo==="SIF"){ arco("MINISTÉRIO DA AGRICULTURA",r+D*0.03,90,fs(D*0.075),true,D*0.012); arco("BRASIL",r*0.64,90,fs(D*0.105),true,D*0.055); }
+  else arco("SANTA CATARINA",r*0.76,90,fs(D*0.068),true,0);
+  doc.setFontSize(fs(D*0.07)); doc.text("INSPECIONADO",cx,cy+D*0.02,{align:"center"});
+  doc.setFontSize(fs(D*0.07)); doc.text(String(num||"000"),cx,cy+D*0.12,{align:"center"});
+  arco(tipo==="SIF"?"S.I.F.":"S.I.E.",r*0.86,270,fs(D*0.11),false,D*0.035);
 }
 const KEYS = [...OBRIG, ...EXTRA_K];
 const NUT = {
@@ -1070,6 +1072,7 @@ function viewProduto(R,C){
       ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regEstab","Nº de registro do estabelecimento",{n:true}):""}
       ${temCarimboModelo3(R.inspecao.servico)?inp("inspecao.regProduto",R.inspecao.servico==="SIE-SC"?"Nº sequencial do rótulo (produto)":"Nº de registro do produto",{n:true,hint:R.inspecao.servico==="SIE-SC"?"Ex.: 8º produto do SIE 2500 → 2500-008.":""}):""}
       ${temCarimboModelo3(R.inspecao.servico)&&carimboSIF(R,calc(R)).escolha?sel("inspecao.diamSIF","Diâmetro do carimbo",[["2","2 cm"],["3","3 cm"]],{re:true,hint:"Embalagens de até 1 kg: 2 ou 3 cm."}):""}
+      ${podeSisbi(R.inspecao.servico)?chk("inspecao.sisbi","Estabelecimento aderido ao SISBI-POA",{hint:"Leva também o logotipo do SISBI, além do carimbo."}):""}
       ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.frase","Frase de registro (obrigatória)",{span:true,hint:"Use o texto exigido pelo regulamento do serviço de inspeção."}):""}
     </div>
     ${temCarimboModelo3(R.inspecao.servico)?`<div class="small"><span class="muted">Frase de registro (obrigatória):</span> <b>${esc(fraseRegistro(R))}</b></div>`:""}
@@ -1248,7 +1251,7 @@ function viewRotulo(R,C){
       <div class="card stack"><h3>Painel principal</h3>
         <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação${C.lupa.precisa?" · com lupa: fora da metade superior do painel principal":""}</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${C.temDren&&P.drenado?` · <b>peso drenado ${esc(P.drenado)} ${esc(P.unidade)}</b> <span class="muted small">(mesma altura e destaque do peso líquido, na vista principal)</span>`:""}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont}, símbolo da unidade com 2/3 dessa altura, na vista principal (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
         <h3>Demais informações</h3>
-        <dl class="kv"><dt>Conservação</dt><dd>${esc(P.conservacao||"—")}</dd><dt>Validade</dt><dd>${esc(P.validade||"—")}${P.validadeAberto?` · após aberto: ${esc(P.validadeAberto)}`:""}</dd><dt>Origem</dt><dd>${esc(origemTexto(R)||"—")}</dd>${fraseRegistro(R)?`<dt>Registro</dt><dd>${esc(fraseRegistro(R))}</dd>`:""}</dl></div>
+        <dl class="kv"><dt>Conservação</dt><dd>${esc(P.conservacao||"—")}</dd><dt>Validade</dt><dd>${esc(P.validade||"—")}${P.validadeAberto?` · após aberto: ${esc(P.validadeAberto)}`:""}</dd><dt>Origem</dt><dd>${esc(origemTexto(R)||"—")}</dd>${fraseRegistro(R)?`<dt>Registro</dt><dd>${esc(fraseRegistro(R))}</dd>`:""}${podeSisbi(R.inspecao?.servico)&&R.inspecao.sisbi?`<dt>SISBI</dt><dd>carimbo do ${R.inspecao.servico==="SIM"?"SIM":"SIE"} + logotipo do SISBI-POA</dd>`:""}</dl></div>
     </div>
   </div>
   <div class="card stack"><div class="sec-t"><h2>Textos gerados</h2><span class="small muted">Edite só se precisar ajustar a redação; o original fica guardado.</span></div>
@@ -1309,21 +1312,25 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   const h2=t=>{need(12);y+=3;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
-  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if(alegLac(R)) kv("Alegação de lactose",`${alegLac(R)} — junto à denominação de venda (RDC 135/2017). Teor: ${br(C.b100.lac*1000,0)} mg de lactose por 100 ${C.un}.${C.lupa.precisa?" Com lupa: a alegação fica fora da metade superior do painel principal (RDC 429/2020, art. 30).":""}`); kv("Marca",P.marca); {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — na vista principal; algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");} if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — "PESO LÍQUIDO" e "PESO DRENADO" na vista principal, em caracteres iguais em dimensão e destaque (Portaria Inmetro 249/2021, item 4.2).`);
+  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if((R.relatorio?.fantasia||"").trim()) kv("Denominação fantasia",R.relatorio.fantasia); kv("Marca",P.marca);
+  if(alegLac(R)) kv("Alegação",C.lupa.precisa?`${alegLac(R)} — a alegação deve ficar na metade inferior do painel principal, pois este rótulo possui lupa de ${joinE(C.lupa.nutrientes)} (RDC 429/2020, art. 30).`:`${alegLac(R)} — junto à denominação de venda (RDC 135/2017).`);
+  {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");}
+  if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021, item 4.2).`);
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
-    para(`Metade superior do painel principal. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
+    para(`A rotulagem nutricional frontal fica no painel principal, na metade superior. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
-  para(`Ingredientes: letras com no mínimo 1 mm. Alérgicos, lactose e glúten: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes e nunca menores que ela (alérgicos e lactose: RDC 727/2022, arts. 15 e 19; glúten: Lei 10.674/2003).`,{size:8,cor:CINZA});
+  para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. Alérgicos, lactose e glúten: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes e nunca menores que ela (alérgicos e lactose: RDC 727/2022, arts. 15 e 19; glúten: Lei 10.674/2003).`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
     {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
-  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R));
+  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
   {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico==="SIE-SC"?"SIE/SC":I.servico}`);
     if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
     kv("Frase obrigatória",fraseRegistro(R));
     if(temCarimboModelo3(I.servico)){const cs=carimboSIF(R,C); kv("Carimbo",`Modelo 3 (circular)${I.servico==="SIF"?" do SIF":" do SIE/SC"}, em cor única, de preferência preta.`); kv("Diâmetro do carimbo",cs.d);
       need(cs.mm+14); para("Carimbo em tamanho real:",{size:8,cor:CINZA}); desenharCarimbo(doc,M+cs.mm/2+8,y+cs.mm/2+6,cs.mm,I.regEstab,1,I.servico==="SIF"?"SIF":"SIE"); y+=cs.mm+14;}
     else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}.`);
+    if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA",TXT_SISBI);
   }}
   if(C.E.length||C.W.length){h2("Pendências"); C.E.concat(C.W).forEach(t=>para("• "+t,{size:8.5}))}
   para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
@@ -1352,7 +1359,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   s1.addRow([]); s1.addRow([]);
   if(logo){const id=wb.addImage({base64:logo.b64,extension:"jpeg"}); s1.addImage(id,{tl:{col:1.8,row:1.3},ext:{width:90,height:90}})}
   secao(s1.addRow(["PAINEL PRINCIPAL"]));
-  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],...(C.temDren?[["Peso drenado",`${P.drenado} ${P.unidade}`]]:[]),["Descrição",P.descricao],["Identificação de origem",origemTexto(R)],["Serviço de inspeção",R.inspecao?.servico&&R.inspecao.servico!=="nenhum"?(R.inspecao.servico==="SIE-SC"?"SIE/SC":R.inspecao.servico):""],...(temCarimboModelo3(R.inspecao?.servico)?[["Diâmetro do carimbo",carimboSIF(R,C).d]]:[]),["Frase de registro",fraseRegistro(R)],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
+  [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (junto à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],...(C.temDren?[["Peso drenado",`${P.drenado} ${P.unidade}`]]:[]),["Descrição",P.descricao],["Identificação de origem",origemTexto(R)],["Serviço de inspeção",R.inspecao?.servico&&R.inspecao.servico!=="nenhum"?(R.inspecao.servico==="SIE-SC"?"SIE/SC":R.inspecao.servico):""],...(temCarimboModelo3(R.inspecao?.servico)?[["Diâmetro do carimbo",carimboSIF(R,C).d]]:[]),...(podeSisbi(R.inspecao?.servico)&&R.inspecao.sisbi?[["SISBI-POA","Aderido: carimbo do serviço de inspeção + logotipo do SISBI"]]:[]),["Frase de registro",fraseRegistro(R)],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
   tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${tb.modelo==="linear"?"título 8 pt negrito; demais 6 pt":`título ${R.tabela.reduzida?8:10} pt negrito; porções, colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt`}`));
@@ -1571,6 +1578,7 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
   } else if(INS.servico==="SIE"||INS.servico==="SIM"){
     espaco(); bloco(`Carimbo do ${INS.servico}:`,[{t:`Carimbo do ${INS.servico==="SIE"?"Serviço de Inspeção Estadual":"Serviço de Inspeção Municipal"}${INS.orgao?` (${INS.orgao})`:""} com o número de registro do estabelecimento ${INS.regEstab||"000"}.`,f:"PoppinsLight"}],"Modelo, dimensões e dizeres conforme o regulamento do serviço de inspeção do estado ou do município.");
   }
+  if(podeSisbi(INS.servico)&&INS.sisbi){ espaco(); bloco("Logotipo do SISBI-POA:",[{t:"O rótulo deve ter os dois: carimbo do "+(INS.servico==="SIM"?"SIM":"SIE")+" e logotipo do SISBI.",f:"PoppinsLight"}],TXT_SISBI); }
   // ================= TABELAS =================
   const modelos=modelosTab(R);
   modelos.forEach((m,i)=>{
