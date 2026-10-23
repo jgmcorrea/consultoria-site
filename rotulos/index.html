@@ -784,7 +784,7 @@ function layT(lado=12){const h=lado*Math.sqrt(3)/2;return {w:lado,h,ops:[{t:"pol
 
 /* ===================== LAYOUT: BLOCO DE DECLARAÇÕES ===================== */
 function tamanhos(R,C){
-  const area=C.area; const minAvisoMM = area>0&&area<=100?1:2;
+  const area=C.area; const minAvisoMM = 2; // padrão da consultoria: sempre 2 mm (a RDC 727 permitiria 1 mm em painel de até 100 cm²)
   // lista de ingredientes: sem tamanho fixado; altura mínima de 1 mm (medida na letra minúscula) — regra geral para informações sem tamanho próprio
   const ingPtMin=Math.ceil(1/(PT*0.519)*2)/2; const ingPtPedido=nz(R.textos.tamIng)||7; const ingPt=Math.max(ingPtPedido,ingPtMin);
   const avisoPtMin=minAvisoMM/(CAP*PT); const avisoPt=Math.max(Math.ceil(avisoPtMin*2)/2,ingPt);
