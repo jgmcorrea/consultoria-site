@@ -288,11 +288,11 @@ EXTRAS.forEach(([k,l,ab,u])=>COMP_LBL[k]=`${l} (${u})`);
 function extrasOf(i){const s=new Set(i.extras||[]); EXTRA_K.forEach(k=>{if(i.comp&&i.comp[k]!==""&&i.comp[k]!=null)s.add(k)}); if(i.lactose)s.add("lac"); return EXTRA_K.filter(k=>s.has(k))}
 const ALERG = [ // nomes comuns no singular (pedido da Isadora), exceto crustáceos (RDC 727/2022, art. 13, parágrafo único)
   ["trigo","Trigo","TRIGO"],["centeio","Centeio","CENTEIO"],["cevada","Cevada","CEVADA"],["aveia","Aveia","AVEIA"],
-  ["crustaceos","Crustáceos","CRUSTÁCEOS"],["ovos","Ovo","OVO"],["peixes","Peixe","PEIXE"],["amendoim","Amendoim","AMENDOIM"],
-  ["soja","Soja","SOJA"],["leite","Leite (qualquer mamífero)","LEITE"],["amendoa","Amêndoa","AMÊNDOA"],["avela","Avelã","AVELÃ"],
-  ["caju","Castanha-de-caju","CASTANHA-DE-CAJU"],["para","Castanha-do-pará","CASTANHA-DO-PARÁ"],["macadamia","Macadâmia","MACADÂMIA"],
-  ["nozes","Noz","NOZ"],["peca","Pecã","PECÃ"],["pistache","Pistache","PISTACHE"],["pinoli","Pinoli","PINOLI"],
-  ["castanhas","Castanha (Castanea)","CASTANHA"],["latex","Látex natural","LÁTEX NATURAL"]
+  ["crustaceos","Crustáceos","CRUSTÁCEOS"],["ovos","Ovos","OVOS"],["peixes","Peixes","PEIXES"],["amendoim","Amendoim","AMENDOIM"],
+  ["soja","Soja","SOJA"],["leite","Leite (qualquer mamífero)","LEITE"],["amendoa","Amêndoa","AMÊNDOA"],["avela","Avelãs","AVELÃS"],
+  ["caju","Castanha-de-caju","CASTANHA-DE-CAJU"],["para","Castanha-do-pará","CASTANHA-DO-PARÁ"],["macadamia","Macadâmias","MACADÂMIAS"],
+  ["nozes","Nozes","NOZES"],["peca","Pecãs","PECÃS"],["pistache","Pistaches","PISTACHES"],["pinoli","Pinoli","PINOLI"],
+  ["castanhas","Castanhas (Castanea)","CASTANHAS"],["latex","Látex natural","LÁTEX NATURAL"]
 ];
 const ALG_ST = {c:"Contém o ingrediente",d:"Contém derivados",cd:"Contém o ingrediente e derivados",p:"Pode conter (contaminação cruzada)"};
 const FUNCOES = ["acidulante","antiespumante","antioxidante","antiumectante","aromatizante","conservador","corante","edulcorante","emulsificante","espessante","estabilizante","fermento químico","gelificante","melhorador de farinha","regulador de acidez","sequestrante","umectante","realçador de sabor","outro"];
