@@ -286,13 +286,13 @@ const COMP_LBL = {carb:"Carboidratos (g)",acTot:"Açúcares totais (g)",acAdd:"A
 EXTRAS.forEach(([k,l,ab,u])=>COMP_LBL[k]=`${l} (${u})`);
 // nutrientes não obrigatórios informados num ingrediente (lista explícita + valores antigos já preenchidos)
 function extrasOf(i){const s=new Set(i.extras||[]); EXTRA_K.forEach(k=>{if(i.comp&&i.comp[k]!==""&&i.comp[k]!=null)s.add(k)}); if(i.lactose)s.add("lac"); return EXTRA_K.filter(k=>s.has(k))}
-const ALERG = [
+const ALERG = [ // nomes comuns no singular (pedido da Isadora), exceto crustáceos (RDC 727/2022, art. 13, parágrafo único)
   ["trigo","Trigo","TRIGO"],["centeio","Centeio","CENTEIO"],["cevada","Cevada","CEVADA"],["aveia","Aveia","AVEIA"],
-  ["crustaceos","Crustáceos","CRUSTÁCEOS"],["ovos","Ovos","OVOS"],["peixes","Peixes","PEIXES"],["amendoim","Amendoim","AMENDOIM"],
-  ["soja","Soja","SOJA"],["leite","Leite (qualquer mamífero)","LEITE"],["amendoa","Amêndoa","AMÊNDOA"],["avela","Avelãs","AVELÃS"],
-  ["caju","Castanha-de-caju","CASTANHA-DE-CAJU"],["para","Castanha-do-pará","CASTANHA-DO-PARÁ"],["macadamia","Macadâmias","MACADÂMIAS"],
-  ["nozes","Nozes","NOZES"],["peca","Pecãs","PECÃS"],["pistache","Pistaches","PISTACHES"],["pinoli","Pinoli","PINOLI"],
-  ["castanhas","Castanhas (Castanea)","CASTANHAS"],["latex","Látex natural","LÁTEX NATURAL"]
+  ["crustaceos","Crustáceos","CRUSTÁCEOS"],["ovos","Ovo","OVO"],["peixes","Peixe","PEIXE"],["amendoim","Amendoim","AMENDOIM"],
+  ["soja","Soja","SOJA"],["leite","Leite (qualquer mamífero)","LEITE"],["amendoa","Amêndoa","AMÊNDOA"],["avela","Avelã","AVELÃ"],
+  ["caju","Castanha-de-caju","CASTANHA-DE-CAJU"],["para","Castanha-do-pará","CASTANHA-DO-PARÁ"],["macadamia","Macadâmia","MACADÂMIA"],
+  ["nozes","Noz","NOZ"],["peca","Pecã","PECÃ"],["pistache","Pistache","PISTACHE"],["pinoli","Pinoli","PINOLI"],
+  ["castanhas","Castanha (Castanea)","CASTANHA"],["latex","Látex natural","LÁTEX NATURAL"]
 ];
 const ALG_ST = {c:"Contém o ingrediente",d:"Contém derivados",cd:"Contém o ingrediente e derivados",p:"Pode conter (contaminação cruzada)"};
 const FUNCOES = ["acidulante","antiespumante","antioxidante","antiumectante","aromatizante","conservador","corante","edulcorante","emulsificante","espessante","estabilizante","fermento químico","gelificante","melhorador de farinha","regulador de acidez","sequestrante","umectante","realçador de sabor","outro"];
@@ -325,7 +325,7 @@ function setP(o,p,v){const ks=p.split(".");let a=o;ks.slice(0,-1).forEach(k=>{if
 let toastT; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
 
 /* ===================== MODELO ===================== */
-function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
+function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",ogmComp:"",ogmItem:"",ogmExpr:"contem",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
 function novoRotulo(tipo){
   return {id:novoUUID(),clienteId:"",tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
     produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:"",temDrenado:"",drenado:""},
@@ -369,6 +369,7 @@ function calc(R){
     const temComp=KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null);
     if(!temComp && !(i.acucarAdic)) W.push(`“${i.nome||"Ingrediente"}” está sem composição nutricional; entra no cálculo como zero.`);
     if(i.ogm&&!i.gene.trim()) W.push(`Informe a espécie doadora do gene de “${i.nome}” (Decreto 4.680/2003).`);
+    if(i.ogm&&String(i.ogmComp||"").trim()&&fold(i.sub||"").indexOf(fold(i.ogmComp))<0) W.push(`O componente transgênico “${i.ogmComp}” não aparece nos ingredientes de “${i.nome}”; a indicação “transgênico” foi para o nome do ingrediente.`);
   });
   const tot=somar(ings);
   if(R.tipo==="normal"){ massaFinal=tot.massa; N=tot.n; }
@@ -526,6 +527,12 @@ const EPITETO="(?:\\s+(?:spp?\\.|(?!(?:e|de|do|da|dos|das|com|em|ou|para|sem|ao|
 const RE_ESP1=new RegExp("\\b(?:"+GENEROS.filter(g=>!GEN_AMBIGUOS.has(g)).join("|")+")\\b"+EPITETO,"gi");
 const RE_ESP2=new RegExp("\\b(?:"+[...GEN_AMBIGUOS].join("|")+")\\b"+EPITETO,"g");
 const grafiaCientifica=m=>{const w=m.split(/(\s+)/);w[0]=w[0].charAt(0).toUpperCase()+w[0].slice(1).toLowerCase();for(let i=1;i<w.length;i++)w[i]=w[i].toLowerCase();return w.join("")};
+// transgênicos (Decreto 4.680/2003; Portaria MJ 2.658/2003)
+const femin = s=>{const w=fold(String(s||"").trim().split(/\s+/)[0]); return /a$/.test(w)};
+const genesTxt = g=>{const n=String(g||"").split(/\s*,\s*|\s+e\s+/).map(x=>x.trim()).filter(Boolean); if(!n.length) return ""; const it=n.map(x=>`_${x.replace(/^_|_$/g,"")}_`); return n.length>1?`(dos genes ${joinE(it)})`:`(do gene ${it[0]})`};
+const textoSimboloT=(C)=>{const s=simboloT(C); return `Triângulo equilátero com a letra “T” (família Frutiger, negrito, caixa alta), no painel principal, em destaque e com contraste. Cores: bordas e “T” 100% preto; fundo 100% amarelo (ou versão em preto e branco). Área mínima: ${br(s.A*100,2)} mm2 (${s.pelaArea?`0,4% de ${br(s.area,1)} cm2 do painel principal`:"mínimo absoluto de 10,82531 mm2"}), ou seja, lado de ${br(s.lado*10,1)} mm e altura de ${br(s.h*10,1)} mm. Área livre ao redor: o círculo que passa pelos três vértices (raio de ${br(s.rc*10,1)} mm). Portaria MJ 2.658/2003; Decreto 4.680/2003.`};
+function simboloT(C){ const area=C.area||0; const A=Math.max(0.004*area,0.1082531); const lado=Math.sqrt(4*A/Math.sqrt(3)); const h=lado*Math.sqrt(3)/2; const rc=lado/Math.sqrt(3);
+  return {area, A, lado, h, rc, protecao:Math.PI*rc*rc, pelaArea:0.004*area>0.1082531}; }
 function marcarEspecies(s){
   // trechos já marcados pelo usuário com _..._ ficam como estão
   return String(s).split(/(_[^_]+_)/).map(p=>p.length>2&&p.startsWith("_")&&p.endsWith("_")?p:p.replace(RE_ESP1,m=>"_"+grafiaCientifica(m)+"_").replace(/_[^_]+_|[^_]+/g,q=>q.startsWith("_")?q:q.replace(RE_ESP2,m=>"_"+m+"_"))).join("");
@@ -543,7 +550,12 @@ function textos(R,C){
   const byQ=(a,b)=>nz(b.qtd)-nz(a.qtd);
   const clean=s=>s.trim().replace(/[.;,]+$/,"");
   const nao=it.filter(i=>!i.aditivo).map((i,ix)=>({i,ix})).sort((a,b)=>byQ(a.i,b.i)||a.ix-b.ix).map(({i})=>{
-    let s=clean(i.nome); if(i.ogm) s+=" transgênico"; if(i.sub.trim()) s+=` (${clean(i.sub)})`; if(i.ogm&&i.gene.trim()) s+=` (espécie doadora do gene: ${clean(i.gene)})`; return s});
+    let s=clean(i.nome), sub=clean(i.sub||"");
+    if(i.ogm){ const g=genesTxt(i.gene), comp=String(i.ogmComp||"").trim();
+      const pos=comp&&sub?fold(sub).indexOf(fold(comp)):-1;
+      if(pos>=0){ const fim=pos+comp.length; sub=sub.slice(0,fim)+` ${femin(comp)?"transgênica":"transgênico"}${g?" "+g:""}`+sub.slice(fim); }
+      else s+=` ${femin(i.nome)?"transgênica":"transgênico"}${g?" "+g:""}`; }
+    if(sub) s+=` (${sub})`; return s});
   const ad=it.filter(i=>i.aditivo); const grupos={};
   ad.forEach(i=>{const f=(i.funcao||"aditivo").toLowerCase(); (grupos[f]=grupos[f]||[]).push(i)});
   const gl=Object.entries(grupos).sort((a,b)=>Math.max(...b[1].map(i=>nz(i.qtd)))-Math.max(...a[1].map(i=>nz(i.qtd)))).map(([f,l])=>{
@@ -567,10 +579,13 @@ function textos(R,C){
     const C1=s.has("c"),D1=s.has("d"),CD=s.has("cd");
     if(CD||(C1&&D1)) cd.push(nome(k)); else if(C1) c.push(nome(k)); else if(D1) d.push(nome(k)); else if(s.has("p")) p.push(nome(k));});
   const partes=[]; if(c.length) partes.push("CONTÉM "+joinE(c,", "," E ")); if(cd.length) partes.push("CONTÉM "+joinE(cd.map(x=>x+" E DERIVADOS"),", ",", ")); if(d.length) partes.push("CONTÉM DERIVADOS DE "+joinE(d,", "," E "));
-  if(p.length) partes.push("PODE CONTER "+joinE(p,", "," E "));
+  if(p.length) partes.push("PODE CONTER "+joinE([...p].sort((a,b)=>fold(a).localeCompare(fold(b))),", "," E "));
   const algTxt=partes.length?"ALÉRGICOS: "+partes.join(". ")+".":"";
-  const gluten=it.some(i=>i.gluten)?"CONTÉM GLÚTEN":"NÃO CONTÉM GLÚTEN";
-  const ogmIng=it.filter(i=>i.ogm); const ogm=ogmIng.length?"CONTÉM "+joinE(ogmIng.map(i=>clean(i.nome).toUpperCase()),", "," E ")+" TRANSGÊNICO":"";
+  const gluten=(it.some(i=>i.gluten)||R.glutenCruzada)?"CONTÉM GLÚTEN":"NÃO CONTÉM GLÚTEN"; // contaminação cruzada com glúten → CONTÉM GLÚTEN
+  const ogmIng=it.filter(i=>i.ogm);
+  const frase=(lista,pre)=>{ if(!lista.length) return ""; const itens=[...new Set(lista.map(i=>clean(i.ogmItem||i.ogmComp||i.nome).toUpperCase()))];
+    const adj=itens.length>1?(itens.every(femin)?"TRANSGÊNICAS":"TRANSGÊNICOS"):(femin(itens[0])?"TRANSGÊNICA":"TRANSGÊNICO"); return `${pre} ${joinE(itens,", "," E ")} ${adj}`; };
+  const ogm=[frase(ogmIng.filter(i=>i.ogmExpr!=="apartir"),"CONTÉM"),frase(ogmIng.filter(i=>i.ogmExpr==="apartir"),"PRODUTO PRODUZIDO A PARTIR DE")].filter(Boolean).join(". ");
   return {ing:R.textos.ingOverride.trim()||ingTxt, ingAuto:ingTxt, alg:R.textos.algOverride.trim()||algTxt, algAuto:algTxt, lac:C.lactose, gluten, ogm, alergCont:c.concat(cd,d), alergPode:p};
 }
 
@@ -794,7 +809,7 @@ function layLupa(R,C){
   return {w:M.w,h:M.h,ops,M};
 }
 /* Símbolo T de transgênico (Decreto 4.680/2003; Portaria MJ 2.658/2003) */
-function layT(lado=12){const h=lado*Math.sqrt(3)/2;return {w:lado,h,ops:[{t:"poly",pts:[[lado/2,0.4],[lado-0.4,h-0.3],[0.4,h-0.3]],fill:"#FFD400",stroke:"#000",sw:0.6},{t:"text",x:lado/2,y:h*0.86,s:"T",size:h*0.62,bold:true,anchor:"middle"}]}}
+function layT(lado=12){const h=lado*Math.sqrt(3)/2, sw=Math.max(0.15,lado*0.05), m=sw/2;return {w:lado,h,ops:[{t:"poly",pts:[[lado/2,m],[lado-m,h-m],[m,h-m]],fill:"#FFF200",stroke:"#000",sw},{t:"text",x:lado/2,y:h*0.86,s:"T",size:h*0.62,bold:true,anchor:"middle"}]}}
 
 /* ===================== LAYOUT: BLOCO DE DECLARAÇÕES ===================== */
 function tamanhos(R,C){
@@ -836,7 +851,7 @@ function pdfDraw(doc,lay,ox,oy){
     else if(o.t==="path"){const c=o.fill==="#fff"?255:0; doc.setFillColor(c,c,c); doc.setDrawColor(0); if(o.stroke) doc.setLineWidth(o.sw);
       const st=o.fill&&o.stroke?"FD":o.fill?"F":"S"; let seg=null,sx0=0,sy0=0,cx=0,cy=0; const flush=()=>{if(seg&&seg.length) doc.lines(seg,ox+sx0,oy+sy0,[1,1],st,true); seg=null};
       o.d.forEach(c=>{ if(c[0]==="M"){flush();seg=[];sx0=cx=c[1];sy0=cy=c[2]} else if(c[0]==="L"){seg.push([c[1]-cx,c[2]-cy]);cx=c[1];cy=c[2]} else if(c[0]==="C"){seg.push([c[1]-cx,c[2]-cy,c[3]-cx,c[4]-cy,c[5]-cx,c[6]-cy]);cx=c[5];cy=c[6]} else if(c[0]==="Z"){flush()} }); flush(); }
-    else if(o.t==="poly"){doc.setFillColor(255,212,0);doc.setDrawColor(0);doc.setLineWidth(o.sw);doc.setLineJoin("round");const p=o.pts;doc.triangle(ox+p[0][0],oy+p[0][1],ox+p[1][0],oy+p[1][1],ox+p[2][0],oy+p[2][1],"FD")}
+    else if(o.t==="poly"){const hx=(o.fill||"#FFF200").replace("#","");doc.setFillColor(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16));doc.setDrawColor(0);doc.setLineWidth(o.sw);doc.setLineJoin("round");const p=o.pts;doc.triangle(ox+p[0][0],oy+p[0][1],ox+p[1][0],oy+p[1][1],ox+p[2][0],oy+p[2][1],"FD")}
     else if(o.t==="text"){
       doc.setFont("helvetica",o.bold&&o.italic?"bolditalic":o.bold?"bold":o.italic?"italic":"normal"); doc.setFontSize(o.size*doc.internal.scaleFactor);
       const fc=o.fill==="#fff"?255:0; doc.setTextColor(fc,fc,fc); doc.setFillColor(fc,fc,fc);
@@ -1161,7 +1176,11 @@ function viewFormulacao(R,C){
             ${sel(p+".glutenR","Glúten",[["","Selecionar…"],["nao","Não contém glúten"],["sim","Contém glúten"]],{re:true,hint:"Obrigatório responder (Lei 10.674/2003)."})}
             ${sel(p+".lactoseR","Lactose",[["","Selecionar…"],["nao","Não contém lactose"],["sim","Contém lactose"]],{re:true,hint:"Obrigatório responder. Se contém, informe a quantidade (g/100 g) em “Nutrientes não obrigatórios” para o sistema decidir sobre “CONTÉM LACTOSE”."})}
             ${chk(p+".ogm","É transgênico (OGM)",{hint:"Decreto 4.680/2003."})}
-            ${i.ogm?inp(p+".gene","Espécie doadora do gene"):""}
+            ${i.ogm?`</div><div class="grid2">
+              ${inp(p+".ogmComp","Componente transgênico (se for parte do ingrediente composto)",{ph:"Ex.: óleo de soja",hint:"Precisa estar escrito igual em “Ingredientes do ingrediente composto”. A espécie entra logo depois dele."})}
+              ${inp(p+".ogmItem","Item transgênico no alerta",{ph:"Ex.: soja",hint:"Vira “CONTÉM SOJA TRANSGÊNICA” no painel principal."})}
+              ${inp(p+".gene","Espécies doadoras do gene",{ph:"Ex.: Agrobacterium tumefaciens e Bacillus thuringiensis",hint:"Nome científico; sai em itálico logo após o componente transgênico."})}
+              ${sel(p+".ogmExpr","Expressão do alerta",[["contem","CONTÉM (item) TRANSGÊNICO"],["apartir","PRODUTO PRODUZIDO A PARTIR DE (item) TRANSGÊNICO"]],{re:true,hint:"Decreto 4.680/2003, art. 2º, §1º."})}`:""}
           </div>
           <div class="stack"><span class="small muted" style="font-weight:600">Alergênicos (RDC 727/2022, Anexo III)</span>
             ${sel(p+".alergR","Contém ou pode conter alergênicos?",[["","Selecionar…"],["nao","Não"],["sim","Sim"]],{re:true,hint:"Obrigatório responder."})}
@@ -1197,8 +1216,9 @@ function viewFormulacao(R,C){
       <div class="stack">${cards}</div>
       <div class="row"><button class="primary" data-act="addIng">+ Adicionar ingrediente</button></div></div>
     <div class="card stack"><div><h2>Contaminação cruzada na fábrica</h2><p class="muted small">Alergênicos que não estão na formulação, mas são manipulados no estabelecimento e podem contaminar o produto. Entram como “ALÉRGICOS: PODE CONTER…” (RDC 727/2022, art. 14). A declaração deve ser baseada no Programa de Controle de Alergênicos da empresa.</p></div>
-      <div class="alg">${Object.entries(R.alergCruzada||{}).filter(([,v])=>v).map(([k])=>`<span class="tag">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1])} · pode conter<button aria-label="Remover" data-cruzdel="${k}">×</button></span>`).join("")||`<span class="small muted">Nenhum alergênico por contaminação cruzada.</span>`}</div>
-      <div class="row"><select id="cruzk" style="width:auto;flex:1 1 220px"><option value="">Selecionar alergênico…</option>${ALERG.map(a=>`<option value="${a[0]}">${a[1]}</option>`).join("")}</select><button class="mini" data-cruzadd="1">Adicionar</button></div>
+      <div class="alg">${Object.entries(R.alergCruzada||{}).filter(([,v])=>v).sort((a,b)=>fold((ALERG.find(x=>x[0]===a[0])||[,a[0]])[1]).localeCompare(fold((ALERG.find(x=>x[0]===b[0])||[,b[0]])[1]))).map(([k])=>`<span class="tag">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1])} · pode conter<button aria-label="Remover" data-cruzdel="${k}">×</button></span>`).join("")||`<span class="small muted">Nenhum alergênico por contaminação cruzada.</span>`}</div>
+      <div class="row"><select id="cruzk" style="width:auto;flex:1 1 220px"><option value="">Selecionar alergênico…</option>${[...ALERG].sort((a,b)=>fold(a[1]).localeCompare(fold(b[1]))).map(a=>`<option value="${a[0]}">${a[1]}</option>`).join("")}</select><button class="mini" data-cruzadd="1">Adicionar</button></div>
+      ${chk("glutenCruzada","Pode haver contaminação cruzada com glúten",{hint:"Nesse caso o rótulo declara CONTÉM GLÚTEN (Lei 10.674/2003)."})}
       ${R.alergCruzada&&R.alergCruzada.crustaceos?inp("alergCruzEsp","Espécie do crustáceo",{hint:"Obrigatório declarar a espécie: PODE CONTER CRUSTÁCEOS (ESPÉCIES)."}):""}
     </div>
     <div class="card stack"><h2>Espécie do leite</h2>
@@ -1279,7 +1299,7 @@ function viewRotulo(R,C){
           ${C.lupa.vedados.length?`<div class="alert info">Só ${esc(joinE(C.lupa.nutrientes))}: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas a lupa é vedada para ${C.lupa.vedados.length>1?"eles":"esse nutriente"} (Anexo XVI; RDC 429/2020, art. 18, §2º).</div>`:""}<p class="small muted">Metade superior do painel principal, em superfície contínua, preto sobre branco (RDC 429/2020, art. 21). Fonte do modelo: Arial Narrow.${C.lupa.opcional?` Lupa opcional: ${esc(joinE(C.lupa.motivosOpc))} (RDC 429/2020, art. 18, §3º).`:""}</p>`
           :C.lupa.vedados.length?`<div class="alert info">Sem lupa: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas é vedada (Anexo XVI, IN 75/2020).</div>`:`<div class="alert info">Não precisa de lupa: nenhum nutriente atinge os limites do Anexo XV (${C.liquido?"7,5 g / 3 g / 300 mg por 100 ml":"15 g / 6 g / 600 mg por 100 g"}).</div>`}
       </div>
-      ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(),z*0.6)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">Símbolo e expressão no painel principal (Decreto 4.680/2003). Confira o tamanho na Portaria MJ 2.658/2003.</p></div>`:""}
+      ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(simboloT(C).lado*10),z)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">${esc(textoSimboloT(C))}</p></div>`:""}
       <div class="card stack"><h3>Painel principal</h3>
         <dl class="kv"><dt>Denominação</dt><dd>${esc(P.denominacao||"—")}</dd>${alegLac(R)?`<dt>Alegação</dt><dd><b>${esc(alegLac(R))}</b> <span class="muted small">· junto à denominação${C.lupa.precisa?" · com lupa: fora da metade superior do painel principal":""}</span></dd>`:""}<dt>Marca</dt><dd>${esc(P.marca||"—")}</dd><dt>Conteúdo líquido</dt><dd>${esc(conteudoTxt)}${C.temDren&&P.drenado?` · <b>peso drenado ${esc(P.drenado)} ${esc(P.unidade)}</b> <span class="muted small">(mesma altura e destaque do peso líquido, na vista principal)</span>`:""}${altCont?` <span class="muted small">· algarismos com altura mínima ${altCont}, símbolo da unidade com 2/3 dessa altura, na vista principal (Portaria Inmetro 249/2021)</span>`:""}</dd></dl>
         <h3>Demais informações</h3>
@@ -1296,8 +1316,10 @@ function viewRotulo(R,C){
       <button data-exp="rel"><span class="fmt">PDF</span><b>Relatório Dizeres de Rotulagem</b><small>No modelo da Isadora, para enviar ao cliente</small></button>
       <button data-exp="xlsx"><span class="fmt">EXCEL</span><b>Planilha completa</b><small>Rótulo, tabela formatada, cálculos e imagens</small></button>
       <button data-exp="pdf"><span class="fmt">PDF</span><b>Ficha do rótulo</b><small>Todos os textos, tabela e lupa em tamanho real</small></button>
+      <button data-exp="ft"><span class="fmt">PDF</span><b>Ficha técnica</b><small>Para a empresa e os clientes dela, sem a marca da consultoria</small></button>
       <button data-exp="json"><span class="fmt">JSON</span><b>Backup do rótulo</b><small>Para reabrir ou mover para outro computador</small></button>
-    </div></div>
+    </div>
+    <div class="grid3">${inp("fichaTec.rev","Ficha técnica — nº da revisão",{n:true,ph:"001",hint:"Sai como REV 001."})}<label class="f">Data da revisão<input type="date" data-bind="fichaTec.data" id="f-fichaTec.data" value="${esc(R.fichaTec?.data||"")}"><span class="hint">Em branco = data do dia.</span></label></div></div>
   </div>`;
 }
 
@@ -1314,6 +1336,7 @@ async function exportar(tipo){
     const {jsPDF}=window.jspdf||{}; if((tipo.startsWith("pdf"))&&!jsPDF) return toast("A biblioteca de PDF não carregou. Verifique a internet e recarregue.");
     if(tipo==="pdfTab"||tipo==="pdfLupa"){const L=tipo==="pdfTab"?tab:lup; const m=2; const doc=new jsPDF({unit:"mm",format:[L.w+2*m,L.h+2*m],orientation:L.w>L.h?"l":"p"}); pdfDraw(doc,L,m,m); return saveFile(nomeArq("pdf",tipo==="pdfTab"?"tabela-"+tab.modelo:"lupa"),doc.output("blob"))}
     if(tipo==="pdf") return saveFile(nomeArq("pdf","ficha"),await pdfFicha(R,C,T,tabs,lup,dec));
+    if(tipo==="ft") return saveFile(nomeArq("pdf","ficha-tecnica-rev"+String(R.fichaTec?.rev||"001").padStart(3,"0")),await pdfFichaTecnica(R,C,T,tabs,lup));
     if(tipo==="xlsx") return saveFile(nomeArq("xlsx"),await excel(R,C,T,tabs,lup,dec));
   }catch(e){console.error(e);toast("Não foi possível gerar o arquivo: "+(e.message||e))}
 }
@@ -1330,6 +1353,58 @@ function carregarLogo(){
     }catch{ok(null)}};
     img.onerror=()=>ok(null); img.src="../imagens/logo.png";
   }));
+}
+// ficha técnica do produto — documento da empresa (sem a marca da consultoria), com número e data de revisão
+async function pdfFichaTecnica(R,C,T,tabs,lup){
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=18, W=210-2*M, BASE=297-20; const P=R.produto;
+  const rev="REV "+String(R.fichaTec?.rev||"001").replace(/\D/g,"").padStart(3,"0");
+  const dt=R.fichaTec?.data?R.fichaTec.data.split("-").reverse().join("/"):new Date().toLocaleDateString("pt-BR");
+  const PRETO=[25,25,25], CINZ=[95,95,95], LIN=[200,200,200];
+  let y=M;
+  const need=h=>{if(y+h>BASE){doc.addPage();y=M}};
+  const sec=(t,min=0)=>{need(14+min);y+=4;doc.setFillColor(238,238,238);doc.rect(M,y,W,7,"F");doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(...PRETO);doc.text(t.toUpperCase(),M+2.5,y+4.9);y+=10};
+  const LW=56;
+  const kv=(k,v,{rich=false,bold=false,vazio=null}={})=>{ if(v==null||String(v).trim()===""){ if(vazio==null) return; v=vazio; } doc.setFontSize(9.5);
+    doc.setFont("helvetica","bold");const kl=doc.splitTextToSize(k,LW-4);const hk=kl.length*4.2+0.4;
+    let L=null, ls=null; if(rich) L=layParas([{txt:v,pt:9.5,bold}],W-LW); else {doc.setFont("helvetica",bold?"bold":"normal");ls=doc.splitTextToSize(String(v),W-LW);}
+    const hv=rich?L.h:ls.length*4.6; need(Math.max(hk,hv)+1); const y0=y;
+    doc.setFont("helvetica","bold");doc.setTextColor(...CINZ);kl.forEach((l,i)=>doc.text(l,M,y0+3.4+i*4.2));
+    if(rich){pdfDraw(doc,L,M+LW,y0-0.6);}
+    else {doc.setFont("helvetica",bold?"bold":"normal");doc.setTextColor(...PRETO);ls.forEach((l,i)=>doc.text(l,M+LW,y0+3.4+i*4.6));}
+    y=y0+Math.max(hk,hv)+1.5};
+  // cabeçalho
+  doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(...CINZ);doc.text((R.origemD?.razao||P.marca||"").toUpperCase(),M,y+3);
+  doc.setFontSize(18);doc.setTextColor(...PRETO);doc.text("FICHA TÉCNICA",M,y+12);
+  doc.setFontSize(13);const tl=doc.splitTextToSize(P.denominacao||P.nome||"",W-50);tl.forEach((l,i)=>doc.text(l,M,y+20+i*6));
+  doc.setDrawColor(...PRETO);doc.setLineWidth(0.3);doc.rect(M+W-42,y,42,16);doc.setFontSize(11);doc.text(rev,M+W-21,y+7,{align:"center"});doc.setFont("helvetica","normal");doc.setFontSize(9);doc.text(dt,M+W-21,y+12.5,{align:"center"});
+  y+=20+tl.length*6; doc.setDrawColor(...LIN);doc.line(M,y,M+W,y); y+=2;
+  // identificação
+  sec("Identificação do produto");
+  kv("Nome do produto",P.nome); kv("Denominação de venda",P.denominacao); kv("Denominação fantasia",R.relatorio?.fantasia); kv("Marca",P.marca);
+  kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""); if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade}`);
+  if(alegLac(R)) kv("Alegação",alegLac(R)); kv("Descrição",P.descricao);
+  kv("Código de barras",R.relatorio?.codigoBarras); kv("Redes sociais e site",(R.relatorio?.redes||"").replace(/\n+/g," · "));
+  sec("Fabricante e registro");
+  kv("Identificação de origem",origemTexto(R));
+  {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ kv("Serviço de inspeção",I.servico==="SIE-SC"?"SIE/SC (CIDASC)":I.servico+(I.orgao?` (${I.orgao})`:"")); kv("Nº de registro do estabelecimento",I.regEstab); if(I.regProduto) kv("Nº de registro do produto",I.regProduto); kv("Registro",fraseRegistro(R)); if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA","Estabelecimento aderido ao SISBI-POA"); }}
+  sec("Conservação e validade");
+  kv("Modo de conservação",P.conservacao); kv("Validade (embalagem fechada)",P.validade,{vazio:"—"}); kv("Validade após aberto",P.validadeAberto,{vazio:"—"});
+  sec("Composição");
+  kv("Ingredientes",T.ing,{rich:true});
+  kv("Alérgicos",T.alg||"Não contém alergênicos de declaração obrigatória.",{bold:!!T.alg});
+  if(T.lac) kv("Lactose",T.lac,{bold:true});
+  kv("Glúten",T.gluten,{bold:true});
+  if(T.ogm){ kv("Transgênico",T.ogm,{bold:true}); kv("Símbolo “T”",textoSimboloT(C)); const L=layT(simboloT(C).lado*10); need(L.h+3); pdfDraw(doc,L,M+LW,y); y+=L.h+3; }
+  // tabela
+  const tab=tabs[0]; if(tab){ sec("Informação nutricional",tab.h); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+4; }
+  sec("Rotulagem nutricional frontal",lup&&C.lupa.precisa?lup.h+8:6);
+  if(lup&&C.lupa.precisa){ kv("Lupa",`ALTO EM ${joinE(C.lupa.nutrientes)}`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+4; }
+  else kv("Lupa",C.lupa.dispensada.length?"Não se aplica (opcional neste produto e não utilizada).":"Não se aplica: nenhum nutriente atinge os limites do Anexo XV da IN 75/2020.");
+  // rodapé
+  const n=doc.internal.getNumberOfPages();
+  for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZ);doc.setDrawColor(...LIN);doc.line(M,297-14,M+W,297-14);
+    doc.text(`Ficha técnica · ${P.nome||""} · ${rev} · ${dt}`,M,297-9.5); doc.text(`Página ${i} de ${n}`,M+W,297-9.5,{align:"right"});}
+  return doc.output("blob");
 }
 async function pdfFicha(R,C,T,tabs,lup,dec){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15, W=210-2*M, BASE=297-18; const P=R.produto; const Sz=tamanhos(R,C);
@@ -1348,7 +1423,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   if(alegLac(R)) kv("Alegação",C.lupa.precisa?`${alegLac(R)} — a alegação deve ficar na metade inferior do painel principal, pois este rótulo possui lupa de ${joinE(C.lupa.nutrientes)} (RDC 429/2020, art. 30).`:`${alegLac(R)} — junto à denominação de venda (RDC 135/2017).`);
   {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");}
   if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021, item 4.2).`);
-  if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
+  if(T.ogm){ kv("Transgênico",`${T.ogm} — no painel principal, junto ao símbolo “T”.`); kv("Símbolo “T”",textoSimboloT(C)); const L=layT(simboloT(C).lado*10); need(L.h+8); para("Símbolo em tamanho real (mínimo):",{size:8,cor:CINZA}); pdfDraw(doc,L,M+4,y); y+=L.h+4; }
   if(C.lupa.dispensada.length) kv("Rotulagem frontal",`Opcional e não aplicada: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º). Sem ela, o produto teria lupa de ${joinE(C.lupa.dispensada)}.`);
   else if(C.lupa.opcional&&C.lupa.precisa) kv("Rotulagem frontal",`Opcional neste produto: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º).`);
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
@@ -1591,7 +1666,7 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
   bloco("Declaração de glúten:",T.gluten,"A declaração deve estar em caixa alta e negrito, de forma visível e legível. Essa declaração não pode estar encoberta e nem em local de selagem ou que seja prejudicada pela abertura da embalagem. Caso optem por colocá-la abaixo da lista de ingredientes, manter após a declaração de alergênicos e lactose."); espaco();
   if((P.conservacao||"").trim()){bullet("Conservação"); valor({t:P.conservacao.toUpperCase(),f:"PoppinsLight"}); espaco();}
-  if(T.ogm){bloco("Declaração de transgênicos",T.ogm,"A expressão deve estar no painel principal, junto ao símbolo “T” (triângulo amarelo com a letra T em preto), conforme o Decreto 4.680/2003 e a Portaria 2.658/2003. A espécie doadora do gene deve constar na lista de ingredientes."); espaco();}
+  if(T.ogm){bloco("Declaração de transgênicos",T.ogm,"A expressão deve estar no painel principal, junto ao símbolo “T”. "+textoSimboloT(C)+" A espécie doadora do gene, em itálico, vai na lista de ingredientes logo após o ingrediente transgênico."); espaco();}
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
   bullet("Identificação de origem:"); valor({t:origemTexto(R),f:"PoppinsLight"});
   y+=LH; guia("As informações devem estar legíveis, visíveis, fontes de no mínimo 1 mm e em cor contrastantes com a do fundo do rótulo."); espaco();
