@@ -1050,7 +1050,7 @@ function viewProduto(R,C){
   <div class="card stack"><div><h2>Identificação de origem</h2><p class="muted small">RDC 727/2022, art. 29, e Decreto 9.013/2017 (RIISPOA), art. 443.</p></div>
     ${origemLegada(R)?`<div class="alert warn">Texto antigo: “${esc(R.produto.origem)}”. Preencha os campos abaixo; enquanto a razão social estiver em branco, o texto antigo continua sendo usado.</div>`:""}
     <div class="grid3">
-      ${sel("origemD.expressao","Expressão",[["Fabricado em","Fabricado em:"],["Produzido por","Produzido por:"],["Fabricado por","Fabricado por:"],["Indústria","Indústria:"]],{re:true})}
+      ${sel("origemD.expressao","Expressão",[["Fabricado em","Fabricado em:"],["Produzido por","Produzido por:"],["Fabricado por","Fabricado por:"],["Distribuído por","Distribuído por:"],["Indústria","Indústria:"]],{re:true})}
       ${inp("origemD.razao","Razão social")}
       <label class="f">Classificação do estabelecimento (RIISPOA)<select data-bind="origemD.classificacao" id="f-origemD.classificacao" data-rerender="1"><option value="">Selecionar…</option>${CLASSIF_EST.map(([g,it])=>`<optgroup label="${esc(g)}">${it.map(x=>`<option ${R.origemD.classificacao===x?"selected":""}>${esc(x)}</option>`).join("")}</optgroup>`).join("")}${R.origemD.classificacao&&!CLASSIF_EST.some(([,it])=>it.includes(R.origemD.classificacao))?`<option selected>${esc(R.origemD.classificacao)}</option>`:""}</select><span class="hint">Decreto 9.013/2017, arts. 17 a 23.</span></label>
       ${inp("origemD.endereco","Endereço (rua, número, bairro)",{span:true})}
