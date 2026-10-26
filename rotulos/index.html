@@ -205,6 +205,7 @@ function pendDecl(R){
 }
 function migrar(R){
   R.ingredientes.forEach(respIng);
+  if(!R.distribuidor) R.distribuidor={ativo:false,expressao:"Distribuído por",razao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:""};
   if(!R.origemD) R.origemD={expressao:"Fabricado em",razao:"",classificacao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:"",industria:true};
   if(!R.inspecao||(!R.inspecao.servico&&R.relatorio?.sif)){ const rd=R.relatorio||{}; R.inspecao={servico:rd.sif?"SIF":"",orgao:"",regEstab:rd.registroSif||"",regProduto:"",frase:rd.expressao||""}; }
   if(R.produto.temDrenado==null){R.produto.temDrenado="";R.produto.drenado=""}
@@ -214,8 +215,14 @@ const origemLegada = R=>!R.origemD?.razao && (R.produto.origem||"").trim();
 function origemTexto(R){
   const o=R.origemD||{}; if(!o.razao) return (R.produto.origem||"").trim();
   const loc=[o.municipio,o.uf].filter(Boolean).join("/");
-  const partes=[`${o.expressao||"Fabricado em"}: ${o.razao}`, o.classificacao, o.endereco, loc, o.cep?`CEP ${o.cep}`:"", o.pais||"Brasil"].filter(Boolean).join(", ")+".";
-  return [partes, o.cnpj?`CNPJ: ${o.cnpj}.`:"", o.industria!==false&&fold(o.pais||"brasil")==="brasil"?"INDÚSTRIA BRASILEIRA.":"", o.telefone||"", o.email||""].filter(Boolean).join(" ");
+  const dist=R.distribuidor||{}, comDist=!!(dist.ativo&&dist.razao);
+  const partes=[`${comDist&&!["Fabricado por","Produzido por"].includes(o.expressao)?"Fabricado por":(o.expressao||"Fabricado em")}: ${o.razao}`, o.classificacao, o.endereco, loc, o.cep?`CEP ${o.cep}`:"", o.pais||"Brasil"].filter(Boolean).join(", ")+".";
+  const fab=[partes, o.cnpj?`CNPJ: ${o.cnpj}.`:""];
+  if(comDist){ const dl=[dist.municipio,dist.uf].filter(Boolean).join("/");
+    fab.push([`${dist.expressao||"Distribuído por"}: ${dist.razao}`, dist.endereco, dl, dist.cep?`CEP ${dist.cep}`:"", dist.pais||"Brasil"].filter(Boolean).join(", ")+".", dist.cnpj?`CNPJ: ${dist.cnpj}.`:""); }
+  // contato (SAC): o do distribuidor, se informado; senão o do fabricante
+  const usaDist=comDist&&(dist.telefone||dist.email), tel=(usaDist?dist.telefone:o.telefone)||"", mail=(usaDist?dist.email:o.email)||"";
+  return [...fab, o.industria!==false&&fold(o.pais||"brasil")==="brasil"?"INDÚSTRIA BRASILEIRA.":"", tel, mail].filter(Boolean).join(" ");
 }
 function fraseRegistro(R){
   const I=R.inspecao||{}; const est=String(I.regEstab||"").trim(), prod=String(I.regProduto||"").trim();
@@ -1063,6 +1070,19 @@ function viewProduto(R,C){
       ${inp("origemD.email","E-mail")}
       ${chk("origemD.industria","Incluir “INDÚSTRIA BRASILEIRA”")}
     </div>
+    ${chk("distribuidor.ativo","Outra empresa distribui o produto (ou produção terceirizada: “Fabricado por… Para…”)",{hint:"O fabricante acima continua obrigatório; a segunda empresa entra depois dele (RDC 727/2022, art. 29; Decreto 9.013/2017, art. 443, §2º)."})}
+    ${R.distribuidor?.ativo?`<div class="grid3">
+      ${sel("distribuidor.expressao","Expressão",[["Distribuído por","Distribuído por:"],["Para","Para: (produção terceirizada)"],["Importado por","Importado por:"]],{re:true})}
+      ${inp("distribuidor.razao","Razão social")}
+      ${inp("distribuidor.cnpj","CNPJ",{ph:"00.000.000/0000-00"})}
+      ${inp("distribuidor.endereco","Endereço (rua, número, bairro)",{span:true})}
+      ${inp("distribuidor.municipio","Município")}
+      ${sel("distribuidor.uf","UF",[["",""],...UFS.map(u=>[u,u])],{re:true})}
+      ${inp("distribuidor.cep","CEP",{ph:"00000-000"})}
+      ${inp("distribuidor.pais","País",{ph:"Brasil"})}
+      ${inp("distribuidor.telefone","Telefone (SAC)",{hint:"Se preencher telefone ou e-mail aqui, o contato do rótulo passa a ser o desta empresa."})}
+      ${inp("distribuidor.email","E-mail")}
+    </div>`:""}
     <div class="small"><span class="muted">Como vai sair:</span> ${esc(origemTexto(R)||"—")}</div>
   </div>
   <div class="card stack"><div><h2>Serviço de inspeção</h2><p class="muted small">Carimbo e frase de registro. SIF: Decreto 9.013/2017, arts. 443, IX, e 464 a 467. SIE/SC: manuais de rotulagem e de carimbos da CIDASC. Outros SIE e SIM: regulamento do estado ou município.</p></div>
