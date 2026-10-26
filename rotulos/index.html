@@ -482,9 +482,12 @@ function calc(R){
   else if(modo16==="cond"){ aplicar=acima.filter(([k])=>alt[k]); vedados=acima.filter(([k])=>!alt[k]); }
   const lupaN=aplicar.map(x=>x[1]);
   const area=nz(R.painel.largura)*nz(R.painel.altura);
-  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:area>0&&area<35,modo16,temOpc,alt,contrib,semV,comV,opc:opc.map(i=>i.nome).filter(Boolean)};
+  const motivosOpc=[]; if(area>0&&area<35) motivosOpc.push("painel principal com menos de 35 cm² (inciso I)"); if(R.produto.venda==="pdv") motivosOpc.push("embalado no ponto de venda a pedido do consumidor (inciso II)"); if(R.produto.venda==="estab") motivosOpc.push("preparado ou fracionado e vendido no próprio estabelecimento (inciso III)");
+  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:motivosOpc.length>0,motivosOpc,dispensada:[],modo16,temOpc,alt,contrib,semV,comV,opc:opc.map(i=>i.nome).filter(Boolean)};
   if(modo16==="cond"&&!temOpc) W.push("Lupa: responda se o produto tem ingrediente opcional do RTIQ/PIQ (etapa Porção e embalagem).");
   if(modo16==="cond"&&temOpc==="sim"&&!opc.length) W.push("Lupa: selecione qual ingrediente é o opcional do RTIQ/PIQ (etapa Porção e embalagem).");
+  if(lupa.opcional&&lupa.precisa){ if(R.lupa.dispensar){ lupa.dispensada=lupa.nutrientes; lupa.nutrientes=[]; lupa.precisa=false; I.push(`Lupa não aplicada. Ela é opcional neste caso — ${joinE(motivosOpc)} (RDC 429/2020, art. 18, §3º).`); }
+    else I.push(`A lupa é opcional neste produto: ${joinE(motivosOpc)} (RDC 429/2020, art. 18, §3º). Para não usar, marque a opção na etapa Porção e embalagem.`); }
   if(modo16==="cond"&&temOpc==="nao"&&acima.length) I.push("Produto só com ingredientes obrigatórios do RTIQ/PIQ: a lupa fica vedada (Anexo XVI, IN 75/2020; Anvisa, P&R 168).");
   if(modo16==="cond"&&opc.some(i=>!KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null)&&!i.acucarAdic)) W.push("Há ingrediente opcional sem composição nutricional: o sistema não consegue saber se ele altera açúcares adicionados, gordura saturada ou sódio.");
   // lactose
@@ -553,9 +556,11 @@ function textos(R,C){
   // alergênicos (RDC 727/2022, arts. 13-15)
   const st={};
   it.concat(C.ings.filter(i=>i.omitir)).forEach(i=>Object.entries(i.alerg||{}).forEach(([k,v])=>{if(!v)return;(st[k]=st[k]||new Set()).add(v)}));
+  // contaminação cruzada na fábrica (alergênicos manipulados no estabelecimento, fora da formulação) → "PODE CONTER" (RDC 727/2022, art. 14)
+  Object.entries(R.alergCruzada||{}).forEach(([k,v])=>{if(v)(st[k]=st[k]||new Set()).add("p")});
   const nome=k=>{const a=ALERG.find(x=>x[0]===k); let n=a?a[2]:k.toUpperCase();
     if(k==="leite"&&P.especieLeite.trim()&&fold(P.especieLeite)!=="vaca") n="LEITE DE "+P.especieLeite.trim().toUpperCase();
-    if(k==="crustaceos"){const esp=C.ings.map(i=>i.alergEsp).filter(Boolean); if(esp.length) n+=` (${[...new Set(esp)].join(", ").toUpperCase()})`}
+    if(k==="crustaceos"){const esp=C.ings.map(i=>i.alergEsp).concat(R.alergCruzEsp?[R.alergCruzEsp]:[]).filter(Boolean); if(esp.length) n+=` (${[...new Set(esp)].join(", ").toUpperCase()})`}
     return n};
   const c=[],cd=[],d=[],p=[];
   ALERG.forEach(([k])=>{const s=st[k]; if(!s) return;
@@ -1191,6 +1196,11 @@ function viewFormulacao(R,C){
     <div class="card stack"><div class="sec-t"><div><span class="eyebrow">Formulação</span><h2>Ingredientes (${R.ingredientes.length})</h2></div><span class="small muted num">Total: ${br(tot,3)} g</span></div>
       <div class="stack">${cards}</div>
       <div class="row"><button class="primary" data-act="addIng">+ Adicionar ingrediente</button></div></div>
+    <div class="card stack"><div><h2>Contaminação cruzada na fábrica</h2><p class="muted small">Alergênicos que não estão na formulação, mas são manipulados no estabelecimento e podem contaminar o produto. Entram como “ALÉRGICOS: PODE CONTER…” (RDC 727/2022, art. 14). A declaração deve ser baseada no Programa de Controle de Alergênicos da empresa.</p></div>
+      <div class="alg">${Object.entries(R.alergCruzada||{}).filter(([,v])=>v).map(([k])=>`<span class="tag">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1])} · pode conter<button aria-label="Remover" data-cruzdel="${k}">×</button></span>`).join("")||`<span class="small muted">Nenhum alergênico por contaminação cruzada.</span>`}</div>
+      <div class="row"><select id="cruzk" style="width:auto;flex:1 1 220px"><option value="">Selecionar alergênico…</option>${ALERG.map(a=>`<option value="${a[0]}">${a[1]}</option>`).join("")}</select><button class="mini" data-cruzadd="1">Adicionar</button></div>
+      ${R.alergCruzada&&R.alergCruzada.crustaceos?inp("alergCruzEsp","Espécie do crustáceo",{hint:"Obrigatório declarar a espécie: PODE CONTER CRUSTÁCEOS (ESPÉCIES)."}):""}
+    </div>
     <div class="card stack"><h2>Espécie do leite</h2>
       <div class="grid2">${inp("produto.especieLeite","Espécie do leite (se não for vaca)",{ph:temLeite?"vaca":"",hint:"Usado na advertência de alérgicos: ex. “cabra” vira “LEITE DE CABRA”. Em branco = vaca."})}</div></div>
     ${proc}
@@ -1228,10 +1238,12 @@ function viewPorcao(R,C){
       ${(()=>{const n=C.lupa.nutrientes.length;const ops=Object.entries(LUPA_LAYOUTS).filter(([k,v])=>v.ok(Math.max(n,1))).map(([k,v])=>[k,v.t]);const cur=lupaModelo(R,Math.max(n,1));if(R.lupa.modelo!==cur)R.lupa.modelo=cur;return sel("lupa.modelo","Disposição da lupa",ops,{re:true,hint:n?`Variações da malha construtiva da Anvisa para ${n+1} blocos.`:"Este produto não precisa de lupa."})})()}
     </div>
     <div class="grid2">
-      ${chk("tabela.reduzida","Usar formatação reduzida (título 8 pt, nutrientes 6 pt, valores 8 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
+      ${chk("tabela.reduzida","Usar formatação reduzida (título 8 pt, demais informações 6 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
       ${R.tabela.lactoseGal&&!alegLac(R)?chk("tabela.lactoseGal","Produto com alegação de restrição de lactose",{hint:"Escolha a alegação na etapa Produto; depois desmarque aqui."}):`<div class="small muted">${alegLac(R)?`Alegação “${esc(alegLac(R))}”: a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º).`:"Sem alegação sobre lactose (escolha na etapa Produto, se houver)."}</div>`}
     </div>
     <div class="grid2">
+      ${sel("produto.venda","Como o produto é embalado e vendido",[["","Embalado na ausência do consumidor (padrão)"],["pdv","Embalado no ponto de venda, a pedido do consumidor"],["estab","Preparado ou fracionado e vendido no próprio estabelecimento"]],{re:true,hint:"RDC 429/2020, art. 18, §3º: a lupa é opcional nos casos II e III e em painel principal com menos de 35 cm² (caso I)."})}
+      ${C.lupa.opcional&&(C.lupa.precisa||C.lupa.dispensada.length)?chk("lupa.dispensar","Não usar a lupa (opcional neste produto)",{hint:"Motivo: "+esc(joinE(C.lupa.motivosOpc))+"."}):""}
       ${(()=>{ const leg=R.lupa.item16==null&&R.lupa.anexo16; return `<label class="f">Enquadramento no Anexo XVI (IN 75/2020)<select data-bind="lupa.item16" id="f-lupa.item16" data-rerender="1"><option value="" ${!R.lupa.item16&&!leg?"selected":""}>Não está no Anexo XVI (regra geral)</option>${leg?`<option value="" selected disabled>Grupo não especificado (${R.lupa.anexo16==="cond"?"itens 1 a 6":"itens 7 a 18"}) — escolha o grupo</option>`:""}<optgroup label="Vedação condicional: lupa só do nutriente alterado por ingrediente opcional">${ANEXO16.slice(0,6).map((n,i)=>`<option value="${i+1}" ${String(R.lupa.item16)===String(i+1)?"selected":""}>${i+1}. ${esc(n)}</option>`).join("")}</optgroup><optgroup label="Lupa sempre vedada">${ANEXO16.slice(6).map((n,i)=>`<option value="${i+7}" ${String(R.lupa.item16)===String(i+7)?"selected":""}>${i+7}. ${esc(n)}</option>`).join("")}</optgroup></select><span class="hint">Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170).</span></label>`})()}
       ${C.lupa.modo16==="cond"?sel("lupa.temOpcional","O produto tem ingrediente opcional do RTIQ/PIQ?",[["","Selecionar…"],["nao","Não, só ingredientes obrigatórios"],["sim","Sim"]],{re:true,hint:"Só com ingredientes obrigatórios, a lupa fica vedada mesmo acima dos limites (Anvisa, P&R 168)."}):""}
     </div>
@@ -1264,7 +1276,7 @@ function viewRotulo(R,C){
     <div class="stack">
       <div><span class="eyebrow">Rotulagem nutricional frontal</span>
         ${lup?`<div class="paper ${S.real?"":"fit"}">${svgOf(lup,z)}</div><div class="paper-cap"><span class="num">${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm</span><span>${lup.M.pct?`${br(lup.M.pct,2)}% exigido · ocupa ${br(lup.M.ocup,2)}% de ${br(lup.M.area,1)} cm²`:""} · “ALTO EM” ${br(lup.M.pt,1)} pt${lup.M.motivo?" · "+esc(lup.M.motivo):""}</span></div>
-          ${C.lupa.vedados.length?`<div class="alert info">Só ${esc(joinE(C.lupa.nutrientes))}: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas a lupa é vedada para ${C.lupa.vedados.length>1?"eles":"esse nutriente"} (Anexo XVI; RDC 429/2020, art. 18, §2º).</div>`:""}<p class="small muted">Metade superior do painel principal, em superfície contínua, preto sobre branco (RDC 429/2020, art. 21). Fonte do modelo: Arial Narrow.${C.lupa.opcional?" Painel menor que 35 cm²: lupa opcional (art. 18, §3º).":""}</p>`
+          ${C.lupa.vedados.length?`<div class="alert info">Só ${esc(joinE(C.lupa.nutrientes))}: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas a lupa é vedada para ${C.lupa.vedados.length>1?"eles":"esse nutriente"} (Anexo XVI; RDC 429/2020, art. 18, §2º).</div>`:""}<p class="small muted">Metade superior do painel principal, em superfície contínua, preto sobre branco (RDC 429/2020, art. 21). Fonte do modelo: Arial Narrow.${C.lupa.opcional?` Lupa opcional: ${esc(joinE(C.lupa.motivosOpc))} (RDC 429/2020, art. 18, §3º).`:""}</p>`
           :C.lupa.vedados.length?`<div class="alert info">Sem lupa: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas é vedada (Anexo XVI, IN 75/2020).</div>`:`<div class="alert info">Não precisa de lupa: nenhum nutriente atinge os limites do Anexo XV (${C.liquido?"7,5 g / 3 g / 300 mg por 100 ml":"15 g / 6 g / 600 mg por 100 g"}).</div>`}
       </div>
       ${T.ogm?`<div><span class="eyebrow">Transgênico</span><div class="paper row" style="gap:14px">${svgOf(layT(),z*0.6)}<b style="font-family:Arial">${esc(T.ogm)}</b></div><p class="small muted" style="margin-top:6px">Símbolo e expressão no painel principal (Decreto 4.680/2003). Confira o tamanho na Portaria MJ 2.658/2003.</p></div>`:""}
@@ -1337,6 +1349,8 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");}
   if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021, item 4.2).`);
   if(T.ogm) kv("Transgênico",T.ogm+" (com símbolo T)");
+  if(C.lupa.dispensada.length) kv("Rotulagem frontal",`Opcional e não aplicada: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º). Sem ela, o produto teria lupa de ${joinE(C.lupa.dispensada)}.`);
+  else if(C.lupa.opcional&&C.lupa.precisa) kv("Rotulagem frontal",`Opcional neste produto: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º).`);
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`A rotulagem nutricional frontal fica no painel principal, na metade superior. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
@@ -1760,6 +1774,8 @@ document.addEventListener("click",e=>{
     S.open[ing.id]=true;salvar();render();return}
   if(d.nexadd!=null){const ix=+d.nexadd,k=$("#nex-"+ix).value;if(!k){toast("Escolha o nutriente.");return}const ing=S.R.ingredientes[ix];ing.extras=[...new Set([...(ing.extras||[]),k])];if(ing.comp[k]==null)ing.comp[k]="";S.open[ing.id]=true;salvar();render();setTimeout(()=>{const el=document.getElementById(`f-ingredientes.${ix}.comp.${k}`);el&&el.focus()},30);return}
   if(d.nexdel){const [ix,k]=d.nexdel.split("|");const ing=S.R.ingredientes[+ix];ing.extras=(ing.extras||[]).filter(x=>x!==k);delete ing.comp[k];S.open[ing.id]=true;salvar();render();return}
+  if(d.cruzadd){const k=$("#cruzk").value; if(!k){toast("Selecione o alergênico.");return} S.R.alergCruzada={...(S.R.alergCruzada||{}),[k]:true}; salvar(); render(); return}
+  if(d.cruzdel){const o={...(S.R.alergCruzada||{})}; delete o[d.cruzdel]; S.R.alergCruzada=o; salvar(); render(); return}
   if(d.algdel){const [ix,k]=d.algdel.split("|");delete S.R.ingredientes[+ix].alerg[k];salvar();render();return}
   if(d.zoom!=null){S.real=d.zoom==="1";render();return}
   if(d.clear){setP(S.R,d.clear,"");salvar();render();return}
