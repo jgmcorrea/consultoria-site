@@ -578,7 +578,9 @@ function textos(R,C){
   ALERG.forEach(([k])=>{const s=st[k]; if(!s) return;
     const C1=s.has("c"),D1=s.has("d"),CD=s.has("cd");
     if(CD||(C1&&D1)) cd.push(nome(k)); else if(C1) c.push(nome(k)); else if(D1) d.push(nome(k)); else if(s.has("p")) p.push(nome(k));});
-  const partes=[]; if(c.length) partes.push("CONTÉM "+joinE(c,", "," E ")); if(cd.length) partes.push("CONTÉM "+joinE(cd.map(x=>x+" E DERIVADOS"),", ",", ")); if(d.length) partes.push("CONTÉM DERIVADOS DE "+joinE(d,", "," E "));
+  const partes=[]; // contém + derivados de numa frase só: "CONTÉM CASTANHA-DE-CAJU E DERIVADOS DE SOJA"
+  {const g=[...c]; if(d.length) g.push("DERIVADOS DE "+joinE(d,", "," E ")); if(g.length) partes.push("CONTÉM "+joinE(g,", "," E "));}
+  if(cd.length) partes.push("CONTÉM "+joinE(cd.map(x=>x+" E DERIVADOS"),", ",", "));
   if(p.length) partes.push("PODE CONTER "+joinE([...p].sort((a,b)=>fold(a).localeCompare(fold(b))),", "," E "));
   const algTxt=partes.length?"ALÉRGICOS: "+partes.join(". ")+".":"";
   const gluten=(it.some(i=>i.gluten)||R.glutenCruzada)?"CONTÉM GLÚTEN":"NÃO CONTÉM GLÚTEN"; // contaminação cruzada com glúten → CONTÉM GLÚTEN
@@ -842,6 +844,10 @@ function svgOf(lay,pxPerMM){
   });
   return s+"</svg>";
 }
+const mesmoNome=P=>fold(String(P.nome||"").trim())===fold(String(P.denominacao||"").trim());
+// símbolo T em tamanho real com a frase ao lado; devolve a altura usada
+function pdfTFrase(doc,C,T,x,y,larg){const L=layT(simboloT(C).lado*10); pdfDraw(doc,L,x,y); doc.setFont("helvetica","bold"); doc.setFontSize(9.5); doc.setTextColor(0,0,0);
+  const ls=doc.splitTextToSize(T.ogm,larg-L.w-3); const th=ls.length*4.2; const ty=y+Math.max(0,(L.h-th)/2); ls.forEach((l,i)=>doc.text(l,x+L.w+3,ty+3.3+i*4.2)); return Math.max(L.h,th)}
 function pdfDraw(doc,lay,ox,oy){
   lay.ops.forEach(o=>{
     if(o.t==="rect"){const st=o.fill&&o.stroke?"FD":o.fill?"F":"S"; if(o.fill){const c=o.fill==="#fff"?255:0;doc.setFillColor(c,c,c)} doc.setDrawColor(0); if(o.stroke)doc.setLineWidth(o.sw);
@@ -1291,7 +1297,7 @@ function viewRotulo(R,C){
         <div class="paper-cap"><span><b>Fonte:</b> ${tb.modelo==="linear"||R.tabela.reduzida?"título “INFORMAÇÃO NUTRICIONAL” 8 pt negrito · demais informações 6 pt":"título “INFORMAÇÃO NUTRICIONAL” 10 pt negrito · demais informações 8 pt · rodapé 6 pt"} (Anexo XII, IN 75/2020)</span><span>${fontesTab(tb.modelo==="linear"||R.tabela.reduzida)} · 100% preto em fundo branco</span></div></div>`).join("")}
       <div><span class="eyebrow">Lista de ingredientes e advertências</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(dec,z)}</div>
-        <div class="paper-cap"><span><b>Ingredientes:</b> letras com no mínimo 1 mm</span><span><b>Alérgicos, lactose e glúten:</b> ${Sz.minAvisoMM} mm, negrito, caixa alta, nunca menores que a lista de ingredientes (alérgicos e lactose: RDC 727/2022, arts. 15 e 19; glúten: Lei 10.674/2003)</span></div></div>
+        <div class="paper-cap"><span><b>Ingredientes:</b> letras com no mínimo 1 mm</span><span><b>${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}:</b> ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes (RDC 727/2022 e Lei 10.674/2003)</span></div></div>
     </div>
     <div class="stack">
       <div><span class="eyebrow">Rotulagem nutricional frontal</span>
@@ -1380,7 +1386,7 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   y+=20+tl.length*6; doc.setDrawColor(...LIN);doc.line(M,y,M+W,y); y+=2;
   // identificação
   sec("Identificação do produto");
-  kv("Nome do produto",P.nome); kv("Denominação de venda",P.denominacao); kv("Denominação fantasia",R.relatorio?.fantasia); kv("Marca",P.marca);
+  if(!mesmoNome(P)) kv("Nome do produto",P.nome); kv("Denominação de venda",P.denominacao); kv("Denominação fantasia",R.relatorio?.fantasia); kv("Marca",P.marca);
   kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""); if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade}`);
   if(alegLac(R)) kv("Alegação",alegLac(R)); kv("Descrição",P.descricao);
   kv("Código de barras",R.relatorio?.codigoBarras); kv("Redes sociais e site",(R.relatorio?.redes||"").replace(/\n+/g," · "));
@@ -1394,12 +1400,10 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   kv("Alérgicos",T.alg||"Não contém alergênicos de declaração obrigatória.",{bold:!!T.alg});
   if(T.lac) kv("Lactose",T.lac,{bold:true});
   kv("Glúten",T.gluten,{bold:true});
-  if(T.ogm){ kv("Transgênico",T.ogm,{bold:true}); kv("Símbolo “T”",textoSimboloT(C)); const L=layT(simboloT(C).lado*10); need(L.h+3); pdfDraw(doc,L,M+LW,y); y+=L.h+3; }
+  if(T.ogm){ const hT=Math.max(simboloT(C).h*10,4.2)+2; need(hT); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...CINZ);doc.text("Transgênico",M,y+3.4); y+=pdfTFrase(doc,C,T,M+LW,y,W-LW)+2; }
   // tabela
   const tab=tabs[0]; if(tab){ sec("Informação nutricional",tab.h); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+4; }
-  sec("Rotulagem nutricional frontal",lup&&C.lupa.precisa?lup.h+8:6);
-  if(lup&&C.lupa.precisa){ kv("Lupa",`ALTO EM ${joinE(C.lupa.nutrientes)}`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+4; }
-  else kv("Lupa",C.lupa.dispensada.length?"Não se aplica (opcional neste produto e não utilizada).":"Não se aplica: nenhum nutriente atinge os limites do Anexo XV da IN 75/2020.");
+  if(lup&&C.lupa.precisa){ sec("Rotulagem nutricional frontal",lup.h+8); kv("Lupa",`ALTO EM ${joinE(C.lupa.nutrientes)}`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+4; }
   // rodapé
   const n=doc.internal.getNumberOfPages();
   for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZ);doc.setDrawColor(...LIN);doc.line(M,297-14,M+W,297-14);
@@ -1414,22 +1418,24 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...LARANJA); doc.text("Consultoria Isadora Andrade",M,16);
   doc.setFontSize(19); doc.setTextColor(...TINTA); const tit=doc.splitTextToSize(P.nome||"Rótulo",W-36).slice(0,2); tit.forEach((l,i)=>doc.text(l,M,26+i*7.5));
   let y=26+tit.length*7.5+1.5;
+  if(mesmoNome(P)){doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(...CINZA);doc.text("Denominação de venda (igual ao nome do produto) — vai no painel principal",M,y+2);y+=4}
   y=Math.max(y+4,44);
   const need=h=>{if(y+h>BASE){doc.addPage();y=M}};
   const h2=t=>{need(12);y+=3;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
-  h2("Painel principal"); kv("Denominação de venda",P.denominacao); if((R.relatorio?.fantasia||"").trim()) kv("Denominação fantasia",R.relatorio.fantasia); kv("Marca",P.marca);
+  h2("Painel principal"); if(!mesmoNome(P)) kv("Denominação de venda",P.denominacao); if((R.relatorio?.fantasia||"").trim()) kv("Denominação fantasia",R.relatorio.fantasia); kv("Marca",P.marca);
   if(alegLac(R)) kv("Alegação",C.lupa.precisa?`${alegLac(R)} — a alegação deve ficar na metade inferior do painel principal, pois este rótulo possui lupa de ${joinE(C.lupa.nutrientes)} (RDC 429/2020, art. 30).`:`${alegLac(R)} — junto à denominação de venda (RDC 135/2017).`);
-  {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021, Tabela II e item 3.3)`:""}`:"");}
-  if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021, item 4.2).`);
-  if(T.ogm){ kv("Transgênico",`${T.ogm} — no painel principal, junto ao símbolo “T”.`); kv("Símbolo “T”",textoSimboloT(C)); const L=layT(simboloT(C).lado*10); need(L.h+8); para("Símbolo em tamanho real (mínimo):",{size:8,cor:CINZA}); pdfDraw(doc,L,M+4,y); y+=L.h+4; }
+  {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021)`:""}`:"");}
+  if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021).`);
+  if(T.ogm){ const hT=Math.max(simboloT(C).h*10,4.2)+6; need(hT+12); doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(...CINZA);doc.text("Transgênico",M,y+3.2); y+=pdfTFrase(doc,C,T,M+45,y,W-45)+2;
+    para("A frase vai no painel principal, junto ao símbolo “T” (em tamanho real, mínimo). "+textoSimboloT(C),{size:8,cor:CINZA}); }
   if(C.lupa.dispensada.length) kv("Rotulagem frontal",`Opcional e não aplicada: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º). Sem ela, o produto teria lupa de ${joinE(C.lupa.dispensada)}.`);
   else if(C.lupa.opcional&&C.lupa.precisa) kv("Rotulagem frontal",`Opcional neste produto: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º).`);
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`A rotulagem nutricional frontal fica no painel principal, na metade superior. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
-  para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. Alérgicos, lactose e glúten: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes e nunca menores que ela (alérgicos e lactose: RDC 727/2022, arts. 15 e 19; glúten: Lei 10.674/2003).`,{size:8,cor:CINZA});
+  para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes. Referências: RDC 727/2022 e Lei 10.674/2003.`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
     {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
   h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
@@ -1441,7 +1447,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
     else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}.`);
     if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA",TXT_SISBI);
   }}
-  if(C.E.length||C.W.length){h2("Pendências"); C.E.concat(C.W).forEach(t=>para("• "+t,{size:8.5}))}
+  {const pend=C.E.concat(C.W.filter(t=>!/^“CONTÉM LACTOSE” foi incluído/.test(t))); if(pend.length){h2("Pendências"); pend.forEach(t=>para("• "+t,{size:8.5}))}} // teor de lactose normalmente não é informado: não vai para a ficha
   para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
   const emitido=new Date().toLocaleDateString("pt-BR"), n=doc.internal.getNumberOfPages();
   for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
@@ -1472,7 +1478,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
   tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${tb.modelo==="linear"?"título 8 pt negrito; demais 6 pt":`título ${R.tabela.reduzida?8:10} pt negrito; porções, colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt`}`));
-  const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes: letras com no mínimo 1 mm. Alérgicos, lactose e glúten: ${Sz.minAvisoMM} mm, negrito, caixa alta, nunca menores que a lista de ingredientes.`);
+  const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes (RDC 727/2022 e Lei 10.674/2003).`);
   // Aba Tabela nutricional
   const s2=wb.addWorksheet("Tabela nutricional",{views:[{showGridLines:false}]}); s2.columns=[{width:2},{width:30},{width:10},{width:10},{width:8},{width:3},{width:40}];
   let r=2; const fs=R.tabela.reduzida?6:8;
