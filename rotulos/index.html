@@ -194,6 +194,8 @@ function respIng(i){
   const temAlg=Object.values(i.alerg||{}).some(Boolean);
   if(temAlg) i.alergR="sim"; else if(i.alergR==null) i.alergR="";
   i.gluten=i.glutenR==="sim"; i.lactose=i.lactoseR==="sim";
+  // transgênico: "ing" = o ingrediente (ou um componente dele) é transgênico; "deriv" = contém derivados de transgênicos
+  if(i.ogmTipo==null) i.ogmTipo=i.ogm?"ing":""; i.ogm=!!i.ogmTipo; if(i.ogmDeriv==null) i.ogmDeriv="";
 }
 function pendDecl(R){
   const falta=[];
@@ -325,7 +327,7 @@ function setP(o,p,v){const ks=p.split(".");let a=o;ks.slice(0,-1).forEach(k=>{if
 let toastT; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
 
 /* ===================== MODELO ===================== */
-function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,gene:"",ogmComp:"",ogmItem:"",ogmExpr:"contem",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
+function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,ogmDeriv:"",gene:"",ogmComp:"",ogmItem:"",ogmExpr:"contem",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
 function novoRotulo(tipo){
   return {id:novoUUID(),clienteId:"",tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
     produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:"",temDrenado:"",drenado:""},
@@ -369,7 +371,8 @@ function calc(R){
     const temComp=KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null);
     if(!temComp && !(i.acucarAdic)) W.push(`“${i.nome||"Ingrediente"}” está sem composição nutricional; entra no cálculo como zero.`);
     if(i.ogm&&!i.gene.trim()) W.push(`Informe a espécie doadora do gene de “${i.nome}” (Decreto 4.680/2003).`);
-    if(i.ogm&&String(i.ogmComp||"").trim()&&fold(i.sub||"").indexOf(fold(i.ogmComp))<0) W.push(`O componente transgênico “${i.ogmComp}” não aparece nos ingredientes de “${i.nome}”; a indicação “transgênico” foi para o nome do ingrediente.`);
+    if(i.ogmTipo==="deriv"&&!String(i.ogmDeriv||"").trim()) W.push(`Informe quais derivados transgênicos “${i.nome}” contém (ex.: proteína de soja e dextrose de milho).`);
+    if(i.ogmTipo==="ing"&&String(i.ogmComp||"").trim()&&fold(i.sub||"").indexOf(fold(i.ogmComp))<0) W.push(`O componente transgênico “${i.ogmComp}” não aparece nos ingredientes de “${i.nome}”; a indicação “transgênico” foi para o nome do ingrediente.`);
   });
   const tot=somar(ings);
   if(R.tipo==="normal"){ massaFinal=tot.massa; N=tot.n; }
@@ -551,7 +554,10 @@ function textos(R,C){
   const clean=s=>s.trim().replace(/[.;,]+$/,"");
   const nao=it.filter(i=>!i.aditivo).map((i,ix)=>({i,ix})).sort((a,b)=>byQ(a.i,b.i)||a.ix-b.ix).map(({i})=>{
     let s=clean(i.nome), sub=clean(i.sub||"");
-    if(i.ogm){ const g=genesTxt(i.gene), comp=String(i.ogmComp||"").trim();
+    if(i.ogmTipo==="deriv"){ const sp=String(i.gene||"").split(/\s*,\s*|\s+e\s+/).map(x=>x.trim().replace(/^_|_$/g,"")).filter(Boolean);
+      const dv=`contém derivados de ${clean(i.ogmDeriv||"")||"…"} transgênicos${sp.length?": "+joinE(sp.map(x=>`_${x}_`)):""}`;
+      sub=sub?`${sub}; ${dv}`:dv; }
+    else if(i.ogm){ const g=genesTxt(i.gene), comp=String(i.ogmComp||"").trim();
       const pos=comp&&sub?fold(sub).indexOf(fold(comp)):-1;
       if(pos>=0){ const fim=pos+comp.length; sub=sub.slice(0,fim)+` ${femin(comp)?"transgênica":"transgênico"}${g?" "+g:""}`+sub.slice(fim); }
       else s+=` ${femin(i.nome)?"transgênica":"transgênico"}${g?" "+g:""}`; }
@@ -585,7 +591,7 @@ function textos(R,C){
   const algTxt=partes.length?"ALÉRGICOS: "+partes.join(". ")+".":"";
   const gluten=(it.some(i=>i.gluten)||R.glutenCruzada)?"CONTÉM GLÚTEN":"NÃO CONTÉM GLÚTEN"; // contaminação cruzada com glúten → CONTÉM GLÚTEN
   const ogmIng=it.filter(i=>i.ogm);
-  const frase=(lista,pre)=>{ if(!lista.length) return ""; const itens=[...new Set(lista.map(i=>clean(i.ogmItem||i.ogmComp||i.nome).toUpperCase()))];
+  const frase=(lista,pre)=>{ if(!lista.length) return ""; const itens=[...new Set(lista.flatMap(i=>clean(i.ogmItem||i.ogmComp||(i.ogmTipo==="deriv"?"":i.nome)||i.nome).toUpperCase().split(/\s*,\s*|\s+E\s+/)).filter(Boolean))];
     const adj=itens.length>1?(itens.every(femin)?"TRANSGÊNICAS":"TRANSGÊNICOS"):(femin(itens[0])?"TRANSGÊNICA":"TRANSGÊNICO"); return `${pre} ${joinE(itens,", "," E ")} ${adj}`; };
   const ogm=[frase(ogmIng.filter(i=>i.ogmExpr!=="apartir"),"CONTÉM"),frase(ogmIng.filter(i=>i.ogmExpr==="apartir"),"PRODUTO PRODUZIDO A PARTIR DE")].filter(Boolean).join(". ");
   return {ing:R.textos.ingOverride.trim()||ingTxt, ingAuto:ingTxt, alg:R.textos.algOverride.trim()||algTxt, algAuto:algTxt, lac:C.lactose, gluten, ogm, alergCont:c.concat(cd,d), alergPode:p};
@@ -1181,8 +1187,13 @@ function viewFormulacao(R,C){
           <div class="grid2">
             ${sel(p+".glutenR","Glúten",[["","Selecionar…"],["nao","Não contém glúten"],["sim","Contém glúten"]],{re:true,hint:"Obrigatório responder (Lei 10.674/2003)."})}
             ${sel(p+".lactoseR","Lactose",[["","Selecionar…"],["nao","Não contém lactose"],["sim","Contém lactose"]],{re:true,hint:"Obrigatório responder. Se contém, informe a quantidade (g/100 g) em “Nutrientes não obrigatórios” para o sistema decidir sobre “CONTÉM LACTOSE”."})}
-            ${chk(p+".ogm","É transgênico (OGM)",{hint:"Decreto 4.680/2003."})}
-            ${i.ogm?`</div><div class="grid2">
+            ${sel(p+".ogmTipo","Transgênico (OGM)",[["","Não é nem contém transgênico"],["ing","O ingrediente é transgênico"],["deriv","Contém derivados de transgênicos"]],{re:true,hint:"Decreto 4.680/2003. Ex.: peito de peru não é transgênico, mas pode conter proteína de soja transgênica."})}
+            ${i.ogmTipo==="deriv"?`</div><div class="grid2">
+              ${inp(p+".ogmDeriv","Derivados transgênicos que o ingrediente contém",{ph:"Ex.: proteína de soja e dextrose de milho",hint:"Sai como “peito de peru (contém derivados de proteína de soja e dextrose de milho transgênicos: espécies)”."})}
+              ${inp(p+".ogmItem","Itens transgênicos no alerta",{ph:"Ex.: soja e milho",hint:"Vira “CONTÉM SOJA E MILHO TRANSGÊNICOS” no painel principal."})}
+              ${inp(p+".gene","Espécies doadoras do gene",{ph:"Ex.: Bacillus thuringiensis, Agrobacterium tumefaciens e Zea mays",hint:"Nome científico; sai em itálico depois dos dois-pontos."})}
+              ${sel(p+".ogmExpr","Expressão do alerta",[["contem","CONTÉM (item) TRANSGÊNICO"],["apartir","PRODUTO PRODUZIDO A PARTIR DE (item) TRANSGÊNICO"]],{re:true,hint:"Decreto 4.680/2003, art. 2º, §1º."})}`:""}
+            ${i.ogmTipo==="ing"?`</div><div class="grid2">
               ${inp(p+".ogmComp","Componente transgênico (se for parte do ingrediente composto)",{ph:"Ex.: óleo de soja",hint:"Precisa estar escrito igual em “Ingredientes do ingrediente composto”. A espécie entra logo depois dele."})}
               ${inp(p+".ogmItem","Item transgênico no alerta",{ph:"Ex.: soja",hint:"Vira “CONTÉM SOJA TRANSGÊNICA” no painel principal."})}
               ${inp(p+".gene","Espécies doadoras do gene",{ph:"Ex.: Agrobacterium tumefaciens e Bacillus thuringiensis",hint:"Nome científico; sai em itálico logo após o componente transgênico."})}
