@@ -72,6 +72,7 @@ export async function gerarExtratoContador(mes) {
       linha("Honorários do contador", (x) => (x.contador ? moeda(x.contador) : "—")),
       linha("Despesas lançadas", (x) => moeda(x.despesas)),
       linha(`Reserva para despesas (${String(cfg.reserva_pct).replace(".", ",")}%)`, (x) => moeda(x.reserva)),
+      linha("Sobra da reserva após o contador", (x) => (x.contadorDentro ? moeda(x.sobraReserva) : "—")),
       linha("Distribuição de lucros", (x) => `${moeda(dist(x))}${x.distribuido === null ? " (sugerida)" : ""}`, true),
       linha(cfg.escrituracao ? "Limite isento (empresa com escrituração)" : "Limite isento sem escrituração", (x) => (cfg.escrituracao ? "—" : moeda(x.limiteIsento))),
     ],

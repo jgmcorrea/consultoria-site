@@ -118,7 +118,12 @@ export function calcularMeses({ lancamentos, fechamentos, config: cfg }, ate) {
     const reserva = r2(receita * Number(cfg.reserva_pct) / 100);
     // honorários do contador: valor fixo mensal, a partir do mês configurado
     const contador = cfg.contador_desde && m >= mesDe(cfg.contador_desde) ? r2(Number(cfg.honorario_contador || 0)) : 0;
-    const distribuicaoSugerida = Math.max(0, r2(receita - das - prolabore - contador - reserva));
+    // A partir de nov/2026 o contador sai de DENTRO da reserva: o que sobra dela fica na empresa para despesas.
+    // Se o contador for maior que a reserva (mês fraco), fica retido o valor do contador, para a conta fechar.
+    const contadorDentro = !!cfg.contador_na_reserva_desde && m >= mesDe(cfg.contador_na_reserva_desde);
+    const retido = contadorDentro ? Math.max(reserva, contador) : r2(reserva + contador);
+    const sobraReserva = contadorDentro ? Math.max(0, r2(reserva - contador)) : reserva;
+    const distribuicaoSugerida = Math.max(0, r2(receita - das - prolabore - retido));
     const limiteIsento = Math.max(0, r2(receita * Number(cfg.presuncao_pct) / 100 - das * aliq.irpj));
     const distribuido = f.distribuido !== null && f.distribuido !== undefined ? Number(f.distribuido) : null;
 
@@ -133,7 +138,7 @@ export function calcularMeses({ lancamentos, fechamentos, config: cfg }, ate) {
       mes: m, n, f, receita, despesas, saidas, rbt12, fatorR, anexo, aliq, dasCalc, das,
       minimo, prolabore, prolaboreManual: f.prolabore !== null && f.prolabore !== undefined,
       inss, ir, irrf, darf: r2(inss + irrf), liquidoProlabore,
-      reserva, contador, distribuicaoSugerida, limiteIsento, distribuido,
+      reserva, contador, contadorDentro, retido, sobraReserva, distribuicaoSugerida, limiteIsento, distribuido,
       totalPF: r2(liquidoProlabore + (distribuido ?? distribuicaoSugerida)),
       impostos: r2(das + inss + irrf),
       venc,

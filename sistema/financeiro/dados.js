@@ -10,6 +10,7 @@ export const CONFIG_PADRAO = {
   desconto_simplificado: 607.2, redutor_isento_ate: 5000, redutor_parcial_ate: 7350, redutor_constante: 978.62, redutor_fator: 0.133145,
   escrituracao: false, dia_das: 20, dia_darf: 20, dia_prolabore: 5, dias_alerta: 5,
   honorario_contador: 500, dia_contador: 25, contador_desde: "2026-10-01",
+  contador_na_reserva_desde: "2026-11-01", // a partir deste mês o contador é pago de dentro da reserva
 };
 
 export async function carregar() {

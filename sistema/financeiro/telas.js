@@ -1,5 +1,5 @@
 // Telas: Visão do mês, Entradas e saídas, Impostos e pró-labore, Pessoa física
-import { esc, moeda, pct, data, nomeMes, badge, badgeTxt, seletorMes, ligarSeletorMes } from "./lib.js";
+import { esc, moeda, pct, data, nomeMes, linhasReserva, badge, badgeTxt, seletorMes, ligarSeletorMes } from "./lib.js";
 import { hoje, mesDe, mesAtual, addMeses, diffDias, calcularMeses, obrigacoesDoMes, situacao, caixa, entradasDoMes, saidasDoMes, soma } from "./calc.js";
 import { carregar } from "./dados.js";
 import { formLancamento, alternarStatus, marcarPago, formFechamento, formDistribuicao } from "./formularios.js";
@@ -49,7 +49,7 @@ export function alertas(D, meses, mesSel) {
     if (!cfg.escrituracao && dist > x.limiteIsento)
       out.push(["amarelo", "📒", `A distribuição de ${nomeMes(x.mes, true).toLowerCase()} (${moeda(dist)}) passa do limite isento sem escrituração (${moeda(x.limiteIsento)}). Para distribuir tudo sem imposto, a empresa precisa de escrituração contábil (confirme com o contador e marque em Configurações).`]);
     if (dist > 50000) out.push(["amarelo", "💰", `Distribuição acima de R$ 50 mil no mês: pela Lei 15.270/2025 há retenção de 10% de IR na fonte sobre o total.`]);
-    if (x.despesas > x.reserva && x.receita > 0) out.push(["amarelo", "📉", `As despesas de ${nomeMes(x.mes, true).toLowerCase()} (${moeda(x.despesas)}) passaram da reserva de ${String(cfg.reserva_pct).replace(".", ",")}% (${moeda(x.reserva)}). Distribua menos para não faltar caixa.`]);
+    if (x.despesas > x.sobraReserva && x.receita > 0) out.push(["amarelo", "📉", `As despesas de ${nomeMes(x.mes, true).toLowerCase()} (${moeda(x.despesas)}) passaram ${x.contadorDentro ? "do que sobra da reserva" : "da reserva"} de ${String(cfg.reserva_pct).replace(".", ",")}%${x.contadorDentro ? " depois do contador" : ""} (${moeda(x.sobraReserva)}). Distribua menos para não faltar caixa.`]);
   }
   return out;
 }
@@ -98,8 +98,7 @@ export async function viewInicio(el) {
           <span>Faturamento</span><span class="num right">${moeda(x.receita)}</span>
           <span class="menos">− DAS (Anexo ${x.anexo}, ${pctBR(x.aliq.efetiva)})</span><span class="num right">${moeda(x.das)}</span>
           <span class="menos">− Pró-labore bruto</span><span class="num right">${moeda(x.prolabore)}</span>
-          ${x.contador ? `<span class="menos">− Honorários do contador</span><span class="num right">${moeda(x.contador)}</span>` : ""}
-          <span class="menos">− Reserva para despesas (${String(cfg.reserva_pct).replace(".", ",")}%)</span><span class="num right">${moeda(x.reserva)}</span>
+          ${linhasReserva(x, cfg)}
           <span class="tot">= Distribuição sugerida</span><span class="tot num right">${moeda(x.distribuicaoSugerida)}</span>
           <span class="ind">Despesas lançadas no mês</span><span class="num right faint">${moeda(x.despesas)}</span>
           <span class="ind">Limite isento sem escrituração</span><span class="num right faint">${cfg.escrituracao ? "tem escrituração" : moeda(x.limiteIsento)}</span>

@@ -10,6 +10,16 @@ export const esc = (s) =>
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export const moeda = (v) => (v === null || v === undefined || v === "" ? "—" : brl.format(Number(v)));
 export const pct = (v, casas = 0) => (v === null || v === undefined || !isFinite(v) ? "—" : `${(v * 100).toFixed(casas).replace(".", ",")}%`);
+// Linhas da conta da distribuição referentes a contador e reserva (Visão do mês e Projeção)
+export function linhasReserva(x, cfg) {
+  const p = `${String(cfg.reserva_pct).replace(".", ",")}%`;
+  const menos = (rot, v) => `<span class="menos">− ${rot}</span><span class="num right">${moeda(v)}</span>`;
+  if (!x.contadorDentro) return (x.contador ? menos("Honorários do contador", x.contador) : "") + menos(`Reserva para despesas (${p})`, x.reserva);
+  const ind = (rot, v) => `<span class="ind">${rot}</span><span class="num right faint">${moeda(v)}</span>`;
+  if (x.contador > x.reserva) return menos(`Honorários do contador (maior que a reserva de ${p}, de ${moeda(x.reserva)})`, x.contador);
+  return menos(`Reserva para despesas (${p})`, x.reserva) + (x.contador ? ind("Contador, pago de dentro da reserva", x.contador) : "") + ind("Sobra na empresa para despesas", x.sobraReserva);
+}
+
 export const data = (iso) => {
   if (!iso) return "—";
   const [a, m, d] = String(iso).slice(0, 10).split("-");

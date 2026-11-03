@@ -66,7 +66,7 @@ const GRUPOS = [
     { n: "dias_alerta", r: "Avisar com quantos dias de antecedência", t: "int", min: 0, max: 60, req: true },
   ]],
   ["Contador", [
-    { n: "honorario_contador", r: "Honorários mensais do contador (R$)", t: "money", req: true, ajuda: "Entra nas contas a pagar de todo mês e é descontado da distribuição sugerida." },
+    { n: "honorario_contador", r: "Honorários mensais do contador (R$)", t: "money", req: true, ajuda: "Entra nas contas a pagar de todo mês. Desde nov/2026 é pago de dentro da reserva para despesas; o que sobra dela fica na empresa." },
     { n: "dia_contador", r: "Dia do pagamento do contador", t: "int", min: 1, max: 31, req: true },
     { n: "contador_desde", r: "Cobrado a partir de", t: "date", req: true },
   ]],
