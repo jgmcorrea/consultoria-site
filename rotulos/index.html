@@ -1228,6 +1228,7 @@ function viewProduto(R,C){
       ${inp("produto.conservacao","Instruções de conservação",{span:true,area:true,hint:"Temperaturas máxima e mínima e prazo quando houver cuidado especial (art. 32)."})}
       ${inp("produto.validade","Prazo de validade")}
       ${inp("produto.validadeAberto","Validade após aberto")}
+      ${inp("produto.campoFVL","Campo de fabricação, validade e lote: dimensão (opcional)",{ph:"Ex.: 3 × 1,5 cm",hint:"O campo sempre sai na ficha do rótulo; os dados são preenchidos no dia da produção. Informe a medida só se a empresa já tiver um tamanho definido."})}
     </div></div>
   <div class="card stack"><div><h2>Identificação de origem</h2><p class="muted small">RDC 727/2022, art. 29, e Decreto 9.013/2017 (RIISPOA), art. 443.</p></div>
     ${origemLegada(R)?`<div class="alert warn">Texto antigo: “${esc(R.produto.origem)}”. Preencha os campos abaixo; enquanto a razão social estiver em branco, o texto antigo continua sendo usado.</div>`:""}
@@ -1592,7 +1593,8 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes. Referências: RDC 727/2022 e Lei 10.674/2003.`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
     {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
-  h2("Demais informações"); kv("Conservação",P.conservacao); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
+  h2("Demais informações"); kv("Conservação",P.conservacao);
+  kv("Fabricação, validade e lote",`O rótulo precisa ter um campo reservado para a data de fabricação, o prazo de validade e o lote, preenchidos no dia da produção (RDC 727/2022).${String(P.campoFVL||"").trim()?` Dimensão do campo: ${String(P.campoFVL).trim()}.`:""}`); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
   {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico==="SIE-SC"?"SIE/SC":I.servico}`);
     if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
     kv("Frase obrigatória",fraseRegistro(R));
