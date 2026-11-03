@@ -1298,7 +1298,11 @@ function viewInicio(){
   <section class="stack"><div class="card stack"><div><span class="eyebrow">Nova validação</span><h2>De onde vem o rótulo?</h2></div>
       <div class="grid2">
         <div class="stack"><b>Rótulo feito no sistema</b><span class="small muted">A gráfica fez a arte a partir da ficha do rótulo. A conferência usa as informações da ficha.</span>
-          <div class="row"><select id="valRot" style="flex:1;min-width:200px"><option value="">Selecionar o produto…</option>${todosR.map(r=>`<option value="${r.id}">${esc(r.nome||"Sem nome")}${r.cliente_id?" · "+esc(nomeCliente(r.cliente_id)):""}</option>`).join("")}</select><button class="primary" data-act="novaValSis">Validar a arte</button></div></div>
+          ${(()=>{const rots=DBR.lista.filter(r=>!ehVal(r)); const cli=DBR.clientes.filter(c=>rots.some(r=>r.cliente_id===c.id)); const semCli=rots.some(r=>!r.cliente_id);
+            const vc=S.valCli||""; const dela=vc?rots.filter(r=>vc==="_sem"?!r.cliente_id:r.cliente_id===vc).sort((a,b)=>fold(a.nome||"").localeCompare(fold(b.nome||""))):[];
+            return `<div class="grid2"><label class="f">1. Empresa<select id="valCli"><option value="">Selecionar a empresa…</option>${cli.map(c=>`<option value="${c.id}" ${vc===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}${semCli?`<option value="_sem" ${vc==="_sem"?"selected":""}>Sem cliente</option>`:""}</select></label>
+              <label class="f">2. Produto<select id="valRot" ${vc?"":"disabled"}><option value="">${vc?`Selecionar o produto (${dela.length})…`:"Escolha a empresa primeiro"}</option>${dela.map(r=>`<option value="${r.id}">${esc(r.nome||"Sem nome")}</option>`).join("")}</select></label></div>
+              <div class="row"><button class="primary" data-act="novaValSis" ${vc?"":"disabled"}>Validar a arte</button></div>`})()}</div>
         <div class="stack"><b>Rótulo de outra empresa</b><span class="small muted">A empresa fez o próprio rótulo. A conferência usa a lista geral de itens obrigatórios.</span>
           <div class="row"><button data-act="novaVal">Nova validação</button></div></div>
       </div></div>
@@ -2109,6 +2113,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{const el=e.target;
   if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
+  if(el.id==="valCli"){S.valCli=el.value;render();return}
   if(el.id==="vimgfile"&&el.files.length){const fs=[...el.files]; el.value=""; adicionarArtes(fs); return}
   if(el.dataset.modelo){let m=modelosTab(S.R); m=el.checked?[...new Set([...m,el.dataset.modelo])]:m.filter(x=>x!==el.dataset.modelo); if(!m.length){m=["vertical"];toast("Deixe pelo menos um modelo marcado.")} S.R.tabela.modelos=m; salvar(); render(); return}
   if(el.id==="trocaTipo"){S.R.tipo=el.value;salvar();render();toast("Tipo alterado para "+TIPOS[el.value].t+".");return}
