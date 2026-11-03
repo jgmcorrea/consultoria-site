@@ -1110,6 +1110,7 @@ function viewValidacao(V){
   const linha=x=>`<div class="vitem ${x.o.st||"p"}"><div class="stack" style="gap:6px"><div><b>${esc(x.t)}</b>${x.h?`<div class="hint">${esc(x.h)}</div>`:""}</div>
       ${x.esp?`<div class="vesp"><span class="eyebrow">Deve constar na arte</span><div>${x.rich?richHTML(x.esp):esc(x.esp)}</div>${x.nota?`<div class="hint">${esc(x.nota)}</div>`:""}${x.vis?`<div class="paper vvis">${svgOf(x.vis,3.7795)}</div>`:""}</div>`:""}
       ${x.extra!=null?`<label class="f">Item<input type="text" data-bind="${x.path}.titulo" value="${esc(x.o.titulo||"")}" placeholder="Ex.: Selo de qualidade"></label>`:""}
+      ${sis&&x.esp&&x.o.st==="nc"?`<label class="check small"><input type="checkbox" data-vesp="${x.path}" ${x.o.semEsp?"":"checked"}><span>No relatório, mostrar o que deve constar${x.vis?" (com o desenho e o tamanho)":""}</span></label>`:""}
       <div class="row">${segV(x)}${x.extra!=null?`<button class="mini danger" data-vdel="${x.extra}">Remover</button>`:""}</div></div>
     <label class="f">Observações<textarea data-bind="${x.path}.obs" placeholder="${x.o.st==="nc"?"O que precisa ser corrigido":"Opcional"}">${esc(x.o.obs||"")}</textarea></label></div>`;
   return `<header class="top">
@@ -1136,7 +1137,7 @@ function viewValidacao(V){
     ${grupos.map(g=>`<div class="card stack"><h2>${esc(g)}</h2>${it.filter(x=>x.g===g).map(linha).join("")}</div>`).join("")}
     <div class="row"><button class="mini" data-act="vadd">+ Adicionar item</button></div>
     <div class="card stack"><h2>Observações gerais</h2>${inp("obsGerais","Sai no fim do relatório",{area:true,span:true})}</div>
-    <div class="card stack"><div><h2>Relatório para o cliente</h2><p class="muted small">PDF com a conclusão, as não conformidades e todos os itens conferidos com as observações.</p></div>
+    <div class="card stack"><div><h2>Relatório para o cliente</h2><p class="muted small">PDF objetivo: conclusão, não conformidades com as observações, observações gerais e a arte.</p></div>
       ${n.p?`<div class="alert warn"><span>${n.p} item(ns) ainda sem conferir. Eles saem no relatório como “Não conferido”.</span></div>`:""}
       <div class="row"><button class="primary" data-act="vrel">Gerar relatório (PDF)</button></div></div>
   </main>${S.vLado?painelArte():""}</div>
@@ -1159,7 +1160,7 @@ async function relatorioValidacao(V){
     doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.3);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);ls.forEach((l,i)=>doc.text(l,M+42,y+3.3+i*4.4));y+=ls.length*4.4+1.2};
   const h2=t=>{need(14);y+=4;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
   const sis=V.origem==="sistema";
-  kv("Empresa",nomeEmpresaV(V)); kv("Produto",V.produto); if(sis) kv("Conferência","Arte da gráfica comparada com a ficha do rótulo elaborada pela consultoria"); kv("Marca",V.marca); kv("Arte analisada",V.arte); kv("Data da validação",dt); kv("Responsável",V.responsavel);
+  kv("Empresa",nomeEmpresaV(V)); kv("Produto",V.produto); kv("Marca",V.marca); kv("Arte analisada",V.arte); kv("Data da validação",dt); kv("Responsável",V.responsavel);
   // conclusão
   y+=3; doc.setFontSize(9.5); const dl=doc.splitTextToSize(cc.d,W-10); const hb=11+dl.length*4.4; need(hb+2);
   doc.setDrawColor(...cc.cor); doc.setLineWidth(0.6); doc.roundedRect(M,y,W,hb,2,2,"S");
@@ -1181,14 +1182,13 @@ async function relatorioValidacao(V){
     doc.setDrawColor(...LINHA);doc.line(M,y,M+W,y); y+=2; };
   if(sis){ const ncs=it.filter(x=>x.o.st==="nc"); if(ncs.length){ h2("Não conformidades");
       ncs.forEach(x=>{ doc.setFontSize(9.5); doc.setFont("helvetica","normal"); const ob=doc.splitTextToSize(String(x.o.obs||"").trim()||"—",W-6); const E=layParas([{txt:x.esp,pt:9}],W-6);
-        need(8+E.h+ob.length*4.4+(x.vis?Math.min(x.vis.h,90)+4:0)+8);
+        const mo=!x.o.semEsp; need(8+(mo?E.h+(x.vis?Math.min(x.vis.h,90)+4:0)+5:0)+ob.length*4.4+8);
         doc.setFont("helvetica","bold");doc.setFontSize(10);doc.setTextColor(179,38,30);doc.text(x.t,M,y+4);y+=6.5;
-        doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(...CINZA);doc.text("DEVE CONSTAR NA ARTE",M+3,y+3);y+=4.5; pdfDraw(doc,E,M+3,y-0.6); y+=E.h+1.5;
-        if(x.vis&&x.vis.h<=120){ need(x.vis.h+4); pdfDraw(doc,x.vis,M+3,y); y+=x.vis.h+3; }
+        if(mo){ doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(...CINZA);doc.text("DEVE CONSTAR NA ARTE",M+3,y+3);y+=4.5; pdfDraw(doc,E,M+3,y-0.6); y+=E.h+1.5;
+          if(x.vis&&x.vis.h<=120){ need(x.vis.h+4); pdfDraw(doc,x.vis,M+3,y); y+=x.vis.h+3; } }
         doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(...CINZA);doc.text("OBSERVAÇÃO",M+3,y+3);y+=4.5;
         doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);ob.forEach(l=>{need(4.4);doc.text(l,M+3,y+3.3);y+=4.4}); y+=3; doc.setDrawColor(...LINHA);doc.setLineWidth(0.2);doc.line(M,y,M+W,y);y+=3; }); } }
   else tabela(it.filter(x=>x.o.st==="nc"),"Não conformidades");
-  tabela(it,"Itens verificados");
   if(String(V.obsGerais||"").trim()){h2("Observações gerais"); doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);
     String(V.obsGerais).split(/\n/).forEach(p=>{doc.splitTextToSize(p||" ",W).forEach(l=>{need(4.6);doc.text(l,M,y+3.4);y+=4.6})}); y+=2}
   const artes=ARTE.vid===V.id?ARTE.lista:[];
@@ -2114,6 +2114,7 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",e=>{const el=e.target;
   if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
   if(el.id==="valCli"){S.valCli=el.value;render();return}
+  if(el.dataset.vesp){const o=getP(S.R,el.dataset.vesp); o.semEsp=!el.checked; salvar(); return}
   if(el.id==="vimgfile"&&el.files.length){const fs=[...el.files]; el.value=""; adicionarArtes(fs); return}
   if(el.dataset.modelo){let m=modelosTab(S.R); m=el.checked?[...new Set([...m,el.dataset.modelo])]:m.filter(x=>x!==el.dataset.modelo); if(!m.length){m=["vertical"];toast("Deixe pelo menos um modelo marcado.")} S.R.tabela.modelos=m; salvar(); render(); return}
   if(el.id==="trocaTipo"){S.R.tipo=el.value;salvar();render();toast("Tipo alterado para "+TIPOS[el.value].t+".");return}
