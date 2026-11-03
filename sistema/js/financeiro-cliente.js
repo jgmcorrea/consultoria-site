@@ -18,6 +18,11 @@
   const addMes = (ym, n) => { const [a, m] = ym.split("-").map(Number); const d = new Date(a, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const compCurta = (ym) => { const [a, m] = ym.split("-"); return `${m}/${a}`; };
   const unidades = (c) => (c.unidade_nome || "unidade");
+  // Tomador da nota: os dados de emissão, se preenchidos (nota em nome de outra empresa); senão, os do próprio cliente.
+  // Nunca mistura os dois: razão social de uma empresa com CNPJ de outra sairia na nota errada.
+  const tomadorNF = (c) => (c.nf_razao_social || c.nf_cnpj
+    ? { nome: c.nf_razao_social || c.nome, cnpj: c.nf_cnpj, outra: true, endereco: c.nf_endereco, cidade: c.nf_cidade, email: c.nf_email }
+    : { nome: c.razao_social || c.nome, cnpj: c.cnpj, outra: false });
   // Regra geral: as horas de um mês são faturadas no mês seguinte, e a aba abre no mês anterior (o que está para emitir).
   // Clientes com "nota no mesmo mês" (ex.: Queijo & Cia): a nota sai no próprio mês dos serviços, e a aba abre no mês atual.
   const mesmoMes = (c) => !!(c && c.nota_mesmo_mes);
@@ -277,16 +282,20 @@
     const k = calcMes(c, ym);
     const valor = novo ? k.valor : Number(f.valor);
     const unid = c.modelo_cobranca === "unidade";
+    const tom = tomadorNF(c);
     abrirModal(novo ? `Emitir nota dos serviços de ${nomeMes(ym).toLowerCase()}` : `Nota ${esc(f.nf_numero || "")}`, `
       ${cedo ? `<p class="aviso">${nomeMes(ym)} ainda não terminou. Normalmente a nota destes serviços é emitida em ${mesNome(addMes(ym, 1))}, com o mês fechado.</p>` : ""}
       ${novo ? `<dl class="fc-copiar">
-        ${copiar("Tomador", c.razao_social || c.nome)}
-        ${c.cnpj ? copiar("CNPJ", c.cnpj) : `<div><dt>CNPJ</dt><dd><a href="#/c/${c.id}/dados">Cadastre o CNPJ do cliente</a></dd></div>`}
+        ${copiar("Tomador", tom.nome)}
+        ${tom.cnpj ? copiar("CNPJ", tom.cnpj) : `<div><dt>CNPJ</dt><dd><a href="#/c/${c.id}/dados">Cadastre o CNPJ ${tom.outra ? "da empresa da nota" : "do cliente"}</a></dd></div>`}
+        ${tom.endereco ? copiar("Endereço", tom.endereco) : ""}
+        ${tom.cidade ? copiar("Cidade", tom.cidade) : ""}
+        ${tom.email ? copiar("E-mail", tom.email) : ""}
         ${copiar("Valor", valor.toFixed(2).replace(".", ","))}
         ${copiar("Descrição", descricaoNF(c, ym, k))}
       </dl>
       <p class="fc-links"><a class="botao" href="${NFSE_EMISSOR}" target="_blank" rel="noopener">Abrir Emissor Nacional</a><a class="botao-sec" href="${NFSE_EMITIDAS}" target="_blank" rel="noopener">Notas emitidas</a></p>
-      ${SIS.passosNF ? `<details class="nf-detalhe"><summary>Passo a passo da emissão no Emissor Nacional</summary>${SIS.passosNF({ cnpj: c.cnpj, cidade: c.cidade, descricao: descricaoNF(c, ym, k), valor: moeda(valor) })}</details>` : ""}
+      ${SIS.passosNF ? `<details class="nf-detalhe"><summary>Passo a passo da emissão no Emissor Nacional</summary>${SIS.passosNF({ cnpj: tom.cnpj, cidade: c.cidade, descricao: descricaoNF(c, ym, k), valor: moeda(valor) })}</details>` : ""}
       <h3 class="fc-sub">Depois de emitir, registre a nota aqui</h3>` : ""}
       <div class="grade-form">
         <label class="campo"><span>Nº da nota</span><input name="nf_numero" required value="${esc(f?.nf_numero || "")}"></label>

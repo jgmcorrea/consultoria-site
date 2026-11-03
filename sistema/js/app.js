@@ -319,6 +319,16 @@
     ["observacoes", "Observações", "textarea", false, true],
   ];
 
+  // Dados para emissão da nota: usados quando a nota sai em nome de outra empresa (ex.: cliente Danimar, nota da Masala).
+  // O nome e os dados do cliente acima não mudam; estes campos só valem para o tomador da nota.
+  const CAMPOS_NF = [
+    ["nf_razao_social", "Razão social (nota)", "text"],
+    ["nf_cnpj", "CNPJ (nota)", "text"],
+    ["nf_endereco", "Endereço (nota)", "text", false, true],
+    ["nf_cidade", "Cidade (nota)", "text"],
+    ["nf_email", "E-mail (nota)", "email"],
+  ];
+
   // Contrato e cobrança: [campo, rótulo, tipo, modelos em que aparece (vazio = todos), largo]
   const MODELOS = [["hora", "Por hora trabalhada"], ["pacote", "Pacote mensal de horas + hora excedente"], ["unidade", "Por unidade (ex.: container)"], ["servico", "Por serviço prestado"]];
   const CAMPOS_CONTRATO = [
@@ -340,12 +350,12 @@
     ["data_reajuste", "Data do próximo reajuste", "date", ""],
     ["descricao_nf", "Descrição padrão da nota fiscal", "textarea", "", true],
   ];
-  const campoDados = (c, [k, rot, tipo, obrig, largo]) => `
+  const campoDados = (c, [k, rot, tipo, obrig, largo], bloqueado = false) => `
           <label class="campo ${largo ? "largo" : ""}">
             <span>${rot}</span>
             ${tipo === "textarea"
               ? `<textarea name="${k}" rows="3">${esc(c[k])}</textarea>`
-              : `<input type="${tipo}" name="${k}" value="${esc(c[k])}" ${obrig ? "required" : ""}>`}
+              : `<input type="${tipo}" name="${k}" value="${esc(c[k])}" ${obrig ? "required" : ""} ${bloqueado ? "disabled" : ""}>`}
           </label>`;
   function campoContrato(c, [k, rot, tipo, so, largo]) {
     const modelo = c.modelo_cobranca || "hora";
@@ -364,10 +374,15 @@
   }
 
   function abaDados(c) {
+    const semColunasNF = !("nf_razao_social" in c); // SQL ainda não rodado: campos bloqueados, com aviso
     return `
       <form class="form-dados" data-form="cliente" data-id="${c.id}">
         <h2 class="largo form-titulo">Dados do cliente</h2>
         ${CAMPOS_CLIENTE.map((x) => campoDados(c, x)).join("")}
+        <h2 class="largo form-titulo">Dados para emissão da nota</h2>
+        <p class="dica largo">Preencha só se a nota sai em nome de outra empresa. O cliente continua com o nome e os dados acima; em branco, a nota usa os dados do cliente.</p>
+        ${semColunasNF ? `<p class="aviso largo">Rode o SQL dos dados de emissão da nota no Supabase para liberar estes campos.</p>` : ""}
+        ${CAMPOS_NF.map((x) => campoDados(c, x, semColunasNF)).join("")}
         <h2 class="largo form-titulo">Contrato e cobrança</h2>
         ${CAMPOS_CONTRATO.map((x) => campoContrato(c, x)).join("")}
         <datalist id="indices"><option>IPCA</option><option>IGP-M</option><option>INPC</option><option>Salário mínimo</option></datalist>
@@ -768,6 +783,7 @@
       if (tipo === "cliente") {
         const dados = { id: f.dataset.id, ativo: f.ativo.checked };
         CAMPOS_CLIENTE.forEach(([k]) => { const v = f[k].value.trim(); dados[k] = v === "" ? null : v; });
+        CAMPOS_NF.forEach(([k]) => { if (f[k].disabled) return; const v = f[k].value.trim(); dados[k] = v === "" ? null : v; });
         CAMPOS_CONTRATO.forEach(([k, , tipo]) => { if (f[k].disabled) return; if (tipo === "checkbox") { dados[k] = f[k].checked; return; } const v = f[k].value.trim(); dados[k] = v === "" ? null : tipo === "number" ? Number(v.replace(",", ".")) : v; });
         dados.modelo_cobranca = dados.modelo_cobranca || "hora";
         guardarLocal("clientes", await DB.salvar("clientes", dados));
