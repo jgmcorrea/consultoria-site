@@ -1213,7 +1213,7 @@ const arteItem=(r,local)=>({id:r.id,nome:r.nome||"",imagem:r.imagem,url:dataPara
 async function carregarArtes(V){
   ARTE.lista.forEach(a=>{if(a.url&&a.url.startsWith("blob:"))URL.revokeObjectURL(a.url)});
   ARTE.vid=V.id; ARTE.lista=[]; ARTE.carregando=true; S.vPag=0;
-  const {data,error}=await DBR.sb.from(TAB_ARTE).select("id,ordem,nome,imagem,largura_mm,altura_mm").eq("rotulo_id",V.id).order("ordem");
+  let data=null,error=null; try{({data,error}=await DBR.sb.from(TAB_ARTE).select("id,ordem,nome,imagem,largura_mm,altura_mm").eq("rotulo_id",V.id).order("ordem"))}catch(e){error=e}
   ARTE.carregando=false; ARTE.ok=!error;
   const loc=(V.imagens||[]).map((src,i)=>arteItem({id:"loc"+i,nome:`Imagem ${i+1}`,imagem:src},true));
   ARTE.lista=(error?[]:(data||[]).sort((a,b)=>a.ordem-b.ordem).map(r=>arteItem(r))).concat(loc);
@@ -1241,7 +1241,7 @@ async function adicionarArtes(files){
   if(!novas.length){setStatus(S.sujo?"pendente":"salvo");return}
   if(ARTE.ok){ S.sujo=true; await gravar(); const ord=ARTE.lista.filter(a=>!a.local).length;
     const rows=novas.map((x,i)=>({id:novoUUID(),rotulo_id:V.id,ordem:ord+i,nome:x.nome,imagem:x.imagem,largura_mm:x.largura_mm||null,altura_mm:x.altura_mm||null}));
-    const {error}=await DBR.sb.from(TAB_ARTE).insert(rows);
+    let error=null; try{({error}=await DBR.sb.from(TAB_ARTE).insert(rows))}catch(e){error=e}
     if(!error){ if(S.R!==V) return; const loc=ARTE.lista.filter(a=>a.local); ARTE.lista=ARTE.lista.filter(a=>!a.local).concat(rows.map(r=>arteItem(r)),loc); S.vLado=true; S.vPag=ARTE.lista.length-loc.length-rows.length; setStatus("salvo"); render(); toast(`${rows.length} página(s) da arte adicionada(s).`); return; }
     ARTE.ok=false; console.error(error); }
   // sem a tabela de artes: guarda junto da validação (menor)
