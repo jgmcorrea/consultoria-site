@@ -134,6 +134,13 @@ table.calc td.num{font-family:var(--f-num)}
 .seg button{border:none;border-radius:0;border-left:1px solid var(--line);padding:7px 12px;font-weight:500}
 .seg button:first-child{border-left:none}
 .seg button.on{background:var(--accent);color:var(--accent-ink)}
+.seg.vst button.on.nc{background:var(--bad);border-color:var(--bad);color:#fff}
+.seg.vst button.on.na{background:var(--muted);color:var(--surface)}
+.vitem{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;padding:12px 0 12px 12px;border-top:1px solid var(--line);border-left:3px solid var(--line)}
+.vitem.c{border-left-color:var(--accent)} .vitem.nc{border-left-color:var(--bad)} .vitem.na{border-left-color:var(--muted)}
+.vitem textarea{min-height:64px}
+.vimgs{align-items:flex-start}.vimg{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.vimg img{max-width:160px;max-height:160px;border:1px solid var(--line);border-radius:6px;background:#fff}
+@media (max-width:720px){.vitem{grid-template-columns:1fr}}
 .mini{font-size:.78rem;padding:5px 9px}
 .sumline{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.86rem}
 .sumline b{font-family:var(--f-num)}
@@ -913,7 +920,7 @@ const TAB="cons_rotulos";
 async function carregarLista(){const {data,error}=await DBR.sb.from(TAB).select("id,cliente_id,nome,tipo,atualizado_em,dados").order("atualizado_em",{ascending:false});if(error)throw error;DBR.lista=data||[]}
 async function carregarClientes(){const {data,error}=await DBR.sb.from("cons_clientes").select("id,nome,ativo").order("nome");if(error)throw error;DBR.clientes=data||[]}
 const nomeCliente=id=>(DBR.clientes.find(c=>c.id===id)||{}).nome||"";
-function linhaDe(R){return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto.nome||"").trim(),tipo:R.tipo,dados:R}}
+function linhaDe(R){if(R.kind==="validacao") return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto||"").trim(),tipo:"validacao",dados:R}; return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto.nome||"").trim(),tipo:R.tipo,dados:R}}
 let salvarT, gravando=null;
 function setStatus(st,msg=""){S.status=st;const el=document.getElementById("savest");if(!el)return;const m={pendente:["neutral","Alterações não salvas"],salvando:["neutral","Salvando…"],salvo:["","Salvo no sistema"],erro:["bad","Erro ao salvar"]}[st]||["neutral",""];el.className="chip "+m[0];el.textContent=m[1];el.title=msg;el.hidden=!m[1]}
 function salvar(){if(!S.R)return;S.sujo=true;setStatus("pendente");clearTimeout(salvarT);salvarT=setTimeout(gravar,800)}
@@ -921,7 +928,7 @@ async function gravar(){
   clearTimeout(salvarT); const R=S.R; if(!R||!S.sujo) return gravando;
   if(gravando) await gravando;
   S.sujo=false; R.atualizado=Date.now(); setStatus("salvando");
-  gravando=(async()=>{const row=linhaDe(R);const {error}=await DBR.sb.from(TAB).upsert(row);
+  gravando=(async()=>{const row=linhaDe(R);let {error}=await DBR.sb.from(TAB).upsert(row); if(error&&row.tipo==="validacao"&&/check|tipo/i.test(error.message||"")){row.tipo="normal";({error}=await DBR.sb.from(TAB).upsert(row));}
     if(error){S.sujo=true;setStatus("erro",error.message);toast("Não foi possível salvar: "+(error.message||error));return}
     const lr={...row,atualizado_em:new Date().toISOString()};const i=DBR.lista.findIndex(x=>x.id===R.id);if(i>=0)DBR.lista.splice(i,1);DBR.lista.unshift(lr);
     if(S.R===R&&!S.sujo)setStatus("salvo")})();
@@ -1013,14 +1020,140 @@ function exemplo(tipo){
   return R;
 }
 
+/* ===================== VALIDAÇÃO DE RÓTULOS (rótulo feito pela empresa e conferido pela Isadora) ===================== */
+// Itens da ficha do rótulo. Cada um: [chave, item, o que conferir (só a referência, curto)]
+const VAL_GRUPOS=[
+  ["Painel principal",[
+    ["denominacao","Denominação de venda","Conforme o padrão de identidade e qualidade, no painel principal. RDC 727/2022."],
+    ["marca","Marca e denominação fantasia","Não podem induzir o consumidor a erro. RDC 727/2022."],
+    ["conteudo","Peso líquido","No painel principal, com a altura mínima dos algarismos e a unidade correta. Portaria Inmetro 249/2021."],
+    ["drenado","Peso drenado","Mesma altura e destaque do peso líquido, no painel principal. Portaria Inmetro 249/2021."],
+    ["alegacao","Alegação sobre lactose","Termos e limites da norma; com lupa, na metade inferior do painel principal. RDC 135/2017; RDC 429/2020."],
+    ["transgenico","Transgênico: frase e símbolo “T”","Frase junto ao símbolo, no painel principal, com área mínima e cores do símbolo. Decreto 4.680/2003; Portaria MJ 2.658/2003."],
+    ["lupa","Rotulagem nutricional frontal (lupa)","Necessidade, modelo, tamanho e posição na metade superior do painel principal. RDC 429/2020; IN 75/2020."]]],
+  ["Lista de ingredientes e advertências",[
+    ["ingredientes","Lista de ingredientes","Ordem decrescente, aditivos com função e nome, letras com no mínimo 1 mm, no mesmo painel da tabela. RDC 727/2022."],
+    ["alergicos","Advertência de alérgicos","Frase, negrito, caixa alta, 2 mm, logo após os ingredientes. RDC 727/2022."],
+    ["lactose","Advertência “CONTÉM LACTOSE”","Negrito, caixa alta, 2 mm, logo após os ingredientes. RDC 727/2022."],
+    ["gluten","“CONTÉM GLÚTEN” / “NÃO CONTÉM GLÚTEN”","Negrito, caixa alta, 2 mm. Lei 10.674/2003."]]],
+  ["Tabela nutricional",[
+    ["tabela","Tabela de informação nutricional","Modelo, porção e medida caseira, valores, %VD, fontes e cores. RDC 429/2020; IN 75/2020."]]],
+  ["Demais informações",[
+    ["conservacao","Instruções de conservação","Temperaturas e prazo após aberto, quando houver cuidado especial. RDC 727/2022."],
+    ["validade","Prazo de validade e lote","Indicação do lote e do prazo de validade. RDC 727/2022."],
+    ["origem","Identificação de origem","Razão social, endereço, CNPJ, “INDÚSTRIA BRASILEIRA” e contato. RDC 727/2022; Decreto 9.013/2017."],
+    ["codigoBarras","Código de barras e redes sociais","Legibilidade e dados corretos."]]],
+  ["Serviço de inspeção",[
+    ["registro","Frase de registro","Texto e número de registro do serviço de inspeção. Decreto 9.013/2017; manuais da CIDASC."],
+    ["carimbo","Carimbo do serviço de inspeção","Modelo, dizeres e diâmetro conforme o peso. Decreto 9.013/2017; manuais da CIDASC."],
+    ["sisbi","Logotipo do SISBI-POA","Uso junto ao carimbo, quando o estabelecimento é aderido. Manual do SISBI-POA."]]]];
+const VAL_ST={c:["Conforme","c"],nc:["Não conforme","nc"],na:["Não se aplica","na"]};
+const ehVal=r=>!!r&&(r.tipo==="validacao"||r.kind==="validacao"||r.dados?.kind==="validacao");
+function novaValidacao(){const V={kind:"validacao",id:novoUUID(),clienteId:"",empresa:"",produto:"",marca:"",arte:"",data:new Date().toISOString().slice(0,10),responsavel:"Isadora Andrade",itens:{},extras:[],obsGerais:"",imagens:[]}; return migrarV(V)}
+function migrarV(V){V.itens=V.itens||{}; VAL_GRUPOS.forEach(([,l])=>l.forEach(([k])=>{V.itens[k]=Object.assign({st:"",obs:""},V.itens[k]||{})})); V.extras=V.extras||[]; V.imagens=V.imagens||[]; return V}
+// todos os itens na ordem do relatório: [grupo, chave/obj, título, dica]
+function itensV(V){const out=[]; VAL_GRUPOS.forEach(([g,l])=>l.forEach(([k,t,h])=>out.push({g,t,h,o:V.itens[k],path:"itens."+k})));
+  V.extras.forEach((x,i)=>out.push({g:"Outros itens",t:x.titulo||"Item sem título",h:"",o:x,path:"extras."+i,extra:i})); return out}
+function resumoV(V){const it=itensV(V); const n={c:0,nc:0,na:0,p:0}; it.forEach(x=>{n[x.o.st||"p"]++}); return {it,n,total:it.length}}
+function nomeEmpresaV(V){return V.clienteId?nomeCliente(V.clienteId):(V.empresa||"").trim()}
+function viewValidacao(V){
+  const {it,n,total}=resumoV(V); const grupos=[...new Set(it.map(x=>x.g))];
+  const segV=x=>`<div class="seg vst">${Object.entries(VAL_ST).map(([k,[t]])=>`<button class="${x.o.st===k?"on "+k:""}" data-vst="${x.path}|${k}">${t}</button>`).join("")}</div>`;
+  const linha=x=>`<div class="vitem ${x.o.st||"p"}"><div class="stack" style="gap:6px"><div><b>${esc(x.t)}</b>${x.h?`<div class="hint">${esc(x.h)}</div>`:""}</div>
+      ${x.extra!=null?`<label class="f">Item<input type="text" data-bind="${x.path}.titulo" value="${esc(x.o.titulo||"")}" placeholder="Ex.: Selo de qualidade"></label>`:""}
+      <div class="row">${segV(x)}${x.extra!=null?`<button class="mini danger" data-vdel="${x.extra}">Remover</button>`:""}</div></div>
+    <label class="f">Observações<textarea data-bind="${x.path}.obs" placeholder="${x.o.st==="nc"?"O que precisa ser corrigido":"Opcional"}">${esc(x.o.obs||"")}</textarea></label></div>`;
+  return `<header class="top">
+    <div class="brand"><span class="eyebrow">Validação de rótulo · Consultoria Isadora Andrade</span>
+      <h1>${esc(V.produto||"Nova validação")}</h1>
+      <div class="row">${nomeEmpresaV(V)?`<span class="chip neutral">${esc(nomeEmpresaV(V))}</span>`:""}<span id="savest" class="chip neutral"></span></div></div>
+    <div class="row"><button class="ghost" data-act="home">Todas as validações</button></div></header>
+  <main id="main" class="stack">
+    <div class="card stack"><h2>Rótulo analisado</h2><div class="grid3">
+      ${sel("clienteId","Cliente",[["","Não é cliente (digitar a empresa)"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===V.clienteId).map(c=>[c.id,c.nome])],{re:true})}
+      ${V.clienteId?"":inp("empresa","Empresa")}
+      ${inp("produto","Produto")}
+      ${inp("marca","Marca")}
+      ${inp("arte","Arte analisada",{ph:"Ex.: arte v2 enviada em 03/11/2026"})}
+      <label class="f">Data da validação<input type="date" data-bind="data" value="${esc(V.data||"")}"></label>
+      ${inp("responsavel","Responsável pela validação")}
+    </div>
+    <div class="stack"><span class="small muted" style="font-weight:600">Imagens da arte (opcional, saem no relatório)</span>
+      <div class="row vimgs">${V.imagens.map((src,i)=>`<div class="vimg"><img src="${src}" alt="Arte ${i+1}"><button class="mini danger" data-vimgdel="${i}">Remover</button></div>`).join("")}
+      ${V.imagens.length<4?`<button class="mini" data-act="vimgadd">Adicionar imagem</button><input type="file" id="vimgfile" accept="image/*" multiple hidden>`:""}</div></div></div>
+    <div class="card"><div class="sumline vsum"><span class="chip">${n.c} conforme(s)</span><span class="chip bad">${n.nc} não conforme(s)</span><span class="chip neutral">${n.na} não se aplica</span><span class="chip warn">${n.p} sem conferir</span><span class="small muted">${total} itens</span></div></div>
+    ${grupos.map(g=>`<div class="card stack"><h2>${esc(g)}</h2>${it.filter(x=>x.g===g).map(linha).join("")}</div>`).join("")}
+    <div class="row"><button class="mini" data-act="vadd">+ Adicionar item</button></div>
+    <div class="card stack"><h2>Observações gerais</h2>${inp("obsGerais","Sai no fim do relatório",{area:true,span:true})}</div>
+    <div class="card stack"><div><h2>Relatório para o cliente</h2><p class="muted small">PDF com a conclusão, as não conformidades e todos os itens conferidos com as observações.</p></div>
+      ${n.p?`<div class="alert warn"><span>${n.p} item(ns) ainda sem conferir. Eles saem no relatório como “Não conferido”.</span></div>`:""}
+      <div class="row"><button class="primary" data-act="vrel">Gerar relatório (PDF)</button></div></div>
+  </main>`;
+}
+function concluirV(n){return n.nc?{t:"RÓTULO COM NÃO CONFORMIDADES",d:`Foram encontradas ${n.nc} não conformidade(s). Ajuste os itens apontados antes da impressão das embalagens.`,cor:[179,38,30]}
+  :n.p?{t:"VALIDAÇÃO INCOMPLETA",d:`${n.p} item(ns) ainda não foram conferidos.`,cor:[154,91,0]}
+  :{t:"RÓTULO CONFORME",d:"Os itens verificados estão conformes com a legislação de referência.",cor:[27,106,80]}}
+async function relatorioValidacao(V){
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15, W=210-2*M, BASE=297-18;
+  const {it,n}=resumoV(V); const cc=concluirV(n); const logo=await carregarLogo();
+  const dt=V.data?V.data.split("-").reverse().join("/"):new Date().toLocaleDateString("pt-BR");
+  doc.setFillColor(...LARANJA); doc.rect(0,0,210,4,"F"); if(logo) doc.addImage(logo.url,"JPEG",210-M-28,9,28,28);
+  doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...LARANJA); doc.text("Consultoria Isadora Andrade",M,16);
+  doc.setFontSize(18); doc.setTextColor(...TINTA); doc.text("Relatório de validação de rótulo",M,25);
+  doc.setFontSize(12); const tl=doc.splitTextToSize(V.produto||"",W-34).slice(0,2); tl.forEach((l,i)=>doc.text(l,M,32+i*5.5));
+  let y=Math.max(32+tl.length*5.5+3,42);
+  const need=h=>{if(y+h>BASE){doc.addPage();y=M}};
+  const kv=(k,v)=>{if(!String(v||"").trim())return; doc.setFontSize(9.5); doc.setFont("helvetica","normal"); const ls=doc.splitTextToSize(String(v),W-42); need(ls.length*4.4+1);
+    doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.3);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);ls.forEach((l,i)=>doc.text(l,M+42,y+3.3+i*4.4));y+=ls.length*4.4+1.2};
+  const h2=t=>{need(14);y+=4;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
+  kv("Empresa",nomeEmpresaV(V)); kv("Produto",V.produto); kv("Marca",V.marca); kv("Arte analisada",V.arte); kv("Data da validação",dt); kv("Responsável",V.responsavel);
+  // conclusão
+  y+=3; doc.setFontSize(9.5); const dl=doc.splitTextToSize(cc.d,W-10); const hb=11+dl.length*4.4; need(hb+2);
+  doc.setDrawColor(...cc.cor); doc.setLineWidth(0.6); doc.roundedRect(M,y,W,hb,2,2,"S");
+  doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(...cc.cor); doc.text(cc.t,M+5,y+6.5);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9.5); doc.setTextColor(...TINTA); dl.forEach((l,i)=>doc.text(l,M+5,y+11.5+i*4.4));
+  y+=hb+2; doc.setFontSize(8.5); doc.setTextColor(...CINZA); doc.text(`${n.c} conforme(s) · ${n.nc} não conforme(s) · ${n.na} não se aplica${n.p?` · ${n.p} não conferido(s)`:""}`,M,y+3.5); y+=6;
+  // tabela de itens
+  const cw=[58,30,W-88]; const COR={c:[27,106,80],nc:[179,38,30],na:[110,120,114],"":[154,91,0]}; const TXT={c:"Conforme",nc:"Não conforme",na:"Não se aplica","":"Não conferido"};
+  const cab=()=>{need(9);doc.setFillColor(238,241,236);doc.rect(M,y,W,7,"F");doc.setFont("helvetica","bold");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
+    doc.text("ITEM",M+2,y+4.7);doc.text("SITUAÇÃO",M+cw[0]+2,y+4.7);doc.text("OBSERVAÇÕES",M+cw[0]+cw[1]+2,y+4.7);y+=7};
+  const tabela=(lista,titulo)=>{ if(!lista.length) return; h2(titulo); cab(); let gAt="";
+    lista.forEach(x=>{ if(x.g!==gAt){gAt=x.g; need(12); doc.setFont("helvetica","bold");doc.setFontSize(8.5);doc.setTextColor(...LARANJA);doc.text(gAt.toUpperCase(),M+2,y+4.6);y+=6.5}
+      doc.setFontSize(9); doc.setFont("helvetica","bold"); const a=doc.splitTextToSize(x.t,cw[0]-4); doc.setFont("helvetica","normal"); const c=doc.splitTextToSize(String(x.o.obs||"").trim()||"—",cw[2]-4);
+      const h=Math.max(a.length,c.length)*4.2+3; if(y+h>BASE){doc.addPage();y=M;cab()}
+      doc.setDrawColor(...LINHA);doc.setLineWidth(0.2);doc.line(M,y,M+W,y);
+      doc.setFont("helvetica","bold");doc.setTextColor(...TINTA);a.forEach((l,i)=>doc.text(l,M+2,y+4.4+i*4.2));
+      doc.setTextColor(...COR[x.o.st||""]);doc.text(TXT[x.o.st||""],M+cw[0]+2,y+4.4);
+      doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);c.forEach((l,i)=>doc.text(l,M+cw[0]+cw[1]+2,y+4.4+i*4.2)); y+=h; });
+    doc.setDrawColor(...LINHA);doc.line(M,y,M+W,y); y+=2; };
+  tabela(it.filter(x=>x.o.st==="nc"),"Não conformidades");
+  tabela(it,"Itens verificados");
+  if(String(V.obsGerais||"").trim()){h2("Observações gerais"); doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);
+    String(V.obsGerais).split(/\n/).forEach(p=>{doc.splitTextToSize(p||" ",W).forEach(l=>{need(4.6);doc.text(l,M,y+3.4);y+=4.6})}); y+=2}
+  for(let i=0;i<V.imagens.length;i++){const src=V.imagens[i]; const im=await new Promise(r=>{const g=new Image();g.onload=()=>r(g);g.onerror=()=>r(null);g.src=src}); if(!im) continue;
+    const maxW=W, maxH=BASE-M-14; let w=maxW, h=w*im.height/im.width; if(h>maxH){h=maxH;w=h*im.width/im.height}
+    if(y+h+12>BASE){doc.addPage();y=M} h2(V.imagens.length>1?`Arte analisada (${i+1})`:"Arte analisada"); doc.addImage(src,"JPEG",M+(W-w)/2,y,w,h); y+=h+4}
+  need(30); y+=8; doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZA);
+  doc.splitTextToSize("Legislação de referência: RDC 429/2020, IN 75/2020, RDC 727/2022 e RDC 135/2017 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003 e Portaria MJ 2.658/2003; manuais da CIDASC e do SISBI-POA. A validação considera a arte e as informações recebidas; a veracidade dos dados de composição e de processo é responsabilidade da empresa.",W).forEach(l=>{doc.text(l,M,y);y+=3.6});
+  y+=12; need(14); doc.setDrawColor(...TINTA);doc.setLineWidth(0.3);doc.line(M,y,M+70,y); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...TINTA);doc.text(V.responsavel||"Isadora Andrade",M,y+5);
+  doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);doc.text("Consultoria Isadora Andrade",M,y+9.5);
+  const np=doc.internal.getNumberOfPages(); for(let i=1;i<=np;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
+    doc.text(`Validação de rótulo · ${V.produto||""} · ${dt}`,M,297-9); doc.text(`Página ${i} de ${np}`,210-M,297-9,{align:"right"})}
+  return doc.output("blob");
+}
+// reduz a imagem (até 1600 px, JPEG) para guardar junto com a validação
+function lerImagemV(file){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const g=new Image();g.onerror=rej;g.onload=()=>{const k=Math.min(1,1600/Math.max(g.width,g.height));
+  const cv=document.createElement("canvas");cv.width=Math.round(g.width*k);cv.height=Math.round(g.height*k);const x=cv.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,cv.width,cv.height);x.drawImage(g,0,0,cv.width,cv.height);res(cv.toDataURL("image/jpeg",0.82))};g.src=fr.result};fr.readAsDataURL(file)})}
+
 /* ===================== ESTADO E NAVEGAÇÃO ===================== */
-const S={R:null,step:0,open:{},zoom:3,real:false,pronto:false,sujo:false,status:"",filtroCliente:""};
+const S={R:null,step:0,open:{},zoom:3,real:false,pronto:false,sujo:false,status:"",filtroCliente:"",aba:"rotulos"};
 const STEPS=["Produto","Formulação","Porção e embalagem","Rótulo final"];
-function abrir(R){migrar(R);S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
+function abrir(R){if(R.kind==="validacao"){migrarV(R);S.aba="validacao"}else migrar(R);S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
 function render(){
   const app=$("#app");
   if(!S.pronto) return;
   if(!S.R){app.innerHTML=viewInicio();return}
+  if(S.R.kind==="validacao"){app.innerHTML=viewValidacao(S.R);setStatus(S.status);return}
   const R=S.R; const C=calc(R);
   app.innerHTML=`
   <header class="top">
@@ -1035,13 +1168,23 @@ function render(){
   afterRender(); setStatus(S.status);
 }
 function viewInicio(){
-  const todos=DBR.lista.filter(r=>!S.filtroCliente||(S.filtroCliente==="_sem"?!r.cliente_id:r.cliente_id===S.filtroCliente)); const locais=lerLocais();
+  const filtroOk=r=>!S.filtroCliente||(S.filtroCliente==="_sem"?!r.cliente_id:r.cliente_id===S.filtroCliente);
+  const todos=DBR.lista.filter(r=>!ehVal(r)&&filtroOk(r)), vals=DBR.lista.filter(r=>ehVal(r)&&filtroOk(r)); const locais=lerLocais();
+  const abas=`<nav class="steps"><button class="${S.aba!=="validacao"?"on":""}" data-aba="rotulos">Gerador de rótulos</button><button class="${S.aba==="validacao"?"on":""}" data-aba="validacao">Validação de rótulos</button></nav>`;
+  const filtroSel=`<select id="filtroCli" style="width:auto"><option value="">Todos os clientes</option>${DBR.clientes.map(c=>`<option value="${c.id}" ${S.filtroCliente===c.id?"selected":""}>${esc(c.nome)}</option>`).join("")}<option value="_sem" ${S.filtroCliente==="_sem"?"selected":""}>Sem cliente</option></select>`;
+  if(S.aba==="validacao") return `<header class="top"><div class="brand"><span class="eyebrow">Consultoria Isadora Andrade</span><h1>Validação de rótulos</h1>
+    <p class="muted">Conferência de rótulos feitos pelas empresas, item por item, com relatório para o cliente.</p></div>
+    <div class="row"><a class="btn" href="../sistema/" style="text-decoration:none">Abrir o sistema</a><button class="ghost" data-act="sair">Sair</button></div></header>${abas}
+  <section class="stack"><div class="card stack"><div class="sec-t"><h2>Validações</h2><div class="row">${filtroSel}<button class="primary" data-act="novaVal">Nova validação</button></div></div>
+    ${vals.length?`<div class="list">${vals.map(r=>{const V=r.dados||{}; const {n}=resumoV(migrarV(JSON.parse(JSON.stringify(V)))); return `<div class="it"><div><b>${esc(r.nome||"Sem nome")}</b><div class="small muted">${esc(r.cliente_id?nomeCliente(r.cliente_id):(V.empresa||"Sem empresa"))} · ${V.data?V.data.split("-").reverse().join("/"):""} · ${n.nc?`${n.nc} não conforme(s)`:n.p?`${n.p} sem conferir`:"conforme"}</div></div>
+      <div class="row"><button class="mini" data-abrir="${r.id}">Abrir</button><button class="mini" data-dup="${r.id}">Duplicar</button><button class="mini danger" data-del="${r.id}">Excluir</button></div></div>`}).join("")}</div>`
+    :`<p class="muted small">Nenhuma validação ainda. Clique em “Nova validação” para começar.</p>`}</div></section>`;
   const glyph={normal:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="12" width="28" height="26" rx="3"/><path d="M15 12V8h16v4M15 22h16M15 28h10"/></svg>`,
     balanco:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 6v34M10 40h26M8 14h30M8 14l-5 12a6 6 0 0 0 10 0zM38 14l-5 12a6 6 0 0 0 10 0z"/></svg>`,
     concentracao:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 20h30v8a15 12 0 0 1-30 0z"/><path d="M16 14c0-3 3-3 3-6M23 14c0-3 3-3 3-6M30 14c0-3 3-3 3-6"/></svg>`};
   return `<header class="top"><div class="brand"><span class="eyebrow">Consultoria Isadora Andrade</span><h1>Gerador de rótulos</h1>
     <p class="muted">Tabela nutricional, lupa, lista de ingredientes e advertências conforme RDC 429/2020, IN 75/2020 e RDC 727/2022.</p></div>
-    <div class="row"><a class="btn" href="../sistema/" style="text-decoration:none">Abrir o sistema</a><button class="ghost" data-act="sair">Sair</button></div></header>
+    <div class="row"><a class="btn" href="../sistema/" style="text-decoration:none">Abrir o sistema</a><button class="ghost" data-act="sair">Sair</button></div></header>${abas}
   ${locais.length?`<div class="alert warn" style="margin-bottom:14px;align-items:center;flex-wrap:wrap"><span>Há ${locais.length} rótulo(s) salvos só neste navegador, de antes do login.</span><button class="mini" data-act="enviarLocais">Enviar para o sistema</button></div>`:""}
   <section class="stack">
     <div class="card stack"><div><span class="eyebrow">Novo rótulo</span><h2>Qual é o tipo do produto?</h2>
@@ -1812,7 +1955,7 @@ function showAC(input,items,onPick){
 function busca(lista,q,fn,max=12){const f=fold(q).split(/\s+/).filter(Boolean);if(!f.length)return[];const out=[];for(const x of lista){const t=fold(fn(x));if(f.every(w=>t.includes(w))){out.push(x);if(out.length>=max)break}}return out}
 
 /* ===================== EVENTOS ===================== */
-function updateLive(){
+function updateLive(){ if(!S.R||S.R.kind==="validacao") return;
   const C=calc(S.R); const r=$("#resumo"); if(r) r.innerHTML=resumoHTML(C);
   const b=$("#balsum"); if(b) b.innerHTML=balSum(C); const c=$("#concsum"); if(c) c.innerHTML=concSum(C);
 }
@@ -1837,6 +1980,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{const el=e.target;
   if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
+  if(el.id==="vimgfile"&&el.files.length){(async()=>{for(const f of [...el.files].slice(0,4-S.R.imagens.length)){try{S.R.imagens.push(await lerImagemV(f))}catch(e){toast("Não foi possível ler a imagem "+f.name)}}salvar();render()})();return}
   if(el.dataset.modelo){let m=modelosTab(S.R); m=el.checked?[...new Set([...m,el.dataset.modelo])]:m.filter(x=>x!==el.dataset.modelo); if(!m.length){m=["vertical"];toast("Deixe pelo menos um modelo marcado.")} S.R.tabela.modelos=m; salvar(); render(); return}
   if(el.id==="trocaTipo"){S.R.tipo=el.value;salvar();render();toast("Tipo alterado para "+TIPOS[el.value].t+".");return}
   if(el.id==="impfile"&&el.files[0]){const fr=new FileReader();fr.onload=()=>{try{const R=JSON.parse(fr.result);if(!R.tipo||!R.produto)throw 0;R.id=novoUUID();R.clienteId=R.clienteId&&DBR.clientes.some(c=>c.id===R.clienteId)?R.clienteId:"";abrir(R);salvar();toast("Rótulo importado.")}catch(x){toast("Esse arquivo não é um backup de rótulo válido.")}};fr.readAsText(el.files[0])}
@@ -1847,9 +1991,17 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("button"); if(!b) return; const d=b.dataset;
   if(d.novo){const R=novoRotulo(d.novo);if(S.filtroCliente&&S.filtroCliente!=="_sem")R.clienteId=S.filtroCliente;S.status="";abrir(R);salvar();return}
   if(d.ex){S.status="";abrir(exemplo(d.ex));return}
+  if(d.aba){S.aba=d.aba;render();return}
+  if(d.act==="novaVal"){const V=novaValidacao();if(S.filtroCliente&&S.filtroCliente!=="_sem")V.clienteId=S.filtroCliente;S.status="";abrir(V);salvar();return}
+  if(d.vst){const [p,k]=d.vst.split("|");const o=getP(S.R,p);o.st=o.st===k?"":k;salvar();const y=window.scrollY;render();window.scrollTo(0,y);if(k==="nc"&&o.st==="nc"){const t=document.querySelector(`textarea[data-bind="${p}.obs"]`);t&&t.focus()}return}
+  if(d.act==="vadd"){S.R.extras.push({titulo:"",st:"",obs:""});salvar();render();setTimeout(()=>{const el=document.querySelector(`input[data-bind="extras.${S.R.extras.length-1}.titulo"]`);el&&el.focus()},30);return}
+  if(d.vdel!=null){if(b.dataset.armed){S.R.extras.splice(+d.vdel,1);salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
+  if(d.act==="vimgadd"){$("#vimgfile").click();return}
+  if(d.vimgdel!=null){S.R.imagens.splice(+d.vimgdel,1);salvar();render();return}
+  if(d.act==="vrel"){(async()=>{try{b.disabled=true;b.textContent="Gerando…";const blob=await relatorioValidacao(S.R);await saveFile(`validacao-${slug(S.R.produto)}-${S.R.data||"rel"}.pdf`,blob)}catch(e){toast("Não foi possível gerar o relatório: "+(e.message||e))}finally{b.disabled=false;b.textContent="Gerar relatório (PDF)"}})();return}
   if(d.abrir){const row=DBR.lista.find(x=>x.id===d.abrir);if(row){const R=JSON.parse(JSON.stringify(row.dados));R.id=row.id;R.clienteId=row.cliente_id||"";S.status="salvo";abrir(R)}return}
-  if(d.dup){const row=DBR.lista.find(x=>x.id===d.dup);if(!row)return;const R=JSON.parse(JSON.stringify(row.dados));R.id=novoUUID();R.clienteId=row.cliente_id||"";R.produto.nome=(R.produto.nome||"")+" (cópia)";
-    DBR.sb.from(TAB).insert(linhaDe(R)).then(async({error})=>{if(error)return toast("Não foi possível duplicar: "+error.message);await carregarLista();render();toast("Rótulo duplicado.")});return}
+  if(d.dup){const row=DBR.lista.find(x=>x.id===d.dup);if(!row)return;const R=JSON.parse(JSON.stringify(row.dados));R.id=novoUUID();R.clienteId=row.cliente_id||"";if(R.kind==="validacao")R.produto=(R.produto||"")+" (cópia)";else R.produto.nome=(R.produto.nome||"")+" (cópia)";
+    DBR.sb.from(TAB).insert(linhaDe(R)).then(async({error})=>{if(error)return toast("Não foi possível duplicar: "+error.message);await carregarLista();render();toast(R.kind==="validacao"?"Validação duplicada.":"Rótulo duplicado.")});return}
   if(d.del){if(b.dataset.armed){DBR.sb.from(TAB).delete().eq("id",d.del).then(({error})=>{if(error)return toast("Não foi possível excluir: "+error.message);DBR.lista=DBR.lista.filter(x=>x.id!==d.del);render();toast("Rótulo excluído.")})}else{b.dataset.armed="1";b.textContent="Confirmar exclusão";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="Excluir"}},3000)}return}
   if(d.act==="home"){(async()=>{await gravar();S.R=null;render();window.scrollTo(0,0)})();return}
   if(d.act==="sair"){(async()=>{await gravar();await DBR.sb.auth.signOut();location.reload()})();return}
