@@ -141,7 +141,15 @@ table.calc td.num{font-family:var(--f-num)}
 .vitem textarea{min-height:64px}
 .vesp{background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:.9rem;display:flex;flex-direction:column;gap:4px}
 .vvis{max-width:100%;overflow:auto;align-self:flex-start;padding:6px}.vvis svg{max-width:100%;height:auto}
-.vimgs{align-items:flex-start}.vimg{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.vimg img{max-width:160px;max-height:160px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.vwrap.lado{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,42%);gap:16px;align-items:start}
+.varte{position:sticky;top:10px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 20px);padding:12px}
+.varte-img{overflow:auto;border:1px solid var(--line);border-radius:6px;background:#fff;flex:1;min-height:200px}.varte-img img{display:block}
+.varte>*:not(.varte-img){flex-shrink:0}.varte .seg{align-self:flex-start}
+.vpags .mini.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.vthumb{padding:0;border:none;background:none}
+.vfab{position:fixed;right:18px;bottom:18px;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+@media (max-width:900px){.vwrap.lado{grid-template-columns:1fr}.varte{position:static;max-height:none;order:-1}.varte-img{max-height:70vh}}
+.vimgs{align-items:flex-start}.vimg{display:flex;flex-direction:column;gap:6px;align-items:flex-start;max-width:180px}.vimg img{max-width:160px;max-height:160px;border:1px solid var(--line);border-radius:6px;background:#fff}
 @media (max-width:720px){.vitem{grid-template-columns:1fr}}
 .mini{font-size:.78rem;padding:5px 9px}
 .sumline{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.86rem}
@@ -1109,7 +1117,7 @@ function viewValidacao(V){
       <h1>${esc(V.produto||"Nova validação")}</h1>
       <div class="row">${nomeEmpresaV(V)?`<span class="chip neutral">${esc(nomeEmpresaV(V))}</span>`:""}<span id="savest" class="chip neutral"></span></div></div>
     <div class="row"><button class="ghost" data-act="home">Todas as validações</button></div></header>
-  <main id="main" class="stack">
+  <div class="vwrap ${S.vLado&&ARTE.lista.length?"lado":""}"><main id="main" class="stack">
     <div class="card stack"><h2>Rótulo analisado</h2>
       ${sis?`<div class="alert info" style="flex-wrap:wrap;align-items:center"><span>Arte da gráfica conferida com o rótulo <b>${esc(V.ref?.produto?.nome||V.produto)}</b>${V.clienteId?` (${esc(nomeCliente(V.clienteId))})`:""}, dados de ${new Date(V.refEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}.</span>${DBR.lista.some(r=>r.id===V.rotuloId)?`<button class="mini" data-act="vref">Atualizar com o rótulo atual</button>`:`<span class="small muted">O rótulo original foi excluído; os dados acima continuam guardados.</span>`}</div>`:""}
       <div class="grid3">
@@ -1121,9 +1129,9 @@ function viewValidacao(V){
       <label class="f">Data da validação<input type="date" data-bind="data" value="${esc(V.data||"")}"></label>
       ${inp("responsavel","Responsável pela validação")}
     </div>
-    <div class="stack"><span class="small muted" style="font-weight:600">Imagens da arte (opcional, saem no relatório)</span>
-      <div class="row vimgs">${V.imagens.map((src,i)=>`<div class="vimg"><img src="${src}" alt="Arte ${i+1}"><button class="mini danger" data-vimgdel="${i}">Remover</button></div>`).join("")}
-      ${V.imagens.length<4?`<button class="mini" data-act="vimgadd">Adicionar imagem</button><input type="file" id="vimgfile" accept="image/*" multiple hidden>`:""}</div></div></div>
+    <div class="stack"><span class="small muted" style="font-weight:600">Arte recebida — PDF ou imagem (sai no relatório)</span>
+      ${ARTE.carregando?`<span class="small muted">Carregando a arte…</span>`:`<div class="row vimgs">${ARTE.lista.map((a,i)=>`<div class="vimg"><button class="vthumb" data-vpag="${i}" title="Ver ao lado"><img src="${a.url}" alt="${esc(a.nome)}"></button><span class="small muted">${esc(a.nome)}${dimArte(a)?`<br>${dimArte(a)}`:""}</span><button class="mini danger" data-vimgdel="${i}">Remover</button></div>`).join("")}
+      ${ARTE.lista.length<MAX_PAGS?`<button class="mini" data-act="vimgadd">${ARTE.lista.length?"Adicionar outro arquivo":"Enviar a arte (PDF ou imagem)"}</button><input type="file" id="vimgfile" accept="application/pdf,.pdf,image/*" multiple hidden>`:""}</div>`}</div></div>
     <div class="card"><div class="sumline vsum"><span class="chip">${n.c} conforme(s)</span><span class="chip bad">${n.nc} não conforme(s)</span>${sis?"":`<span class="chip neutral">${n.na} não se aplica</span>`}<span class="chip warn">${n.p} sem conferir</span><span class="small muted">${total} itens</span></div></div>
     ${grupos.map(g=>`<div class="card stack"><h2>${esc(g)}</h2>${it.filter(x=>x.g===g).map(linha).join("")}</div>`).join("")}
     <div class="row"><button class="mini" data-act="vadd">+ Adicionar item</button></div>
@@ -1131,7 +1139,8 @@ function viewValidacao(V){
     <div class="card stack"><div><h2>Relatório para o cliente</h2><p class="muted small">PDF com a conclusão, as não conformidades e todos os itens conferidos com as observações.</p></div>
       ${n.p?`<div class="alert warn"><span>${n.p} item(ns) ainda sem conferir. Eles saem no relatório como “Não conferido”.</span></div>`:""}
       <div class="row"><button class="primary" data-act="vrel">Gerar relatório (PDF)</button></div></div>
-  </main>`;
+  </main>${S.vLado?painelArte():""}</div>
+  ${ARTE.lista.length&&!S.vLado?`<button class="vfab primary" data-act="vlado">Ver a arte ao lado</button>`:""}`;
 }
 function concluirV(n,sis){return n.nc?{t:sis?"ARTE COM NÃO CONFORMIDADES":"RÓTULO COM NÃO CONFORMIDADES",d:sis?`A arte tem ${n.nc} item(ns) diferente(s) da ficha do rótulo. Corrija os itens apontados antes da impressão das embalagens.`:`Foram encontradas ${n.nc} não conformidade(s). Ajuste os itens apontados antes da impressão das embalagens.`,cor:[179,38,30]}
   :n.p?{t:"VALIDAÇÃO INCOMPLETA",d:`${n.p} item(ns) ainda não foram conferidos.`,cor:[154,91,0]}
@@ -1182,9 +1191,11 @@ async function relatorioValidacao(V){
   tabela(it,"Itens verificados");
   if(String(V.obsGerais||"").trim()){h2("Observações gerais"); doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);
     String(V.obsGerais).split(/\n/).forEach(p=>{doc.splitTextToSize(p||" ",W).forEach(l=>{need(4.6);doc.text(l,M,y+3.4);y+=4.6})}); y+=2}
-  for(let i=0;i<V.imagens.length;i++){const src=V.imagens[i]; const im=await new Promise(r=>{const g=new Image();g.onload=()=>r(g);g.onerror=()=>r(null);g.src=src}); if(!im) continue;
+  const artes=ARTE.vid===V.id?ARTE.lista:[];
+  for(let i=0;i<artes.length;i++){const src=artes[i].imagem; const im=await new Promise(r=>{const g=new Image();g.onload=()=>r(g);g.onerror=()=>r(null);g.src=src}); if(!im) continue;
     const maxW=W, maxH=BASE-M-14; let w=maxW, h=w*im.height/im.width; if(h>maxH){h=maxH;w=h*im.width/im.height}
-    if(y+h+12>BASE){doc.addPage();y=M} h2(V.imagens.length>1?`Arte analisada (${i+1})`:"Arte analisada"); doc.addImage(src,"JPEG",M+(W-w)/2,y,w,h); y+=h+4}
+    if(y+h+12>BASE){doc.addPage();y=M} h2(artes.length>1?`Arte analisada (${i+1} de ${artes.length})`:"Arte analisada"); doc.addImage(src,"JPEG",M+(W-w)/2,y,w,h); y+=h+1;
+    doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZA);doc.text(`${artes[i].nome}${dimArte(artes[i])?" · "+dimArte(artes[i]):""}`,M,y+3);y+=6}
   need(30); y+=8; doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZA);
   doc.splitTextToSize("Legislação de referência: RDC 429/2020, IN 75/2020, RDC 727/2022 e RDC 135/2017 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003 e Portaria MJ 2.658/2003; manuais da CIDASC e do SISBI-POA. "+(sis?"A validação compara a arte recebida com a ficha do rótulo; cores, acabamento e prova de impressão são de responsabilidade da gráfica.":"A validação considera a arte e as informações recebidas; a veracidade dos dados de composição e de processo é responsabilidade da empresa."),W).forEach(l=>{doc.text(l,M,y);y+=3.6});
   y+=12; need(14); doc.setDrawColor(...TINTA);doc.setLineWidth(0.3);doc.line(M,y,M+70,y); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...TINTA);doc.text(V.responsavel||"Isadora Andrade",M,y+5);
@@ -1194,13 +1205,70 @@ async function relatorioValidacao(V){
   return doc.output("blob");
 }
 // reduz a imagem (até 1600 px, JPEG) para guardar junto com a validação
-function lerImagemV(file){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const g=new Image();g.onerror=rej;g.onload=()=>{const k=Math.min(1,1600/Math.max(g.width,g.height));
+// ---- arte recebida (PDF ou imagem): páginas guardadas em cons_rotulos_arte, fora do registro da validação ----
+const TAB_ARTE="cons_rotulos_arte", MAX_PAGS=12;
+const ARTE={vid:null,lista:[],ok:null,carregando:false};
+const dataParaURL=src=>{try{const [h,b]=src.split(",");const bin=atob(b);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return URL.createObjectURL(new Blob([u],{type:(h.match(/:(.*?);/)||[])[1]||"image/jpeg"}))}catch(e){return src}};
+const arteItem=(r,local)=>({id:r.id,nome:r.nome||"",imagem:r.imagem,url:dataParaURL(r.imagem),wmm:r.largura_mm?+r.largura_mm:null,hmm:r.altura_mm?+r.altura_mm:null,local:!!local});
+async function carregarArtes(V){
+  ARTE.lista.forEach(a=>{if(a.url&&a.url.startsWith("blob:"))URL.revokeObjectURL(a.url)});
+  ARTE.vid=V.id; ARTE.lista=[]; ARTE.carregando=true; S.vPag=0;
+  const {data,error}=await DBR.sb.from(TAB_ARTE).select("id,ordem,nome,imagem,largura_mm,altura_mm").eq("rotulo_id",V.id).order("ordem");
+  ARTE.carregando=false; ARTE.ok=!error;
+  const loc=(V.imagens||[]).map((src,i)=>arteItem({id:"loc"+i,nome:`Imagem ${i+1}`,imagem:src},true));
+  ARTE.lista=(error?[]:(data||[]).sort((a,b)=>a.ordem-b.ordem).map(r=>arteItem(r))).concat(loc);
+}
+let PDFJS=null;
+async function pdfjs(){ if(PDFJS) return PDFJS; const m=await import("./vendor/pdfjs/pdf.min.mjs"); m.GlobalWorkerOptions.workerSrc=new URL("./vendor/pdfjs/pdf.worker.min.mjs",location.href).href; return PDFJS=m }
+// cada página do PDF vira uma imagem JPEG (lado maior até 2400 px), com o tamanho real da página em mm
+async function pdfParaImagens(file,max=2400,limite=MAX_PAGS){
+  const m=await pdfjs(); const base=new URL("./vendor/pdfjs/",location.href).href;
+  const pdf=await m.getDocument({data:new Uint8Array(await file.arrayBuffer()),standardFontDataUrl:base+"standard_fonts/",wasmUrl:base+"wasm/"}).promise;
+  const out=[]; const n=Math.min(pdf.numPages,limite);
+  for(let i=1;i<=n;i++){ const pg=await pdf.getPage(i); const v1=pg.getViewport({scale:1}); const sc=Math.min(5,max/Math.max(v1.width,v1.height)); const vp=pg.getViewport({scale:sc});
+    const cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height); const ctx=cv.getContext("2d"); ctx.fillStyle="#fff"; ctx.fillRect(0,0,cv.width,cv.height);
+    await pg.render({canvas:cv,canvasContext:ctx,viewport:vp}).promise;
+    out.push({nome:pdf.numPages>1?`${file.name} · pág. ${i}`:file.name,imagem:cv.toDataURL("image/jpeg",0.85),largura_mm:+(v1.width*25.4/72).toFixed(1),altura_mm:+(v1.height*25.4/72).toFixed(1)}); }
+  if(pdf.numPages>n) toast(`O PDF tem ${pdf.numPages} páginas; foram usadas as ${n} primeiras.`);
+  return out;
+}
+async function adicionarArtes(files){
+  const V=S.R; const espaco=MAX_PAGS-ARTE.lista.length; if(espaco<=0) return toast(`Limite de ${MAX_PAGS} páginas por validação.`);
+  setStatus("salvando"); toast("Lendo o arquivo…"); const novas=[];
+  for(const f of files){ if(novas.length>=espaco) break;
+    try{ if(f.type==="application/pdf"||/\.pdf$/i.test(f.name)) novas.push(...await pdfParaImagens(f,2400,espaco-novas.length));
+      else novas.push({nome:f.name,imagem:await lerImagemV(f,2400)}); }catch(e){console.error(e); toast("Não foi possível ler "+f.name+(e&&e.message?": "+e.message:""))} }
+  if(!novas.length){setStatus(S.sujo?"pendente":"salvo");return}
+  if(ARTE.ok){ S.sujo=true; await gravar(); const ord=ARTE.lista.filter(a=>!a.local).length;
+    const rows=novas.map((x,i)=>({id:novoUUID(),rotulo_id:V.id,ordem:ord+i,nome:x.nome,imagem:x.imagem,largura_mm:x.largura_mm||null,altura_mm:x.altura_mm||null}));
+    const {error}=await DBR.sb.from(TAB_ARTE).insert(rows);
+    if(!error){ if(S.R!==V) return; const loc=ARTE.lista.filter(a=>a.local); ARTE.lista=ARTE.lista.filter(a=>!a.local).concat(rows.map(r=>arteItem(r)),loc); S.vLado=true; S.vPag=ARTE.lista.length-loc.length-rows.length; setStatus("salvo"); render(); toast(`${rows.length} página(s) da arte adicionada(s).`); return; }
+    ARTE.ok=false; console.error(error); }
+  // sem a tabela de artes: guarda junto da validação (menor)
+  for(const x of novas){ const src=await reduzirDataURL(x.imagem,1600); V.imagens.push(src); ARTE.lista.push(arteItem({id:"loc"+(V.imagens.length-1),nome:x.nome,imagem:src,largura_mm:x.largura_mm,altura_mm:x.altura_mm},true)); }
+  S.vLado=true; salvar(); render();
+}
+function reduzirDataURL(src,max){return new Promise(res=>{const g=new Image();g.onload=()=>{const k=Math.min(1,max/Math.max(g.width,g.height));if(k>=1)return res(src);const cv=document.createElement("canvas");cv.width=Math.round(g.width*k);cv.height=Math.round(g.height*k);cv.getContext("2d").drawImage(g,0,0,cv.width,cv.height);res(cv.toDataURL("image/jpeg",0.82))};g.onerror=()=>res(src);g.src=src})}
+async function removerArte(ix){const a=ARTE.lista[ix]; if(!a) return;
+  if(a.local){const k=+a.id.slice(3); S.R.imagens.splice(k,1); salvar(); await carregarArtes(S.R); render(); return}
+  const {error}=await DBR.sb.from(TAB_ARTE).delete().eq("id",a.id); if(error) return toast("Não foi possível remover: "+error.message);
+  ARTE.lista.splice(ix,1); if(a.url.startsWith("blob:")) URL.revokeObjectURL(a.url); S.vPag=Math.min(S.vPag||0,Math.max(0,ARTE.lista.length-1)); render();}
+const dimArte=a=>a&&a.wmm?`${brFix(a.wmm,1)} × ${brFix(a.hmm,1)} mm`:"";
+function painelArte(){ const L=ARTE.lista; if(!L.length) return ""; const ix=Math.min(S.vPag||0,L.length-1), a=L[ix]; const z=S.vZoom||"fit";
+  const est=z==="fit"?"width:100%":z==="real"&&a.wmm?`width:${(a.wmm*3.7795).toFixed(0)}px;max-width:none`:`width:${z==="2"?200:400}%;max-width:none`;
+  return `<aside class="varte card"><div class="sec-t"><b class="small">Arte recebida</b><button class="mini" data-act="vlado">Esconder</button></div>
+    ${L.length>1?`<div class="row vpags">${L.map((x,i)=>`<button class="mini ${i===ix?"on":""}" data-vpag="${i}" title="${esc(x.nome)}">${i+1}</button>`).join("")}</div>`:""}
+    <div class="small muted">${esc(a.nome)}${dimArte(a)?` · ${dimArte(a)}`:""}</div>
+    <div class="seg">${[["fit","Ajustar"],...(a.wmm?[["real","Tamanho real"]]:[]),["2","2×"],["4","4×"]].map(([k,t])=>`<button class="${z===k?"on":""}" data-vzoom="${k}">${t}</button>`).join("")}</div>
+    <div class="varte-img"><img src="${a.url}" alt="${esc(a.nome)}" style="${est}"></div></aside>`;
+}
+function lerImagemV(file,max=1600){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const g=new Image();g.onerror=rej;g.onload=()=>{const k=Math.min(1,max/Math.max(g.width,g.height));
   const cv=document.createElement("canvas");cv.width=Math.round(g.width*k);cv.height=Math.round(g.height*k);const x=cv.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,cv.width,cv.height);x.drawImage(g,0,0,cv.width,cv.height);res(cv.toDataURL("image/jpeg",0.82))};g.src=fr.result};fr.readAsDataURL(file)})}
 
 /* ===================== ESTADO E NAVEGAÇÃO ===================== */
 const S={R:null,step:0,open:{},zoom:3,real:false,pronto:false,sujo:false,status:"",filtroCliente:"",aba:"rotulos"};
 const STEPS=["Produto","Formulação","Porção e embalagem","Rótulo final"];
-function abrir(R){if(R.kind==="validacao"){migrarV(R);S.aba="validacao"}else migrar(R);S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
+function abrir(R){if(R.kind==="validacao"){migrarV(R);S.aba="validacao";S.vLado=false;S.vZoom="fit";const V=R;carregarArtes(V).then(()=>{if(S.R===V)render()})}else migrar(R);S.R=R;S.step=0;S.open={};render();window.scrollTo(0,0)}
 function render(){
   const app=$("#app");
   if(!S.pronto) return;
@@ -2041,7 +2109,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{const el=e.target;
   if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
-  if(el.id==="vimgfile"&&el.files.length){(async()=>{for(const f of [...el.files].slice(0,4-S.R.imagens.length)){try{S.R.imagens.push(await lerImagemV(f))}catch(e){toast("Não foi possível ler a imagem "+f.name)}}salvar();render()})();return}
+  if(el.id==="vimgfile"&&el.files.length){const fs=[...el.files]; el.value=""; adicionarArtes(fs); return}
   if(el.dataset.modelo){let m=modelosTab(S.R); m=el.checked?[...new Set([...m,el.dataset.modelo])]:m.filter(x=>x!==el.dataset.modelo); if(!m.length){m=["vertical"];toast("Deixe pelo menos um modelo marcado.")} S.R.tabela.modelos=m; salvar(); render(); return}
   if(el.id==="trocaTipo"){S.R.tipo=el.value;salvar();render();toast("Tipo alterado para "+TIPOS[el.value].t+".");return}
   if(el.id==="impfile"&&el.files[0]){const fr=new FileReader();fr.onload=()=>{try{const R=JSON.parse(fr.result);if(!R.tipo||!R.produto)throw 0;R.id=novoUUID();R.clienteId=R.clienteId&&DBR.clientes.some(c=>c.id===R.clienteId)?R.clienteId:"";abrir(R);salvar();toast("Rótulo importado.")}catch(x){toast("Esse arquivo não é um backup de rótulo válido.")}};fr.readAsText(el.files[0])}
@@ -2060,7 +2128,10 @@ document.addEventListener("click",e=>{
   if(d.act==="vadd"){S.R.extras.push({titulo:"",st:"",obs:""});salvar();render();setTimeout(()=>{const el=document.querySelector(`input[data-bind="extras.${S.R.extras.length-1}.titulo"]`);el&&el.focus()},30);return}
   if(d.vdel!=null){if(b.dataset.armed){S.R.extras.splice(+d.vdel,1);salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
   if(d.act==="vimgadd"){$("#vimgfile").click();return}
-  if(d.vimgdel!=null){S.R.imagens.splice(+d.vimgdel,1);salvar();render();return}
+  if(d.vimgdel!=null){if(b.dataset.armed){removerArte(+d.vimgdel)}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
+  if(d.vpag!=null){S.vPag=+d.vpag;S.vLado=true;render();return}
+  if(d.vzoom){S.vZoom=d.vzoom;render();return}
+  if(d.act==="vlado"){S.vLado=!S.vLado;render();return}
   if(d.act==="vrel"){(async()=>{try{b.disabled=true;b.textContent="Gerando…";const blob=await relatorioValidacao(S.R);await saveFile(`validacao-${slug(S.R.produto)}-${S.R.data||"rel"}.pdf`,blob)}catch(e){toast("Não foi possível gerar o relatório: "+(e.message||e))}finally{b.disabled=false;b.textContent="Gerar relatório (PDF)"}})();return}
   if(d.abrir){const row=DBR.lista.find(x=>x.id===d.abrir);if(row){const R=JSON.parse(JSON.stringify(row.dados));R.id=row.id;R.clienteId=row.cliente_id||"";S.status="salvo";abrir(R)}return}
   if(d.dup){const row=DBR.lista.find(x=>x.id===d.dup);if(!row)return;const R=JSON.parse(JSON.stringify(row.dados));R.id=novoUUID();R.clienteId=row.cliente_id||"";if(R.kind==="validacao")R.produto=(R.produto||"")+" (cópia)";else R.produto.nome=(R.produto.nome||"")+" (cópia)";

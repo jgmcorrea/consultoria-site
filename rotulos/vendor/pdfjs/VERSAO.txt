@@ -1,0 +1,1 @@
+pdf.js   "version": "6.2.108", (pdfjs-dist, build legacy) — Apache 2.0
