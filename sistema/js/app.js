@@ -17,7 +17,7 @@
     mostrarCumpridas: true,
     busca: "",
     recolhidas: {},
-    mesHoras: "todos",
+    mesHoras: null, // definido como o mês atual ao abrir a aba Horas trabalhadas
     editandoHora: null,
   };
 
@@ -108,6 +108,8 @@
     const modulo = SIS.telas[r.tela];
     const tela = location.hash || "#/";
     const rolagem = tela === ultimaTela ? capturarRolagem() : null;
+    // Horas trabalhadas sempre abre no mês atual
+    if (tela !== ultimaTela && r.tela === "cliente" && r.aba === "horas") S.mesHoras = hoje().slice(0, 7);
     ultimaTela = tela;
     // segura a altura durante a troca para a página não "encolher" e pular para o topo
     if (rolagem) $app.style.minHeight = $app.offsetHeight + "px";
@@ -417,11 +419,11 @@
 
   function abaHoras(c) {
     const todas = horasDe(c.id);
-    const meses = [...new Set(todas.map(h => h.data.slice(0, 7)))].sort().reverse();
-    if (S.mesHoras !== "todos" && !meses.includes(S.mesHoras)) S.mesHoras = "todos";
+    const mesAtual = hoje().slice(0, 7);
+    const meses = [...new Set([mesAtual, ...todas.map(h => h.data.slice(0, 7))])].sort().reverse();
+    if (S.mesHoras !== "todos" && !meses.includes(S.mesHoras)) S.mesHoras = mesAtual;
     const lista = S.mesHoras === "todos" ? todas : todas.filter(h => h.data.startsWith(S.mesHoras));
     const total = lista.reduce((s, h) => s + minutosDe(h), 0);
-    const totalGeral = todas.reduce((s, h) => s + minutosDe(h), 0);
     const ed = S.editandoHora ? grupoDoRegistro(S.editandoHora) : null;
     if (S.editandoHora && !ed) S.editandoHora = null;
     const cards = cardsDe(c.id);
@@ -452,8 +454,7 @@
 
         <section class="lista-horas">
           <div class="totais">
-            <div><span>${S.mesHoras === "todos" ? "Total registrado" : nomeMes(S.mesHoras)}</span><strong>${fmtDur(total)}</strong><small>${fmtDec(total)}</small></div>
-            ${S.mesHoras !== "todos" ? `<div><span>Total geral</span><strong>${fmtDur(totalGeral)}</strong><small>${fmtDec(totalGeral)}</small></div>` : ""}
+            ${S.mesHoras !== "todos" ? `<div><span>${nomeMes(S.mesHoras)}</span><strong>${fmtDur(total)}</strong><small>${fmtDec(total)}</small></div>` : ""}
             <button type="button" class="botao-sec botao-extrato" data-acao="extrato" data-cliente="${c.id}">Extrato do mês (PDF ou Word)</button>
             <label class="campo filtro-mes"><span>Período</span>
               <select data-campo="mes-horas"><option value="todos">Todos os meses</option>${meses.map(m => `<option value="${m}" ${S.mesHoras === m ? "selected" : ""}>${nomeMes(m)}</option>`).join("")}</select>
