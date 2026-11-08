@@ -494,3 +494,14 @@ a.botao-sec { color: var(--tinta); text-decoration: none; }
 .fin a.botao, .fin a.botao:hover { color: #fff; text-decoration: none; }
 .nf-detalhe .nf-etapa label { gap: 2px 10px; padding: 7px 10px; }
 .fin .proj-valor { width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* SAUDI GAP: etapas e horários */
+.sg-etapa { border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px 12px; margin: 0 0 12px; }
+.sg-etapa legend { font-weight: 600; padding: 0 4px; }
+.sg-etapa legend small { font-weight: 400; color: var(--tinta-3); margin-left: 4px; }
+.sg-online { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sg-docs { display: grid; gap: 8px; margin-bottom: 8px; }
+.sg-linha { display: grid; grid-template-columns: 22px 1.3fr 1fr 1fr 24px; gap: 4px 8px; align-items: end; padding: 8px 8px 8px 6px; border: 1px solid var(--linha); border-radius: 10px; }
+.sg-linha .campo, .sg-online .campo { min-width: 0; }
+.sg-linha input, .sg-online input { font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .sg-online { grid-template-columns: 1fr 1fr; } .sg-online .campo:first-child { grid-column: 1 / -1; } .sg-linha { grid-template-columns: 20px 1fr 1fr 22px; } .sg-linha .campo:first-of-type { grid-column: 2 / 4; } }

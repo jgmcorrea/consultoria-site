@@ -41,6 +41,19 @@
     const valor = carga ? r2(qtd * (num(c.valor_unidade) || 0)) : r2(num(c.valor_sem_carga) || 0);
     return { u, carga, qtd, valor, desloc: r2(num(c.reembolso_unidade) || 0), despesa: r2(num(u.despesa_valor) || 0) };
   }
+  // SAUDI GAP (Qualimark): serviço à parte, sempre R$ 500 com nota, em duas etapas com horários:
+  // Auditoria On-line (horas corridas: um início e um fim) e Auditoria Documental (vários intervalos, podem ser em dias diferentes).
+  const SAUDI_GAP_VALOR = 500;
+  const SAUDI_GAP_NOME = "SAUDI GAP";
+  const temSaudiGap = (c) => /qualimark/i.test(c.nome || "") || servicosDe(c).some((x) => x.saudi_gap);
+  const minIntervalo = (i) => {
+    if (!i || !i.inicio || !i.fim) return 0;
+    const [ha, ma] = i.inicio.split(":").map(Number), [hb, mb] = i.fim.split(":").map(Number);
+    const d = hb * 60 + mb - (ha * 60 + ma);
+    return d < 0 ? d + 1440 : d; // passou da meia-noite
+  };
+  const minDocumental = (sg) => (sg?.documental || []).reduce((s, i) => s + minIntervalo(i), 0);
+  const resumoSaudiGap = (sg) => sg ? `On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${fmtDur(minDocumental(sg))}${(sg.documental || []).length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "";
   const plural = (q, nome) => `${fmtNum(q)} ${nome}${Number(q) === 1 ? "" : "s"}`;
 
   // ------------------------------------------------------------------
@@ -240,11 +253,11 @@
 
       <section class="fc-card">
         <div class="fc-cab"><h2>Serviços prestados em ${nomeMes(ym).toLowerCase()}</h2>
-          <button class="botao-sec" data-acao="fincli-servico" data-cliente="${c.id}">+ Registrar serviço</button></div>
+          <span class="fc-botoes">${temSaudiGap(c) ? `<button class="botao" data-acao="fincli-saudi" data-cliente="${c.id}">+ Lançar SAUDI GAP</button>` : ""}<button class="botao-sec" data-acao="fincli-servico" data-cliente="${c.id}">+ Registrar serviço</button></span></div>
         ${servs.length ? `<div class="tabela-rolagem"><table class="tabela-prosp tabela-servicos"><thead><tr><th>Data</th><th>Serviço</th><th>Nota fiscal</th><th class="dir">Valor</th><th>Recebimento</th><th><span class="sr">Ações</span></th></tr></thead><tbody>
           ${servs.map((x) => `<tr>
             <td>${fmtData(x.data)}</td>
-            <td><button class="link" data-acao="fincli-servico-editar" data-id="${x.id}">${esc(x.descricao)}</button>${x.observacoes ? `<small class="card-ref">${esc(x.observacoes)}</small>` : ""}</td>
+            <td><button class="link" data-acao="fincli-servico-editar" data-id="${x.id}">${esc(x.descricao)}</button>${x.saudi_gap ? `<small class="card-ref">${esc(resumoSaudiGap(x.saudi_gap))}</small>` : ""}${x.observacoes ? `<small class="card-ref">${esc(x.observacoes)}</small>` : ""}</td>
             <td>${x.emite_nf === false ? `<span class="chip semnf">Sem nota</span>` : `<span class="chip nf">Com nota</span>`}</td>
             <td class="dir num">${moeda(x.valor)}</td>
             <td>${x.emite_nf === false ? `<button class="mini ${x.status === "pago" ? "ok" : ""}" data-acao="fincli-servico-status" data-id="${x.id}" title="Clique para alternar">${x.status === "pago" ? "Recebido" : "A receber"}</button>` : `<span class="dica">Na nota de ${mesNome(ym)}</span>`}</td>
@@ -446,6 +459,69 @@
   }
 
   // ------------------------------------------------------------------
+  // SAUDI GAP: lançamento com as duas etapas
+  // ------------------------------------------------------------------
+  const linhaDoc = (i, n) => `
+    <div class="sg-linha">
+      <span class="linha-num">${n}</span>
+      <label class="campo"><span>Data</span><input type="date" name="d_data" value="${i?.data || ""}" required></label>
+      <label class="campo"><span>Começou</span><input type="time" name="d_inicio" value="${i?.inicio || ""}" required></label>
+      <label class="campo"><span>Terminou</span><input type="time" name="d_fim" value="${i?.fim || ""}" required></label>
+      <button type="button" class="remover-horario" data-acao="sg-remover" aria-label="Remover este horário" title="Remover este horário">×</button>
+    </div>`;
+  function modalSaudiGap(c, sv) {
+    const novo = !sv;
+    const ym = S.finMes || mesTrabalhoPadrao(c);
+    const dataPadrao = hoje().startsWith(ym) ? hoje() : (() => { const [a, m] = ym.split("-").map(Number); return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`; })();
+    const sg = sv?.saudi_gap || { online: { data: dataPadrao }, documental: [{ data: dataPadrao }] };
+    const faturado = !novo && faturasDe(c, sv.data.slice(0, 7)).length;
+    abrirModal(novo ? "Lançar SAUDI GAP" : "SAUDI GAP", `
+      ${faturado ? `<p class="aviso">A nota dos serviços de ${mesNome(sv.data.slice(0, 7))} já foi registrada. Se mudar a data deste SAUDI GAP para outro mês, confira as notas.</p>` : ""}
+      <p class="dica">Serviço à parte, sempre <b>${moeda(SAUDI_GAP_VALOR)}</b>, com nota. Entra na nota do mês junto com os outros serviços.</p>
+      <fieldset class="sg-etapa"><legend>1. Auditoria On-line <small>horas corridas</small></legend>
+        <div class="sg-online">
+          <label class="campo"><span>Data</span><input type="date" name="o_data" value="${sg.online?.data || ""}" required></label>
+          <label class="campo"><span>Começou</span><input type="time" name="o_inicio" value="${sg.online?.inicio || ""}" required></label>
+          <label class="campo"><span>Terminou</span><input type="time" name="o_fim" value="${sg.online?.fim || ""}" required></label>
+        </div>
+      </fieldset>
+      <fieldset class="sg-etapa"><legend>2. Auditoria Documental <small>pode ser em vários horários</small></legend>
+        <div class="sg-docs">${(sg.documental?.length ? sg.documental : [{}]).map((i, n) => linhaDoc(i, n + 1)).join("")}</div>
+        <button type="button" class="add-horario" data-acao="sg-add">+ Adicionar horário</button>
+      </fieldset>
+      <label class="campo largo"><span>Observações</span><textarea name="observacoes" rows="2">${esc(sv?.observacoes || "")}</textarea></label>
+      <p class="previa-visita" id="previa-sg"></p>`,
+    async (form) => {
+      const fe = form.elements, v = (n) => fe[n].value.trim();
+      const online = { data: v("o_data"), inicio: v("o_inicio"), fim: v("o_fim") };
+      const documental = [...form.querySelectorAll(".sg-linha")].map((l) => ({
+        data: l.querySelector('[name="d_data"]').value, inicio: l.querySelector('[name="d_inicio"]').value, fim: l.querySelector('[name="d_fim"]').value,
+      }));
+      if (!documental.length) throw new Error("Informe pelo menos um horário da Auditoria Documental.");
+      if (minIntervalo(online) === 0 || documental.some((i) => minIntervalo(i) === 0)) throw new Error("Confira os horários: o fim não pode ser igual ao início.");
+      const dados = {
+        ...(novo ? { cliente_id: c.id, status: "pendente" } : { id: sv.id }),
+        descricao: SAUDI_GAP_NOME, data: online.data, valor: SAUDI_GAP_VALOR, emite_nf: true,
+        observacoes: v("observacoes") || null, saudi_gap: { online, documental },
+      };
+      guardarLocal("servicos", await DB.salvar("servicos", dados));
+      if (dados.data.slice(0, 7) !== ym) S.finMes = dados.data.slice(0, 7);
+      toast(novo ? "SAUDI GAP lançado." : "SAUDI GAP salvo.");
+    },
+    novo ? "" : `<button type="button" class="botao-perigo" data-acao="fincli-servico-excluir" data-id="${sv.id}">Excluir</button>`);
+    const form = document.querySelector('[data-form="modal"]');
+    const previa = () => {
+      const fe = form.elements;
+      const on = minIntervalo({ inicio: fe.o_inicio.value, fim: fe.o_fim.value });
+      const doc = [...form.querySelectorAll(".sg-linha")].reduce((s, l) => s + minIntervalo({ inicio: l.querySelector('[name="d_inicio"]').value, fim: l.querySelector('[name="d_fim"]').value }), 0);
+      document.getElementById("previa-sg").innerHTML = `On-line: <b>${fmtDur(on)}</b> · Documental: <b>${fmtDur(doc)}</b> · Total: <b>${fmtDur(on + doc)}</b> · Valor: <b>${moeda(SAUDI_GAP_VALOR)}</b>`;
+    };
+    form._previaSG = previa;
+    form.addEventListener("input", previa); form.addEventListener("change", previa); previa();
+    document.querySelector(".modal").classList.add("modal-larga");
+  }
+
+  // ------------------------------------------------------------------
   // Relatório de atividade (visitas de container), no modelo usado pela Isadora
   // ------------------------------------------------------------------
   const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -601,7 +677,22 @@
       catch (e) { falha(e); } finally { el.disabled = false; el.textContent = txt; }
     },
     "fincli-servico": (el) => modalServico(cliente(el.dataset.cliente), null),
-    "fincli-servico-editar": (el) => { const x = S.dados.servicos.find((y) => y.id === el.dataset.id); modalServico(cliente(x.cliente_id), x); },
+    "fincli-servico-editar": (el) => { const x = S.dados.servicos.find((y) => y.id === el.dataset.id); (x.saudi_gap ? modalSaudiGap : modalServico)(cliente(x.cliente_id), x); },
+    "fincli-saudi": (el) => modalSaudiGap(cliente(el.dataset.cliente), null),
+    "sg-add": (el) => {
+      const f = el.closest("form"), box = f.querySelector(".sg-docs");
+      const ult = [...box.querySelectorAll('[name="d_data"]')].pop();
+      box.insertAdjacentHTML("beforeend", linhaDoc({ data: ult?.value || f.elements.o_data.value }, box.children.length + 1));
+      box.lastElementChild.querySelector('[name="d_inicio"]').focus();
+      f._previaSG?.();
+    },
+    "sg-remover": (el) => {
+      const f = el.closest("form"), box = f.querySelector(".sg-docs");
+      if (box.children.length === 1) return toast("A Auditoria Documental precisa de pelo menos um horário.", true);
+      el.closest(".sg-linha").remove();
+      [...box.children].forEach((l, i) => (l.querySelector(".linha-num").textContent = i + 1));
+      f._previaSG?.();
+    },
     "fincli-servico-status": async (el) => {
       const x = S.dados.servicos.find((y) => y.id === el.dataset.id);
       guardarLocal("servicos", await DB.salvar("servicos", { id: x.id, status: x.status === "pago" ? "pendente" : "pago" }));

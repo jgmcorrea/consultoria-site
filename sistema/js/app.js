@@ -43,6 +43,7 @@
   function falha(e) {
     console.error(e);
     const msg = e.message || String(e);
+    if (/saudi_gap/.test(msg)) return toast("Falta preparar o banco para o SAUDI GAP: rode o arquivo 09_saudi_gap.sql no Supabase.", true);
     if (/cons_servicos/.test(msg)) return toast("Falta preparar o banco para serviços prestados: rode o arquivo 04_servicos.sql no Supabase.", true);
     if (/hora_chegada|hora_saida|carregamento|informacoes|despesa_|valor_sem_carga|horas_min_sem_carga|deslocamento_descricao/.test(msg)) return toast("Falta preparar o banco para as visitas de container: rode o arquivo 06_visitas_containers.sql no Supabase.", true);
     if (/nota_mesmo_mes/.test(msg)) return toast("Falta preparar o banco: rode o arquivo 07_nota_mesmo_mes.sql no Supabase.", true);
