@@ -111,6 +111,8 @@
     const rolagem = tela === ultimaTela ? capturarRolagem() : null;
     // Horas trabalhadas sempre abre no mês atual
     if (tela !== ultimaTela && r.tela === "cliente" && r.aba === "horas") S.mesHoras = hoje().slice(0, 7);
+    // Financeiro do cliente também abre sempre no mês atual
+    if (tela !== ultimaTela && r.tela === "cliente" && r.aba === "financeiro") S.finMes = hoje().slice(0, 7);
     ultimaTela = tela;
     // segura a altura durante a troca para a página não "encolher" e pular para o topo
     if (rolagem) $app.style.minHeight = $app.offsetHeight + "px";

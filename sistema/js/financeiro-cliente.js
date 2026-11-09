@@ -27,7 +27,8 @@
   // Clientes com "nota no mesmo mês" (ex.: Queijo & Cia): a nota sai no próprio mês dos serviços, e a aba abre no mês atual.
   const mesmoMes = (c) => !!(c && c.nota_mesmo_mes);
   const mesDaNota = (c, ym) => (mesmoMes(c) ? ym : addMes(ym, 1));
-  const mesTrabalhoPadrao = (c) => (mesmoMes(c) ? hoje().slice(0, 7) : addMes(hoje().slice(0, 7), -1));
+  // A aba Financeiro do cliente abre sempre no mês atual (pedido de 09/11/2026); o mês anterior fica a um clique na seta.
+  const mesTrabalhoPadrao = () => hoje().slice(0, 7);
   const mesNome = (ym) => nomeMes(ym).split(" ")[0].toLowerCase();
   const fimDeSemana = (iso) => [0, 6].includes(new Date(iso + "T12:00").getDay());
   // Visitas (registros de container): com carregamento = quantidade × valor por unidade;
