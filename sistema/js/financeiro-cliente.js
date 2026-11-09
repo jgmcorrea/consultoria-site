@@ -53,7 +53,7 @@
     return d < 0 ? d + 1440 : d; // passou da meia-noite
   };
   const minDocumental = (sg) => (sg?.documental || []).reduce((s, i) => s + minIntervalo(i), 0);
-  const resumoSaudiGap = (sg) => sg ? `On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${fmtDur(minDocumental(sg))}${(sg.documental || []).length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "";
+  const resumoSaudiGap = (sg) => sg ? `On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${(sg.documental || []).length ? (minDocumental(sg) ? `${fmtDur(minDocumental(sg))}${sg.documental.length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "") + (sg.documental.some((i) => !i.inicio || !i.fim) ? (minDocumental(sg) ? " (em andamento)" : "em andamento") : "") : "a fazer"}` : "";
   const plural = (q, nome) => `${fmtNum(q)} ${nome}${Number(q) === 1 ? "" : "s"}`;
 
   // ------------------------------------------------------------------
@@ -464,9 +464,9 @@
   const linhaDoc = (i, n) => `
     <div class="sg-linha">
       <span class="linha-num">${n}</span>
-      <label class="campo"><span>Data</span><input type="date" name="d_data" value="${i?.data || ""}" required></label>
-      <label class="campo"><span>Começou</span><input type="time" name="d_inicio" value="${i?.inicio || ""}" required></label>
-      <label class="campo"><span>Terminou</span><input type="time" name="d_fim" value="${i?.fim || ""}" required></label>
+      <label class="campo"><span>Data</span><input type="date" name="d_data" value="${i?.data || ""}"></label>
+      <label class="campo"><span>Começou</span><input type="time" name="d_inicio" value="${i?.inicio || ""}"></label>
+      <label class="campo"><span>Terminou</span><input type="time" name="d_fim" value="${i?.fim || ""}"></label>
       <button type="button" class="remover-horario" data-acao="sg-remover" aria-label="Remover este horário" title="Remover este horário">×</button>
     </div>`;
   function modalSaudiGap(c, sv) {
@@ -485,7 +485,7 @@
           <label class="campo"><span>Terminou</span><input type="time" name="o_fim" value="${sg.online?.fim || ""}" required></label>
         </div>
       </fieldset>
-      <fieldset class="sg-etapa"><legend>2. Auditoria Documental <small>pode ser em vários horários</small></legend>
+      <fieldset class="sg-etapa"><legend>2. Auditoria Documental <small>pode ser em vários horários · dá para salvar sem e preencher depois</small></legend>
         <div class="sg-docs">${(sg.documental?.length ? sg.documental : [{}]).map((i, n) => linhaDoc(i, n + 1)).join("")}</div>
         <button type="button" class="add-horario" data-acao="sg-add">+ Adicionar horário</button>
       </fieldset>
@@ -496,9 +496,9 @@
       const online = { data: v("o_data"), inicio: v("o_inicio"), fim: v("o_fim") };
       const documental = [...form.querySelectorAll(".sg-linha")].map((l) => ({
         data: l.querySelector('[name="d_data"]').value, inicio: l.querySelector('[name="d_inicio"]').value, fim: l.querySelector('[name="d_fim"]').value,
-      }));
-      if (!documental.length) throw new Error("Informe pelo menos um horário da Auditoria Documental.");
-      if (minIntervalo(online) === 0 || documental.some((i) => minIntervalo(i) === 0)) throw new Error("Confira os horários: o fim não pode ser igual ao início.");
+      })).filter((i) => i.inicio || i.fim); // horário vazio não é guardado: o documental pode ficar para depois
+      if (minIntervalo(online) === 0) throw new Error("Confira o horário da Auditoria On-line: o fim não pode ser igual ao início.");
+      if (documental.some((i) => i.inicio && i.fim && minIntervalo(i) === 0)) throw new Error("Confira os horários da Auditoria Documental: o fim não pode ser igual ao início.");
       const dados = {
         ...(novo ? { cliente_id: c.id, status: "pendente" } : { id: sv.id }),
         descricao: SAUDI_GAP_NOME, data: online.data, valor: SAUDI_GAP_VALOR, emite_nf: true,
@@ -688,8 +688,9 @@
     },
     "sg-remover": (el) => {
       const f = el.closest("form"), box = f.querySelector(".sg-docs");
-      if (box.children.length === 1) return toast("A Auditoria Documental precisa de pelo menos um horário.", true);
-      el.closest(".sg-linha").remove();
+      const linha = el.closest(".sg-linha");
+      if (box.children.length === 1) linha.querySelectorAll('[name="d_inicio"], [name="d_fim"]').forEach((i) => (i.value = "")); // a última linha só é limpa
+      else linha.remove();
       [...box.children].forEach((l, i) => (l.querySelector(".linha-num").textContent = i + 1));
       f._previaSG?.();
     },
