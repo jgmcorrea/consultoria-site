@@ -53,7 +53,8 @@
     return d < 0 ? d + 1440 : d; // passou da meia-noite
   };
   const minDocumental = (sg) => (sg?.documental || []).reduce((s, i) => s + minIntervalo(i), 0);
-  const resumoSaudiGap = (sg) => sg ? `On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${(sg.documental || []).length ? (minDocumental(sg) ? `${fmtDur(minDocumental(sg))}${sg.documental.length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "") + (sg.documental.some((i) => !i.inicio || !i.fim) ? (minDocumental(sg) ? " (em andamento)" : "em andamento") : "") : "a fazer"}` : "";
+  const resumoSaudiGap = (sg) => sg ? `${sg.fazenda ? `${sg.fazenda} · ` : ""}On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${(sg.documental || []).length ? (minDocumental(sg) ? `${fmtDur(minDocumental(sg))}${sg.documental.length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "") + (sg.documental.some((i) => !i.inicio || !i.fim) ? (minDocumental(sg) ? " (em andamento)" : "em andamento") : "") : "a fazer"}` : "";
+  const saudiGapsDe = (c, ym) => servicosDe(c, ym).filter((x) => x.saudi_gap);
   const plural = (q, nome) => `${fmtNum(q)} ${nome}${Number(q) === 1 ? "" : "s"}`;
 
   // ------------------------------------------------------------------
@@ -253,7 +254,7 @@
 
       <section class="fc-card">
         <div class="fc-cab"><h2>Serviços prestados em ${nomeMes(ym).toLowerCase()}</h2>
-          <span class="fc-botoes">${temSaudiGap(c) ? `<button class="botao" data-acao="fincli-saudi" data-cliente="${c.id}">+ Lançar SAUDI GAP</button>` : ""}<button class="botao-sec" data-acao="fincli-servico" data-cliente="${c.id}">+ Registrar serviço</button></span></div>
+          <span class="fc-botoes">${temSaudiGap(c) ? `<button class="botao-sec" data-acao="fincli-saudi-relatorio" data-cliente="${c.id}" ${saudiGapsDe(c).length ? "" : "disabled"}>Relatório SAUDI GAP (PDF ou Word)</button><button class="botao" data-acao="fincli-saudi" data-cliente="${c.id}">+ Lançar SAUDI GAP</button>` : ""}<button class="botao-sec" data-acao="fincli-servico" data-cliente="${c.id}">+ Registrar serviço</button></span></div>
         ${servs.length ? `<div class="tabela-rolagem"><table class="tabela-prosp tabela-servicos"><thead><tr><th>Data</th><th>Serviço</th><th>Nota fiscal</th><th class="dir">Valor</th><th>Recebimento</th><th><span class="sr">Ações</span></th></tr></thead><tbody>
           ${servs.map((x) => `<tr>
             <td>${fmtData(x.data)}</td>
@@ -477,6 +478,7 @@
     const faturado = !novo && faturasDe(c, sv.data.slice(0, 7)).length;
     abrirModal(novo ? "Lançar SAUDI GAP" : "SAUDI GAP", `
       ${faturado ? `<p class="aviso">A nota dos serviços de ${mesNome(sv.data.slice(0, 7))} já foi registrada. Se mudar a data deste SAUDI GAP para outro mês, confira as notas.</p>` : ""}
+      <label class="campo largo sg-fazenda"><span>Fazenda auditada</span><input name="fazenda" value="${esc(sg.fazenda || "")}" placeholder="Nome da fazenda"></label>
       <p class="dica">Serviço à parte, sempre <b>${moeda(SAUDI_GAP_VALOR)}</b>, com nota. Entra na nota do mês junto com os outros serviços.</p>
       <fieldset class="sg-etapa"><legend>1. Auditoria On-line <small>horas corridas</small></legend>
         <div class="sg-online">
@@ -502,7 +504,7 @@
       const dados = {
         ...(novo ? { cliente_id: c.id, status: "pendente" } : { id: sv.id }),
         descricao: SAUDI_GAP_NOME, data: online.data, valor: SAUDI_GAP_VALOR, emite_nf: true,
-        observacoes: v("observacoes") || null, saudi_gap: { online, documental },
+        observacoes: v("observacoes") || null, saudi_gap: { fazenda: v("fazenda") || null, online, documental },
       };
       guardarLocal("servicos", await DB.salvar("servicos", dados));
       if (dados.data.slice(0, 7) !== ym) S.finMes = dados.data.slice(0, 7);
@@ -658,6 +660,126 @@
   }
 
   // ------------------------------------------------------------------
+  // Relatório SAUDI GAP: fazendas auditadas no mês
+  // ------------------------------------------------------------------
+  const hhmm = (i) => `${i.inicio || "--:--"}–${i.fim || "--:--"}`;
+  function dadosSaudiGap(c, ym) {
+    const lista = saudiGapsDe(c, ym);
+    const linhas = lista.map((x) => {
+      const sg = x.saudi_gap, docs = sg.documental || [];
+      const docTxt = docs.length
+        ? docs.map((i) => `${fmtData(i.data)} ${i.inicio && i.fim ? hhmm(i) : `${i.inicio || i.fim} (em andamento)`}`).join("\n") + (docs.length > 1 && minDocumental(sg) ? `\nTotal: ${fmtDur(minDocumental(sg))}` : "")
+        : "A fazer";
+      return [fmtData(sg.online?.data || x.data), sg.fazenda || "—", `${hhmm(sg.online || {})}\n${fmtDur(minIntervalo(sg.online))}`, docTxt, moeda(x.valor)];
+    });
+    const minOn = lista.reduce((s, x) => s + minIntervalo(x.saudi_gap.online), 0), minDoc = lista.reduce((s, x) => s + minDocumental(x.saudi_gap), 0);
+    return { lista, linhas, cab: ["Data", "Fazenda", "Auditoria On-line", "Auditoria Documental", "Valor"],
+      total: moeda(lista.reduce((s, x) => s + Number(x.valor || 0), 0)), minOn, minDoc,
+      foot: ["Total", `${lista.length} fazenda${lista.length === 1 ? "" : "s"}`, fmtDur(minOn), fmtDur(minDoc), moeda(lista.reduce((s, x) => s + Number(x.valor || 0), 0))] };
+  }
+  const nomeRelSG = (c, ym, ext) => `Relatório SAUDI GAP - ${c.nome} - ${nomeMes(ym)}.${ext}`.replace(/[\\/:*?"<>|]/g, "-");
+
+  function modalRelatorioSG(c) {
+    const meses = [...new Set(saudiGapsDe(c).map((x) => x.data.slice(0, 7)))].sort().reverse();
+    const atual = S.finMes || mesTrabalhoPadrao(c);
+    const ini = meses.includes(atual) ? atual : meses[0];
+    abrirModal("Relatório SAUDI GAP", `
+      <label class="campo"><span>Mês</span><select id="rel-sg-mes">${meses.map((m) => `<option value="${m}" ${m === ini ? "selected" : ""}>${nomeMes(m)}</option>`).join("")}</select></label>
+      <p class="extrato-resumo" id="rel-sg-resumo"></p>
+      <div class="extrato-botoes">
+        <button type="button" class="botao" data-acao="fincli-saudi-baixar" data-formato="pdf" data-cliente="${c.id}">Baixar PDF</button>
+        <button type="button" class="botao-sec" data-acao="fincli-saudi-baixar" data-formato="docx" data-cliente="${c.id}">Baixar Word</button>
+      </div>`, null);
+    const sel = document.getElementById("rel-sg-mes");
+    const resumo = () => { const d = dadosSaudiGap(c, sel.value); document.getElementById("rel-sg-resumo").innerHTML = `${d.lista.length} fazenda${d.lista.length === 1 ? "" : "s"} auditada${d.lista.length === 1 ? "" : "s"} · on-line ${fmtDur(d.minOn)} · documental ${fmtDur(d.minDoc)} · total <b>${d.total}</b>.`; };
+    sel.addEventListener("change", resumo); resumo();
+  }
+
+  async function relatorioSGPDF(c, ym) {
+    const { carregarScript, baixar, carregarLogo } = SIS.rel;
+    if (!window.jspdf) await carregarScript("vendor/jspdf.umd.min.js");
+    if (!window.jspdf.jsPDF.API.autoTable) await carregarScript("vendor/jspdf.plugin.autotable.min.js");
+    const d = dadosSaudiGap(c, ym), logo = await carregarLogo();
+    const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+    const W = doc.internal.pageSize.getWidth();
+    doc.setFillColor(...LARANJA); doc.rect(0, 0, W, 4, "F");
+    if (logo) doc.addImage(logo.url, "JPEG", W - 15 - 30, 9, 30, 30);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(...LARANJA);
+    doc.text("Consultoria Isadora Andrade", 15, 16);
+    doc.setFontSize(19); doc.setTextColor(...TINTA);
+    doc.text("Relatório SAUDI GAP", 15, 26);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(...CINZA);
+    let y = 35;
+    const info = [["Cliente", c.razao_social || c.nome], ...(c.cnpj ? [["CNPJ", c.cnpj]] : []), ["Período", nomeMes(ym)]];
+    info.forEach(([k, v]) => { doc.setFont("helvetica", "bold"); doc.text(k + ":", 15, y); doc.setFont("helvetica", "normal"); doc.text(String(v), 35, y); y += 6; });
+    y += 2;
+    doc.setFillColor(253, 238, 226); doc.roundedRect(15, y, W - 30, 14, 2, 2, "F");
+    doc.setFontSize(11); doc.setTextColor(...TINTA); doc.setFont("helvetica", "bold");
+    doc.text(`Fazendas auditadas: ${d.lista.length}`, 20, y + 9);
+    doc.text(`Total: ${d.total}`, W - 20, y + 9, { align: "right" });
+    y += 20;
+    const body = d.linhas.length ? d.linhas : [[{ content: "Nenhum SAUDI GAP neste mês.", colSpan: 5, styles: { halign: "center", textColor: CINZA } }]];
+    doc.autoTable({
+      startY: y, head: [d.cab], body, foot: [d.foot], theme: "grid",
+      styles: { font: "helvetica", fontSize: 9.5, cellPadding: 2.4, textColor: TINTA, lineColor: [220, 226, 222], lineWidth: 0.2, valign: "top" },
+      headStyles: { fillColor: TINTA, textColor: 255, fontStyle: "bold", valign: "middle" },
+      footStyles: { fillColor: [242, 244, 242], textColor: TINTA, fontStyle: "bold" },
+      columnStyles: { 0: { cellWidth: 22 }, 2: { cellWidth: 34 }, 3: { cellWidth: 48 }, 4: { cellWidth: 24, halign: "right" } },
+      didParseCell: (h) => { if (h.column.index === 4) h.cell.styles.halign = "right"; },
+      margin: { left: 15, right: 15, bottom: 18 },
+      didDrawPage: () => {
+        const H = doc.internal.pageSize.getHeight();
+        doc.setFontSize(8.5); doc.setTextColor(...CINZA); doc.setFont("helvetica", "normal");
+        doc.text(`Emitido em ${fmtData(hoje())}`, 15, H - 9);
+        doc.text(`Página ${doc.internal.getNumberOfPages()}`, W - 15, H - 9, { align: "right" });
+      },
+    });
+    baixar(doc.output("blob"), nomeRelSG(c, ym, "pdf"));
+  }
+
+  async function relatorioSGWord(c, ym) {
+    const { carregarScript, baixar, carregarLogo } = SIS.rel;
+    if (!window.docx) await carregarScript("vendor/docx.iife.js");
+    const X = window.docx, d = dadosSaudiGap(c, ym), logo = await carregarLogo();
+    const fonte = "Calibri";
+    const t = (text, o = {}) => new X.TextRun({ text, font: fonte, size: o.size || 21, bold: o.bold, color: o.color || "1E2B27" });
+    const borda = { style: X.BorderStyle.SINGLE, size: 4, color: "DCE2DE" };
+    const bordas = { top: borda, bottom: borda, left: borda, right: borda };
+    const larg = [1300, 2600, 1900, 2400, 1200];
+    const cel = (txt, i, o = {}) => new X.TableCell({
+      width: { size: larg.slice(i, i + (o.span || 1)).reduce((a, b) => a + b, 0), type: X.WidthType.DXA }, columnSpan: o.span, borders: bordas,
+      shading: o.fundo ? { type: X.ShadingType.CLEAR, color: "auto", fill: o.fundo } : undefined,
+      margins: { top: 60, bottom: 60, left: 90, right: 90 },
+      children: String(txt).split("\n").map((p) => new X.Paragraph({ alignment: i === 4 && !o.span ? X.AlignmentType.RIGHT : X.AlignmentType.LEFT, children: [t(p, { bold: o.bold, color: o.cor, size: 19 })] })),
+    });
+    const linhaT = (vals, o = {}) => new X.TableRow({ children: vals.map((v, i) => cel(v, i, o)), tableHeader: o.cab });
+    const corpo = d.linhas.length ? d.linhas.map((l) => linhaT(l)) : [new X.TableRow({ children: [cel("Nenhum SAUDI GAP neste mês.", 0, { span: 5 })] })];
+    const tabela = new X.Table({
+      width: { size: larg.reduce((a, b) => a + b, 0), type: X.WidthType.DXA }, columnWidths: larg,
+      rows: [linhaT(d.cab, { cab: true, bold: true, cor: "FFFFFF", fundo: "1E2B27" }), ...corpo, linhaT(d.foot, { bold: true, fundo: "F2F4F2" })],
+    });
+    const p = (runs, o = {}) => new X.Paragraph({ children: runs, spacing: { after: o.after ?? 80 } });
+    const doc = new X.Document({
+      sections: [{
+        properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1134, bottom: 1134, left: 1247, right: 1247 } } },
+        footers: { default: new X.Footer({ children: [new X.Paragraph({ alignment: X.AlignmentType.RIGHT, children: [t(`Emitido em ${fmtData(hoje())} · Página `, { size: 16, color: "56645E" }), new X.TextRun({ children: [X.PageNumber.CURRENT], font: fonte, size: 16, color: "56645E" })] })] }) },
+        children: [
+          ...(logo ? [new X.Paragraph({ alignment: X.AlignmentType.RIGHT, spacing: { after: 0 }, children: [new X.ImageRun({ type: "jpg", data: logo.bytes, transformation: { width: 96, height: 96 } })] })] : []),
+          p([t("Consultoria Isadora Andrade", { bold: true, color: "E2661A", size: 20 })]),
+          p([t("Relatório SAUDI GAP", { bold: true, size: 34 })], { after: 200 }),
+          p([t("Cliente: ", { bold: true }), t(c.razao_social || c.nome)]),
+          ...(c.cnpj ? [p([t("CNPJ: ", { bold: true }), t(c.cnpj)])] : []),
+          p([t("Período: ", { bold: true }), t(nomeMes(ym))]),
+          p([t(`Fazendas auditadas: ${d.lista.length}`, { bold: true })]),
+          p([t(`Total: ${d.total}`, { bold: true })], { after: 240 }),
+          tabela,
+        ],
+      }],
+    });
+    baixar(await X.Packer.toBlob(doc), nomeRelSG(c, ym, "docx"));
+  }
+
+  // ------------------------------------------------------------------
   // Ações
   // ------------------------------------------------------------------
   const fatura = (id) => S.dados.faturas.find((f) => f.id === id);
@@ -679,6 +801,13 @@
     "fincli-servico": (el) => modalServico(cliente(el.dataset.cliente), null),
     "fincli-servico-editar": (el) => { const x = S.dados.servicos.find((y) => y.id === el.dataset.id); (x.saudi_gap ? modalSaudiGap : modalServico)(cliente(x.cliente_id), x); },
     "fincli-saudi": (el) => modalSaudiGap(cliente(el.dataset.cliente), null),
+    "fincli-saudi-relatorio": (el) => modalRelatorioSG(cliente(el.dataset.cliente)),
+    "fincli-saudi-baixar": async (el) => {
+      const c = cliente(el.dataset.cliente), ym = document.getElementById("rel-sg-mes").value, txt = el.textContent;
+      el.disabled = true; el.textContent = "Gerando…";
+      try { if (el.dataset.formato === "pdf") await relatorioSGPDF(c, ym); else await relatorioSGWord(c, ym); toast("Relatório gerado."); }
+      catch (e) { falha(e); } finally { el.disabled = false; el.textContent = txt; }
+    },
     "sg-add": (el) => {
       const f = el.closest("form"), box = f.querySelector(".sg-docs");
       const ult = [...box.querySelectorAll('[name="d_data"]')].pop();
