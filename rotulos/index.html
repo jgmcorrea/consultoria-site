@@ -235,10 +235,10 @@ function origemTexto(R){
   const o=R.origemD||{}; if(!o.razao) return (R.produto.origem||"").trim();
   const loc=[o.municipio,o.uf].filter(Boolean).join("/");
   const dist=R.distribuidor||{}, comDist=!!(dist.ativo&&dist.razao);
-  const partes=[`${comDist&&!["Fabricado por","Produzido por"].includes(o.expressao)?"Fabricado por":(o.expressao||"Fabricado em")}: ${o.razao}`, o.classificacao, o.endereco, loc, o.cep?`CEP ${o.cep}`:"", o.pais||"Brasil"].filter(Boolean).join(", ")+".";
+  const partes=[`${comDist&&!["Fabricado por","Produzido por"].includes(o.expressao)?"Fabricado por":(o.expressao||"Fabricado em")}: ${o.razao}`, o.classificacao, o.endereco, loc, o.pais||"Brasil", o.cep?`CEP ${o.cep}`:""].filter(Boolean).join(", ")+".";
   const fab=[partes, o.cnpj?`CNPJ: ${o.cnpj}.`:""];
   if(comDist){ const dl=[dist.municipio,dist.uf].filter(Boolean).join("/");
-    fab.push([`${dist.expressao||"Distribuído por"}: ${dist.razao}`, dist.endereco, dl, dist.cep?`CEP ${dist.cep}`:"", dist.pais||"Brasil"].filter(Boolean).join(", ")+".", dist.cnpj?`CNPJ: ${dist.cnpj}.`:""); }
+    fab.push([`${dist.expressao||"Distribuído por"}: ${dist.razao}`, dist.endereco, dl, dist.pais||"Brasil", dist.cep?`CEP ${dist.cep}`:""].filter(Boolean).join(", ")+".", dist.cnpj?`CNPJ: ${dist.cnpj}.`:""); }
   // contato (SAC): o do distribuidor, se informado; senão o do fabricante
   const usaDist=comDist&&(dist.telefone||dist.email), tel=(usaDist?dist.telefone:o.telefone)||"", mail=(usaDist?dist.email:o.email)||"";
   return [...fab, o.industria!==false&&fold(o.pais||"brasil")==="brasil"?"INDÚSTRIA BRASILEIRA.":"", tel, mail].filter(Boolean).join(" ");
@@ -1341,8 +1341,9 @@ function viewProduto(R,C){
       ${inp("produto.nome","Nome do produto (uso interno)")}
       ${sel("clienteId","Cliente",[["","Sem cliente"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===R.clienteId).map(c=>[c.id,c.nome])],{hint:"Os rótulos ficam agrupados por cliente na lista."})}
       ${inp("produto.denominacao","Denominação de venda",{hint:"Conforme o padrão de identidade e qualidade. Vai no painel principal (RDC 727/2022, art. 9)."})}
-      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Vai junto da denominação de venda (RDC 135/2017). Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})})()}
+      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Fica próximo à denominação de venda, num campo próprio (RDC 135/2017). Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})})()}
       ${inp("produto.marca","Marca")}
+      ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS. Em branco = não tem."})}
       ${inp("produto.descricao","Descrição",{span:true,area:true})}
     </div></div>
   <div class="card stack"><h2>Embalagem e estado físico</h2>
@@ -1370,12 +1371,14 @@ function viewProduto(R,C){
       ${inp("origemD.endereco","Endereço (rua, número, bairro)",{span:true})}
       ${inp("origemD.municipio","Município")}
       ${sel("origemD.uf","UF",[["",""],...UFS.map(u=>[u,u])],{re:true})}
-      ${inp("origemD.cep","CEP",{ph:"00000-000"})}
       ${inp("origemD.pais","País",{ph:"Brasil"})}
+      ${inp("origemD.cep","CEP",{ph:"00000-000"})}
       ${inp("origemD.cnpj","CNPJ",{ph:"00.000.000/0000-00"})}
       ${inp("origemD.telefone","Telefone (SAC)")}
       ${inp("origemD.email","E-mail")}
       ${chk("origemD.industria","Incluir “INDÚSTRIA BRASILEIRA”")}
+      ${inp("relatorio.codigoBarras","Código de barras",{n:true})}
+      ${inp("relatorio.redes","Redes sociais e site",{area:true,span:true,ph:"@queijospomerode\nqueijospomerode.com.br"})}
     </div>
     ${chk("distribuidor.ativo","Outra empresa distribui o produto (ou produção terceirizada: “Fabricado por… Para…”)",{hint:"O fabricante acima continua obrigatório; a segunda empresa entra depois dele (RDC 727/2022, art. 29; Decreto 9.013/2017, art. 443, §2º)."})}
     ${R.distribuidor?.ativo?`<div class="grid3">
@@ -1385,8 +1388,8 @@ function viewProduto(R,C){
       ${inp("distribuidor.endereco","Endereço (rua, número, bairro)",{span:true})}
       ${inp("distribuidor.municipio","Município")}
       ${sel("distribuidor.uf","UF",[["",""],...UFS.map(u=>[u,u])],{re:true})}
-      ${inp("distribuidor.cep","CEP",{ph:"00000-000"})}
       ${inp("distribuidor.pais","País",{ph:"Brasil"})}
+      ${inp("distribuidor.cep","CEP",{ph:"00000-000"})}
       ${inp("distribuidor.telefone","Telefone (SAC)",{hint:"Se preencher telefone ou e-mail aqui, o contato do rótulo passa a ser o desta empresa."})}
       ${inp("distribuidor.email","E-mail")}
     </div>`:""}
@@ -1405,20 +1408,7 @@ function viewProduto(R,C){
     ${temCarimboModelo3(R.inspecao.servico)?`<div class="small"><span class="muted">Frase de registro (obrigatória):</span> <b>${esc(fraseRegistro(R))}</b></div>`:""}
     </div>
   </div>
-  <div class="card stack"><div><span class="eyebrow">Relatório para o cliente</span><h2>Dados do relatório “Dizeres de Rotulagem”</h2><p class="muted small">Aparecem no PDF do relatório, no modelo da Isadora. Os campos em branco não entram.</p></div>
-    <div class="grid3">
-      ${inp("relatorio.nome","Nome do produto no relatório",{ph:R.produto.nome||"DOCE DE LEITE 400g",hint:"Vai na capa e no topo de cada página. Em branco = nome do produto."})}
-      ${inp("relatorio.versao","Versão",{n:true})}
-      <label class="f">Data<input type="date" data-bind="relatorio.data" id="f-relatorio.data" value="${esc(R.relatorio?.data||"")}"><span class="hint">Em branco = data do dia.</span></label>
-      ${inp("relatorio.cidade","Cidade",{ph:"Blumenau - SC"})}
-      ${inp("relatorio.cliente","Cliente na capa",{ph:nomeCliente(R.clienteId)||R.produto.marca||"QUEIJOS POMERODE",hint:"Em branco = cliente selecionado."})}
-    </div>
-    <div class="grid2">
-      ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS."})}
-      ${inp("relatorio.codigoBarras","Código de barras",{n:true})}
-      ${inp("relatorio.redes","Redes sociais e site",{area:true,ph:"@queijospomerode\nqueijospomerode.com.br"})}
-      ${inp("relatorio.observacao","Observação em destaque (sai em vermelho)",{area:true,ph:"- verificar com o cliente se será a marca X ou Y"})}
-    </div></div></div>`;
+  </div>`;
 }
 function compInputs(base,obj,o={}){
   const ks=[...OBRIG,...(o.extras||[])];
@@ -1581,7 +1571,7 @@ function viewRotulo(R,C){
       ${tabs.map((tb,i)=>`<div><span class="eyebrow">Tabela nutricional · ${i+1}ª opção · ${esc(NOME_MODELO[tb.modelo])}${R.tabela.reduzida&&tb.modelo!=="linear"?" · reduzida":""}</span>
         <div class="paper ${S.real?"":"fit"}">${svgOf(tb,z)}</div>
         <div class="paper-cap"><span><b>Fonte:</b> ${tb.modelo==="linear"||R.tabela.reduzida?"título “INFORMAÇÃO NUTRICIONAL” 8 pt negrito · demais informações 6 pt":"título “INFORMAÇÃO NUTRICIONAL” 10 pt negrito · demais informações 8 pt · rodapé 6 pt"} (Anexo XII, IN 75/2020)</span><span>${fontesTab(tb.modelo==="linear"||R.tabela.reduzida)} · 100% preto em fundo branco</span></div></div>`).join("")}
-      <div><span class="eyebrow">Lista de ingredientes e advertências</span>
+      <div><div class="row" style="justify-content:space-between;align-items:center"><span class="eyebrow">Lista de ingredientes e advertências${R.textos.ingOverride.trim()?" · editada à mão":""}</span><span class="row" style="gap:6px">${R.textos.ingOverride.trim()?`<button class="ghost mini" data-clear="textos.ingOverride">Voltar ao automático</button>`:""}<button class="ghost mini" data-act="editIng">Editar texto</button></span></div>
         <div class="paper ${S.real?"":"fit"}">${svgOf(dec,z)}</div>
         <div class="paper-cap"><span><b>Ingredientes:</b> letras com no mínimo 1 mm</span><span><b>${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}:</b> ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes (RDC 727/2022 e Lei 10.674/2003)</span></div></div>
     </div>
@@ -1599,13 +1589,12 @@ function viewRotulo(R,C){
     </div>
   </div>
   <div class="card stack"><div class="sec-t"><h2>Textos gerados</h2><span class="small muted">Edite só se precisar ajustar a redação; o original fica guardado.</span></div>
-    <label class="f">Lista de ingredientes (RDC 727/2022, arts. 11 e 12)<textarea data-bind="textos.ingOverride" id="f-textos.ingOverride" data-rerender-blur="1" placeholder="${esc(T.ingAuto)}">${esc(R.textos.ingOverride)}</textarea><span class="hint">${R.textos.ingOverride?`<button class="ghost mini" data-clear="textos.ingOverride">Voltar ao texto automático</button>`:"Em branco = texto automático (mostrado acima, em cinza). Trechos entre _sublinhados_ saem em itálico."}</span></label>
+    <label class="f">Lista de ingredientes (RDC 727/2022, arts. 11 e 12)<textarea data-bind="textos.ingOverride" id="f-textos.ingOverride" data-rerender-blur="1" placeholder="${esc(T.ingAuto)}">${esc(R.textos.ingOverride)}</textarea><span class="hint">${R.textos.ingOverride?`<button class="ghost mini" data-clear="textos.ingOverride">Voltar ao texto automático</button>`:"Em branco = texto automático (mostrado acima, em cinza). Use “Editar texto” na prévia para partir do texto automático. Trechos entre _sublinhados_ saem em itálico."}</span></label>
     <label class="f">Advertência de alérgicos (arts. 13 a 15)<textarea data-bind="textos.algOverride" id="f-textos.algOverride" data-rerender-blur="1" placeholder="${esc(T.algAuto||"Nenhum alergênico marcado: não há advertência a declarar.")}">${esc(R.textos.algOverride)}</textarea><span class="hint">${R.textos.algOverride?`<button class="ghost mini" data-clear="textos.algOverride">Voltar ao texto automático</button>`:"Em branco = texto automático."}</span></label>
     <dl class="kv"><dt>Lactose</dt><dd>${esc(T.lac||"Não declarar (até 100 mg/100 "+C.un+")")}</dd><dt>Glúten</dt><dd>${esc(T.gluten)}</dd></dl>
   </div>
   <div class="card stack"><div><span class="eyebrow">Exportar</span><h2>Arquivos do rótulo</h2><p class="muted small">PDFs em vetor e PNGs a 600 dpi, com as medidas reais em milímetros.</p></div>
     <div class="exports">
-      <button data-exp="rel"><span class="fmt">PDF</span><b>Relatório Dizeres de Rotulagem</b><small>No modelo da Isadora, para enviar ao cliente</small></button>
       <button data-exp="xlsx"><span class="fmt">EXCEL</span><b>Planilha completa</b><small>Rótulo, tabela formatada, cálculos e imagens</small></button>
       <button data-exp="pdf"><span class="fmt">PDF</span><b>Ficha do rótulo</b><small>Todos os textos, tabela e lupa em tamanho real</small></button>
       <button data-exp="ft"><span class="fmt">PDF</span><b>Ficha técnica</b><small>Para a empresa e os clientes dela, sem a marca da consultoria</small></button>
@@ -2162,6 +2151,9 @@ document.addEventListener("click",e=>{
   if(d.cruzdel){const o={...(S.R.alergCruzada||{})}; delete o[d.cruzdel]; S.R.alergCruzada=o; salvar(); render(); return}
   if(d.algdel){const [ix,k]=d.algdel.split("|");delete S.R.ingredientes[+ix].alerg[k];salvar();render();return}
   if(d.zoom!=null){S.real=d.zoom==="1";render();return}
+  if(d.act==="editIng"){ // copia o texto automático para o campo de edição, para ajustar só o que precisa
+    if(!S.R.textos.ingOverride.trim()){const R=S.R,C=calc(R); S.R.textos.ingOverride=textos(R,C).ingAuto; salvar(); render();}
+    setTimeout(()=>{const el=document.getElementById("f-textos.ingOverride"); if(el){el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus();}},30); return}
   if(d.clear){setP(S.R,d.clear,"");salvar();render();return}
   if(d.exp){exportar(d.exp);return}
 });
