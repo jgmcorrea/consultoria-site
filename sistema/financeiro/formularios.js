@@ -105,15 +105,30 @@ export async function marcarPago(x, ob) {
     await gravarFechamento(x.mes, { [ob.campo]: null });
     return true;
   }
+  // Nas guias (DAS e DARF), o valor pago pode ser editado: às vezes a guia vem com centavos de diferença do cálculo.
+  const guia = ob.chave === "das" || ob.chave === "darf";
+  const campos = [{ n: "em", r: "Pago em", t: "date", req: true, padrao: hoje() }];
+  if (guia) campos.push({ n: "valor", r: "Valor pago", t: "money", req: true, padrao: ob.valor.toFixed(2), ajuda: "Já vem com o valor calculado. Ajuste se a guia veio diferente." });
   const r = await modal({
     titulo: "Marcar como pago",
     corpo: `<p><b>${esc(ob.nome)}</b> · competência ${nomeMes(x.mes, true).toLowerCase()}<br><span class="muted">${moeda(ob.valor)} · vencimento ${data(ob.venc)}</span></p>
-      ${formHTML([{ n: "em", r: "Pago em", t: "date", req: true, padrao: hoje() }])}`,
-    botoes: [{ texto: "Cancelar", valor: null }, { texto: "Confirmar", classe: "prim", acao: (m) => lerForm(m, [{ n: "em", t: "date" }]) || false }],
+      ${formHTML(campos)}`,
+    botoes: [{ texto: "Cancelar", valor: null }, { texto: "Confirmar", classe: "prim", acao: (m) => lerForm(m, campos) || false }],
   });
   if (!r) return false;
-  await gravarFechamento(x.mes, { [ob.campo]: r.em });
-  toast("Marcado como pago", "ok");
+  const dados = { [ob.campo]: r.em };
+  const pago = guia ? Math.round(Number(r.valor) * 100) / 100 : null;
+  if (guia && Math.abs(pago - ob.valor) >= 0.005) {
+    if (ob.chave === "das") dados.das_valor = pago; // valor real do DAS
+    else {
+      // DARF = INSS + IRRF: a diferença vai para o IRRF (ou para o INSS, se não houver IRRF); dá para separar no Fechamento do mês.
+      const dif = Math.round((pago - ob.valor) * 100) / 100;
+      if (x.irrf > 0 && x.irrf + dif >= 0) { dados.irrf_valor = Math.round((x.irrf + dif) * 100) / 100; dados.inss_valor = x.inss; }
+      else { dados.inss_valor = Math.round((x.inss + dif) * 100) / 100; dados.irrf_valor = x.irrf; }
+    }
+  }
+  await gravarFechamento(x.mes, dados);
+  toast(dados.das_valor != null || dados.inss_valor != null ? `Marcado como pago com ${moeda(pago)}` : "Marcado como pago", "ok");
   return true;
 }
 
