@@ -90,7 +90,11 @@ input.n{font-family:var(--f-num);text-align:right}
 .ing .nm{font-weight:600;overflow-wrap:anywhere}
 .ing .meta{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
 .ing .body{padding:14px;display:flex;flex-direction:column;gap:16px}
-.compgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px 10px}
+.compgrid{display:grid;grid-template-columns:repeat(var(--n,9),minmax(0,1fr));gap:8px 8px}
+.compgrid label.f{min-width:0;display:flex;flex-direction:column;justify-content:flex-end}
+.compgrid .lbl{display:block;font-size:.78rem;line-height:1.2}
+.compgrid input{min-width:0;width:100%}
+@media (max-width:760px){.compgrid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}}
 .sec-t{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .ac{position:relative}
 .ac-list{position:absolute;z-index:20;left:0;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:8px;max-height:280px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.12)}
@@ -1420,7 +1424,8 @@ function viewProduto(R,C){
 }
 function compInputs(base,obj,o={}){
   const ks=[...OBRIG,...(o.extras||[])];
-  return `<div class="compgrid">${ks.map(k=>{const v=obj[k]??"";const ph=(k==="acAdd"&&o.auto)?o.auto:"";return `<label class="f">${COMP_LBL[k]}<input type="text" inputmode="decimal" class="n" data-bind="${base}.${k}" id="f-${base}.${k}" value="${esc(v)}" placeholder="${esc(ph)}"></label>`}).join("")}</div>`;
+  const curto={...COMP_LBL,acTot:"Aç. totais (g)",acAdd:"Aç. adicionados (g)",gord:"Gord. totais (g)"}; // tudo numa linha só
+  return `<div class="compgrid" style="--n:${ks.length}">${ks.map(k=>{const v=obj[k]??"";const ph=(k==="acAdd"&&o.auto)?o.auto:"";return `<label class="f" title="${esc(COMP_LBL[k])}"><span class="lbl">${curto[k]}</span><input type="text" inputmode="decimal" class="n" data-bind="${base}.${k}" id="f-${base}.${k}" value="${esc(v)}" placeholder="${esc(ph)}"></label>`}).join("")}</div>`;
 }
 function viewFormulacao(R,C){
   const tot=C.tot.massa;
