@@ -313,7 +313,7 @@ NUT.col.ns=5;
 const COMP_LBL = {carb:"Carboidratos (g)",acTot:"Açúcares totais (g)",acAdd:"Açúc. adicionados (g)",prot:"Proteínas (g)",gord:"Gorduras totais (g)",sat:"Gord. saturadas (g)",trans:"Gord. trans (g)",fibra:"Fibras (g)",sodio:"Sódio (mg)"};
 EXTRAS.forEach(([k,l,ab,u])=>COMP_LBL[k]=`${l} (${u})`);
 // nutrientes não obrigatórios informados num ingrediente (lista explícita + valores antigos já preenchidos)
-function extrasOf(i){const s=new Set(i.extras||[]); EXTRA_K.forEach(k=>{if(i.comp&&i.comp[k]!==""&&i.comp[k]!=null)s.add(k)}); if(i.lactose)s.add("lac"); return EXTRA_K.filter(k=>s.has(k))}
+function extrasOf(i){const s=new Set(i.extras||[]); EXTRA_K.forEach(k=>{if(i.comp&&i.comp[k]!==""&&i.comp[k]!=null)s.add(k)}); if(i.lactose){s.add("lac");s.add("gal")} return EXTRA_K.filter(k=>s.has(k))} // fonte de lactose: lactose e galactose aparecem juntas
 const ALERG = [ // nomes comuns no singular (pedido da Isadora), exceto crustáceos (RDC 727/2022, art. 13, parágrafo único)
   ["trigo","Trigo","TRIGO"],["centeio","Centeio","CENTEIO"],["cevada","Cevada","CEVADA"],["aveia","Aveia","AVEIA"],
   ["crustaceos","Crustáceos","CRUSTÁCEOS"],["ovos","Ovos","OVOS"],["peixes","Peixes","PEIXES"],["amendoim","Amendoim","AMENDOIM"],
@@ -558,6 +558,8 @@ function calc(R){
   let lactose="";
   if(b100.lac>0.1+1e-9) lactose="CONTÉM LACTOSE";
   else if(semValorLac.length){lactose="CONTÉM LACTOSE"; W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
+  if(claimLac){ const semGal=ings.filter(i=>i.lactose&&!i.lactase&&(i.comp.gal===""||i.comp.gal==null));
+    if(semGal.length&&!(hid&&hid.H>0)) W.push(`Com alegação sobre lactose, a tabela declara lactose e galactose (RDC 429/2020, art. 5º, §4º). Informe a galactose (g/100 g) de ${semGal.map(i=>`“${i.nome}”`).join(", ")}; sem ela, a galactose sai como 0.`); }
   if(b100.lac+b100.gal>b100.acTot+0.05) W.push("Lactose + galactose passam dos açúcares totais. Lactose e galactose são açúcares: confira os açúcares totais dos ingredientes.");
   if(R.tabela.lactoseGal && !aLac) W.push("Escolha qual é a alegação sobre lactose (etapa Produto): zero lactose, baixo teor de lactose etc.");
   if(aLac){ const al=ALEG_LAC.find(a=>a[0]===aLac); const lim=al?al[2]:null; const mg=b100.lac*1000;
@@ -1519,7 +1521,7 @@ function viewFormulacao(R,C){
           ${compInputs(p+".comp",i.comp,{auto:autoAd})}
           ${(()=>{const ex=extrasOf(i); const resto=EXTRAS.filter(e=>!ex.includes(e[0]));
             return `<div class="stack" style="gap:6px"><span class="small"><b>Entra algum nutriente não obrigatório?</b> <span class="muted">Se sim, escolha abaixo e informe a quantidade por 100 g (lactose, galactose, colesterol, ômegas, vitaminas, minerais…). Lactose e galactose só vão para a tabela com alegação de restrição de lactose; vitaminas e minerais, a partir de 5% do VDR na porção.</span></span>
-            ${ex.length?`<div class="compgrid">${ex.map(k=>`<label class="f">${COMP_LBL[k]}<span style="display:flex;gap:4px"><input type="text" inputmode="decimal" class="n" data-bind="${p}.comp.${k}" id="f-${p}.comp.${k}" value="${esc(i.comp[k]??"")}" style="flex:1;min-width:0">${k==="lac"&&i.lactose?"":`<button type="button" class="btn ghost" data-nexdel="${ix}|${k}" title="Remover" style="padding:0 8px">×</button>`}</span></label>`).join("")}</div>`:""}
+            ${ex.length?`<div class="compgrid">${ex.map(k=>`<label class="f">${COMP_LBL[k]}<span style="display:flex;gap:4px"><input type="text" inputmode="decimal" class="n" data-bind="${p}.comp.${k}" id="f-${p}.comp.${k}" value="${esc(i.comp[k]??"")}" style="flex:1;min-width:0">${(k==="lac"||k==="gal")&&i.lactose?"":`<button type="button" class="btn ghost" data-nexdel="${ix}|${k}" title="Remover" style="padding:0 8px">×</button>`}</span></label>`).join("")}</div>`:""}
             ${resto.length?`<div class="row" style="gap:8px"><select id="nex-${ix}"><option value="">Adicionar nutriente não obrigatório…</option>${[["carb","Carboidratos"],["gord","Gorduras"],["vit","Vitaminas"],["min","Minerais"],["outro","Outros"]].map(([g,n])=>{const it=resto.filter(e=>e[7]===g);return it.length?`<optgroup label="${n}">${it.map(e=>`<option value="${e[0]}">${esc(e[1])} (${e[3]})</option>`).join("")}</optgroup>`:""}).join("")}</select><button type="button" class="btn" data-nexadd="${ix}">Adicionar</button></div>`:""}</div>`})()}
           ${inp(p+".fonte","Fonte dos valores",{hint:"Ficha técnica, laudo, tabela IBGE/TACO…"})}
         </div>
