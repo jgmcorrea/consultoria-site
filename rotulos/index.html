@@ -230,6 +230,7 @@ function pendDecl(R){
 }
 function migrar(R){
   R.ingredientes.forEach(respIng);
+  if(!R.lactase) R.lactase={modo:"residual",residualMg:"",pct:"",fonte:""};
   if(!R.distribuidor) R.distribuidor={ativo:false,expressao:"Distribuído por",razao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:""};
   if(!R.origemD) R.origemD={expressao:"Fabricado em",razao:"",classificacao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:"",industria:true};
   if(!R.inspecao||(!R.inspecao.servico&&R.relatorio?.sif)){ const rd=R.relatorio||{}; R.inspecao={servico:rd.sif?"SIF":"",orgao:"",regEstab:rd.registroSif||"",regProduto:"",frase:rd.expressao||""}; }
@@ -350,7 +351,7 @@ function setP(o,p,v){const ks=p.split(".");let a=o;ks.slice(0,-1).forEach(k=>{if
 let toastT; function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
 
 /* ===================== MODELO ===================== */
-function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,ogm:false,ogmDeriv:"",gene:"",ogmComp:"",ogmItem:"",ogmExpr:"contem",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
+function novoIng(o={}){return Object.assign({id:uid(),nome:"",sub:"",qtd:"",aditivo:false,funcao:"",nomeDecl:"",acucarAdic:false,gluten:false,lactose:false,lactase:false,ogm:false,ogmDeriv:"",gene:"",ogmComp:"",ogmItem:"",ogmExpr:"contem",omitir:false,opcional:false,extras:[],glutenR:"",lactoseR:"",alergR:"",etapa:"tanque",alerg:{},comp:{},fonte:""},o)}
 function novoRotulo(tipo){
   return {id:novoUUID(),clienteId:"",tipo,criado:Date.now(),atualizado:Date.now(),exemplo:false,
     produto:{nome:"",denominacao:"",marca:"",descricao:"",cliente:"",origem:"",conservacao:"",validade:"",validadeAberto:"",lote:"",conteudo:"",unidade:"g",estado:"solido",densidade:"1",especieLeite:"",temDrenado:"",drenado:""},
@@ -359,6 +360,7 @@ function novoRotulo(tipo){
     ingredientes:[novoIng()],
     balanco:{subproduto:"",nomeBase:"",modo:"sub",massaBase:"",massaSub:"",rendimento:"",comp:{}},
     concentracao:{massaFinal:""},
+    lactase:{modo:"residual",residualMg:"",pct:"",fonte:""},
     porcao:{anexo:"",ref:"",medida:"",individualMedida:""},
     painel:{largura:"",altura:""},
     tabela:{modelos:["vertical"],reduzida:false,lactoseGal:false,largLinear:"90"},
@@ -422,6 +424,31 @@ function calc(R){
     extra={massaEntrada:tot.massa,evaporado:tot.massa-massaFinal,fator:massaFinal>0?tot.massa/massaFinal:0};
   }
   const per100g={}; KEYS.forEach(k=>per100g[k]=massaFinal>0?N[k]/massaFinal*100:0);
+  // Lactase: a enzima hidrolisa a lactose dos ingredientes durante o processo. A regra vale só para o produto final;
+  // o ingrediente (ex.: leite) continua cadastrado como fonte de lactose.
+  // Lactose (342,30) + água (18,02) → glicose (180,16) + galactose (180,16): cada 1 g hidrolisado vira 0,5263 g de galactose
+  // e 0,5263 g de glicose (os açúcares totais e os carboidratos sobem 0,0526 g pela água incorporada).
+  let hid=null;
+  const enzLac=ings.filter(i=>i.lactase);
+  if(enzLac.length){
+    const L=R.lactase||{}, fontesSem=ings.filter(i=>i.lactose&&!i.lactase&&(i.comp.lac===""||i.comp.lac==null));
+    const antes=per100g.lac; let depois=null;
+    if(L.modo==="pct"){
+      if(String(L.pct??"").trim()==="") W.push("Há lactase na formulação: informe o % de hidrólise da lactose (ou a lactose que fica no produto, pelo laudo). Enquanto isso, o sistema considera a lactose dos ingredientes, sem hidrólise.");
+      else if(fontesSem.length) W.push(`Para usar o % de hidrólise, informe a lactose (g/100 g) de ${fontesSem.map(i=>`“${i.nome}”`).join(", ")}. Ou informe direto a lactose que fica no produto (laudo).`);
+      else depois=antes*(1-Math.min(100,Math.max(0,nz(L.pct)))/100);
+    } else {
+      if(String(L.residualMg??"").trim()==="") W.push(`Há lactase na formulação: informe a lactose que fica no produto final (mg por 100 ${liquido?"ml":"g"}, pelo laudo). Enquanto isso, o sistema considera a lactose dos ingredientes, sem hidrólise.`);
+      else depois=nz(L.residualMg)/1000/(liquido?dens:1);
+    }
+    if(depois!=null){
+      if(antes>0&&depois>antes+1e-9) W.push("A lactose informada para o produto final é maior do que a que entrou pelos ingredientes. Confira o laudo e a lactose dos ingredientes.");
+      const H=Math.max(0,antes-depois);
+      if(fontesSem.length&&L.modo!=="pct") W.push(`Informe a lactose (g/100 g) de ${fontesSem.map(i=>`“${i.nome}”`).join(", ")} para o sistema calcular a galactose formada pela lactase (ela entra na tabela quando há alegação sobre lactose).`);
+      per100g.lac=depois; per100g.gal=(per100g.gal||0)+H*0.5263; per100g.acTot+=H*0.0526; per100g.carb+=H*0.0526;
+      hid={antes,depois,H,gal:H*0.5263,glic:H*0.5263,agua:H*0.0526,modo:L.modo,enzimas:enzLac.map(i=>i.nome),semFonte:fontesSem.length>0};
+    }
+  }
   const b100={}; KEYS.forEach(k=>b100[k]=per100g[k]*(liquido?dens:1));
   const un=liquido?"ml":"g";
   // embalagem e porção
@@ -524,7 +551,8 @@ function calc(R){
   if(modo16==="cond"&&temOpc==="nao"&&acima.length) I.push("Produto só com ingredientes obrigatórios do RTIQ/PIQ: a lupa fica vedada (Anexo XVI, IN 75/2020; Anvisa, P&R 168).");
   if(modo16==="cond"&&opc.some(i=>!KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null)&&!i.acucarAdic)) W.push("Há ingrediente opcional sem composição nutricional: o sistema não consegue saber se ele altera açúcares adicionados, gordura saturada ou sódio.");
   // lactose
-  const fontesLac=ings.filter(i=>i.lactose); const semValorLac=fontesLac.filter(i=>i.comp.lac===""||i.comp.lac==null);
+  const lacFinalConhecida = !!hid && hid.modo!=="pct"; // laudo do produto final
+  const fontesLac=ings.filter(i=>i.lactose&&!i.lactase); const semValorLac=lacFinalConhecida?[]:fontesLac.filter(i=>i.comp.lac===""||i.comp.lac==null);
   let lactose="";
   if(b100.lac>0.1+1e-9) lactose="CONTÉM LACTOSE";
   else if(semValorLac.length){lactose="CONTÉM LACTOSE"; W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
@@ -538,7 +566,7 @@ function calc(R){
     if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`); }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
-  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area};
+  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area,hid};
 }
 // Anexo III, IN 75/2020
 function arred(v,u){
@@ -1434,7 +1462,7 @@ function viewFormulacao(R,C){
     const tags=[]; if(i.aditivo)tags.push(`<span class="chip neutral">aditivo${i.funcao?" · "+esc(i.funcao):""}</span>`);
     if(R.tipo==="balanco")tags.push(`<span class="chip neutral">${i.etapa==="depois"?"adicionado depois":"no tanque"}</span>`);
     Object.entries(i.alerg).forEach(([k,v])=>{if(v)tags.push(`<span class="chip warn">${esc((ALERG.find(a=>a[0]===k)||[k,k])[1].replace(/ \(.*\)$/,""))}${v==="p"?" (pode conter)":""}</span>`)});
-    if(i.opcional&&R.lupa.anexo16==="cond"&&R.lupa.temOpcional==="sim")tags.push(`<span class="chip neutral">opcional</span>`); if(i.lactose)tags.push(`<span class="chip warn">lactose: sim</span>`); if(i.gluten)tags.push(`<span class="chip warn">glúten</span>`); if(i.ogm)tags.push(`<span class="chip bad">OGM</span>`);
+    if(i.opcional&&R.lupa.anexo16==="cond"&&R.lupa.temOpcional==="sim")tags.push(`<span class="chip neutral">opcional</span>`); if(i.lactose)tags.push(`<span class="chip warn">lactose: sim</span>`); if(i.lactase)tags.push(`<span class="chip">lactase · hidrolisa a lactose</span>`); if(i.gluten)tags.push(`<span class="chip warn">glúten</span>`); if(i.ogm)tags.push(`<span class="chip bad">OGM</span>`);
     const autoAd = i.acucarAdic&&(i.comp.acAdd===""||i.comp.acAdd==null)?br(compOf(i).acAdd,2)+" (auto)":"";
     return `<details class="ing" data-ing="${i.id}" ${S.open[i.id]?"open":""}>
       <summary><span class="idx">${String(ix+1).padStart(2,"0")}</span><span><span class="nm">${esc(i.nome||"Novo ingrediente")}</span><br><span class="small muted num">${i.qtd?br(nz(i.qtd),3)+" g":"sem quantidade"} · ${br(pct,2)}%</span></span><span class="meta">${tags.join("")}</span></summary>
@@ -1464,6 +1492,7 @@ function viewFormulacao(R,C){
         <div class="stack"><h3>Declarações</h3>
           <div class="grid2">
             ${sel(p+".glutenR","Glúten",[["","Selecionar…"],["nao","Não contém glúten"],["sim","Contém glúten"]],{re:true,hint:"Obrigatório responder (Lei 10.674/2003)."})}
+            ${chk(p+".lactase","É a enzima lactase (hidrolisa a lactose do produto)",{hint:"A lactose dos outros ingredientes continua cadastrada; a hidrólise é aplicada só no produto final (card “Hidrólise da lactose”)."})}
             ${sel(p+".lactoseR","Lactose",[["","Selecionar…"],["nao","Não contém lactose"],["sim","Contém lactose"]],{re:true,hint:"Obrigatório responder. Se contém, informe a quantidade (g/100 g) em “Nutrientes não obrigatórios” para o sistema decidir sobre “CONTÉM LACTOSE”."})}
             ${sel(p+".ogmTipo","Transgênico (OGM)",[["","Não é nem contém transgênico"],["ing","O ingrediente é transgênico"],["deriv","Contém derivados de transgênicos"]],{re:true,hint:"Decreto 4.680/2003. Ex.: peito de peru não é transgênico, mas pode conter proteína de soja transgênica."})}
             ${i.ogmTipo==="deriv"?`</div><div class="grid2">
@@ -1524,10 +1553,23 @@ function viewFormulacao(R,C){
     </div>
     <div class="card stack"><h2>Espécie do leite</h2>
       <div class="grid2">${inp("produto.especieLeite","Espécie do leite (se não for vaca)",{ph:temLeite?"vaca":"",hint:"Usado na advertência de alérgicos: ex. “cabra” vira “LEITE DE CABRA”. Em branco = vaca."})}</div></div>
+    ${R.ingredientes.some(i=>i.lactase)?lactaseCard(R,C):""}
     ${proc}
     <div class="card stack"><div class="sec-t"><h2>Resultado do cálculo</h2><span class="small muted">Atualiza enquanto você digita</span></div><div id="resumo">${resumoHTML(C)}</div></div>
   </div>`;
 }
+function lactaseCard(R,C){const L=R.lactase;
+  return `<div class="card stack"><div><span class="eyebrow">Lactase</span><h2>Hidrólise da lactose</h2>
+    <p class="muted small">A lactase quebra a lactose dos ingredientes em glicose e galactose durante o processo. O leite (e os outros ingredientes) continuam cadastrados com lactose; aqui você informa quanto de lactose <b>fica no produto final</b>. É esse valor que decide o “CONTÉM LACTOSE” e as alegações (zero lactose até 100 mg/100 ${C.un}; baixo teor até 1 g/100 ${C.un}, RDC 135/2017).</p></div>
+    <div class="grid3">${sel("lactase.modo","Como informar",[["residual","Lactose que fica no produto (laudo)"],["pct","% de hidrólise da lactose"]],{re:true})}
+      ${L.modo==="pct"?inp("lactase.pct","Hidrólise da lactose (%)",{n:true,hint:"Ex.: 99,5. Precisa da lactose dos ingredientes."}):inp("lactase.residualMg",`Lactose no produto final (mg por 100 ${C.un})`,{n:true,hint:"Do laudo do produto pronto."})}
+      ${inp("lactase.fonte","Fonte (laudo, ficha da enzima…)",{ph:"Ex.: laudo nº 123/2026"})}</div>
+    <div class="sumline" id="lacsum">${lacSum(C)}</div>
+    <p class="small faint">Uma alegação de lactose (zero, baixo teor) deve ser comprovada pela análise do produto final.</p>
+  </div>`}
+function lacSum(C){const h=C.hid; if(!h) return `<span class="muted">Sem hidrólise aplicada ainda: informe o valor acima.</span>`;
+  const mg=v=>`${br(v*1000*(C.liquido?C.dens:1),0)} mg`;
+  return `<span>Lactose dos ingredientes: <b>${h.semFonte&&!h.antes?"não informada":mg(h.antes)}</b></span><span>Depois da lactase: <b>${mg(h.depois)}</b> por 100 ${C.un}</span><span>Galactose formada: <b>${br(h.gal*(C.liquido?C.dens:1),2)} g</b></span><span>Glicose formada: <b>${br(h.glic*(C.liquido?C.dens:1),2)} g</b></span><span>Resultado: <b>${C.lactose?"CONTÉM LACTOSE":h.depois<=0.1+1e-9?"até 100 mg (pode ser zero lactose)":h.depois<=1+1e-9?"até 1 g (pode ser baixo teor)":"acima de 1 g"}</b></span>`}
 function balTanque(C){const X=C.extra; if(!X.tanqueIngs) return "";
   return X.tanqueIngs.length? `${X.tanqueIngs.map(([n,q])=>`${esc(n)}: <b>${br(q,1)} g</b>`).join(" · ")} → total <b>${br(X.massaTanque,1)} g</b>` : `<span style="color:var(--err,#b42318)">Nenhum ingrediente marcado como “no tanque”.</span>`}
 function balSum(C){const X=C.extra; if(!X.tanqueN) return "";
@@ -1704,6 +1746,7 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   kv("Ingredientes",T.ing,{rich:true});
   kv("Alérgicos",T.alg||"Não contém alergênicos de declaração obrigatória.",{bold:!!T.alg});
   if(T.lac) kv("Lactose",T.lac,{bold:true});
+  if(C.hid) kv("Lactase",`Lactose hidrolisada pela lactase (${C.hid.enzimas.join(", ")}): ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg de lactose por 100 ${C.un} no produto final${R.lactase.fonte?` (${R.lactase.fonte})`:""}.`);
   kv("Glúten",T.gluten,{bold:true});
   if(T.ogm){ const hT=Math.max(simboloT(C).h*10,4.2)+2; need(hT); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...CINZ);doc.text("Transgênico",M,y+3.4); y+=pdfTFrase(doc,C,T,M+LW,y,W-LW)+2; }
   // tabela
@@ -1867,9 +1910,11 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   KK.forEach(k=>{const d=NUT[k]; const rr=s3.rowCount+1; rowOf[k]=rr;
     const f100=`${colK(k)}${rN}/$B$${rMF}*100`+(C.liquido?`*$B$${rDen}`:"");
     const ln=C.linhas.find(x=>x.k===k)||{};
-    s3.addRow([`${d.l} (${d.u})`,F(f100,C.b100[k]),F(`B${rr}*$B$${rPor}/100`,C.pv[k]),d.vdr||"",d.vdr?F(`ROUND(C${rr}/D${rr}*100,0)`,C.pv[k]/d.vdr*100):"",ln.v100??"(não declarado)",ln.vp??"",ln.vd??""]).font=A(9)});
+    const hk=C.hid&&["lac","gal","acTot","carb"].includes(k);
+    s3.addRow([`${d.l} (${d.u})${hk?" — após a lactase":""}`,hk?C.b100[k]:F(f100,C.b100[k]),F(`B${rr}*$B$${rPor}/100`,C.pv[k]),d.vdr||"",d.vdr?F(`ROUND(C${rr}/D${rr}*100,0)`,C.pv[k]/d.vdr*100):"",ln.v100??"(não declarado)",ln.vp??"",ln.vd??""]).font=A(9)});
   {const rr=s3.rowCount+1; const g=k=>rowOf[k];
     s3.addRow(["Valor energético (kcal)",F(`4*B${g("carb")}+4*B${g("prot")}+9*B${g("gord")}+2*B${g("fibra")}`,C.e100),F(`4*C${g("carb")}+4*C${g("prot")}+9*C${g("gord")}+2*C${g("fibra")}`,C.eP),2000,F(`ROUND(C${rr}/D${rr}*100,0)`,C.eP/20),C.linhas[0].v100,C.linhas[0].vp,C.linhas[0].vd]).font=A(9,true);}
+  if(C.hid) nota(`Lactase: lactose do produto final = ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg/100 ${C.un} (${C.hid.modo==="pct"?`hidrólise de ${R.lactase.pct}%`:"informada pelo laudo"}). Cada 1 g de lactose hidrolisada vira 0,5263 g de galactose e 0,5263 g de glicose; açúcares totais e carboidratos sobem 0,0526 g (água incorporada).`);
   nota("Valor energético = 4 × (carboidratos + proteínas) + 9 × gorduras totais + 2 × fibras (Anexo XXII, IN 75/2020).");
   nota("As colunas “Rótulo” trazem os valores já arredondados pelo sistema (Anexo III) e zerados quando não significativos (Anexo IV).");
   s3.addRow([]);
@@ -2112,7 +2157,7 @@ function busca(lista,q,fn,max=12){const f=fold(q).split(/\s+/).filter(Boolean);i
 /* ===================== EVENTOS ===================== */
 function updateLive(){ if(!S.R||S.R.kind==="validacao") return;
   const C=calc(S.R); const r=$("#resumo"); if(r) r.innerHTML=resumoHTML(C);
-  const b=$("#balsum"); if(b) b.innerHTML=balSum(C); const bt=$("#bal-tanque"); if(bt) bt.innerHTML=balTanque(C); const c=$("#concsum"); if(c) c.innerHTML=concSum(C);
+  const b=$("#balsum"); if(b) b.innerHTML=balSum(C); const ls=$("#lacsum"); if(ls) ls.innerHTML=lacSum(C); const bt=$("#bal-tanque"); if(bt) bt.innerHTML=balTanque(C); const c=$("#concsum"); if(c) c.innerHTML=concSum(C);
 }
 function afterRender(){
   document.querySelectorAll("details.ing").forEach(d=>d.addEventListener("toggle",()=>{S.open[d.dataset.ing]=d.open}));
