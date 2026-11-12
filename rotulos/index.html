@@ -143,6 +143,8 @@ table.calc td.num{font-family:var(--f-num)}
 .vitem{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;padding:12px 0 12px 12px;border-top:1px solid var(--line);border-left:3px solid var(--line)}
 .vitem.c{border-left-color:var(--accent)} .vitem.nc{border-left-color:var(--bad)} .vitem.na{border-left-color:var(--muted)}
 .vitem textarea{min-height:64px}
+.vant{font-size:.8rem;color:var(--bad);background:color-mix(in srgb,var(--bad) 7%,transparent);border-radius:8px;padding:6px 8px}
+.vhist summary{cursor:pointer;font-size:.9rem} .vhist summary .bad{color:var(--bad)}
 .vesp{background:var(--surface-2);border-radius:8px;padding:8px 10px;font-size:.9rem;display:flex;flex-direction:column;gap:4px}
 .vvis{max-width:100%;overflow:auto;align-self:flex-start;padding:6px}.vvis svg{max-width:100%;height:auto}
 .vwrap.lado{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,42%);gap:16px;align-items:start}
@@ -1134,8 +1136,21 @@ const richHTML=s=>parseRich(s).map(x=>x.i?`<i>${esc(x.t)}</i>`:esc(x.t)).join(""
 function novaValidacaoSis(row){const V=novaValidacao(); V.origem="sistema"; refazerRef(V,row); return V}
 function refazerRef(V,row){const ref=JSON.parse(JSON.stringify(row.dados)); V.rotuloId=row.id; V.ref=ref; V.refEm=new Date().toISOString();
   V.clienteId=row.cliente_id||V.clienteId||""; V.produto=ref.produto?.nome||row.nome||""; V.marca=ref.produto?.marca||""; return V}
-function novaValidacao(){const V={kind:"validacao",id:novoUUID(),clienteId:"",empresa:"",produto:"",marca:"",arte:"",data:new Date().toISOString().slice(0,10),responsavel:"Isadora Andrade",itens:{},extras:[],obsGerais:"",imagens:[]}; return migrarV(V)}
-function migrarV(V){V.itens=V.itens||{}; if(V.origem!=="sistema") VAL_GRUPOS.forEach(([,l])=>l.forEach(([k])=>{V.itens[k]=Object.assign({st:"",obs:""},V.itens[k]||{})})); V.extras=V.extras||[]; V.imagens=V.imagens||[]; return V}
+function novaValidacao(){const V={kind:"validacao",id:novoUUID(),clienteId:"",empresa:"",produto:"",marca:"",arte:"",data:new Date().toISOString().slice(0,10),responsavel:"Isadora Andrade",itens:{},extras:[],obsGerais:"",imagens:[],versao:1,historico:[],status:"",aprovadoEm:""}; return migrarV(V)}
+function migrarV(V){V.itens=V.itens||{}; if(V.origem!=="sistema") VAL_GRUPOS.forEach(([,l])=>l.forEach(([k])=>{V.itens[k]=Object.assign({st:"",obs:""},V.itens[k]||{})})); V.extras=V.extras||[]; V.imagens=V.imagens||[]; V.versao=V.versao||1; V.historico=V.historico||[]; V.status=V.status||""; V.aprovadoEm=V.aprovadoEm||""; return V}
+const ordV=v=>`${v}ª versão`;
+const fmtD=d=>d?String(d).slice(0,10).split("-").reverse().join("/"):"";
+const VST_TXT={c:"Conforme",nc:"Não conforme",na:"Não se aplica","":"Não conferido"};
+// Nova versão da arte: guarda a versão atual no histórico e recomeça a conferência dos itens não conformes
+function novaVersaoV(V){
+  const {it,n}=resumoV(V);
+  V.historico.push({versao:V.versao,data:V.data,arte:V.arte,responsavel:V.responsavel,obsGerais:V.obsGerais,fechadaEm:new Date().toISOString(),
+    n:{...n,total:it.length}, itens:it.map(x=>({g:x.g,t:x.t,st:x.o.st||"",obs:x.o.obs||""})),
+    artes:ARTE.vid===V.id?ARTE.lista.filter(a=>!a.local).map(a=>a.id):[], imagens:(V.imagens||[]).slice()});
+  it.forEach(x=>{ if(x.o.st==="nc"){ x.o.ant=(x.o.ant||[]).concat({v:V.versao,st:"nc",obs:x.o.obs||""}); x.o.st=""; x.o.obs=""; } });
+  V.versao++; V.arte=""; V.obsGerais=""; V.imagens=[]; V.data=new Date().toISOString().slice(0,10); V.status=""; V.aprovadoEm="";
+}
+const podeAprovarV=n=>n.nc===0&&n.p===0&&(n.c+n.na)>0;
 // todos os itens na ordem do relatório: [grupo, chave/obj, título, dica]
 function itensV(V){const out=[];
   if(V.origem==="sistema"&&V.ref){ let L=[]; try{L=itensDoRotulo(V.ref)}catch(e){console.error(e)} L.forEach(x=>{V.itens[x.k]=Object.assign({st:"",obs:""},V.itens[x.k]||{}); out.push({...x,h:"",o:V.itens[x.k],path:"itens."+x.k})}); }
@@ -1149,6 +1164,7 @@ function viewValidacao(V){
   const segV=x=>`<div class="seg vst">${Object.entries(VAL_ST).filter(([k])=>!(sis&&k==="na"&&x.extra==null)).map(([k,[t]])=>`<button class="${x.o.st===k?"on "+k:""}" data-vst="${x.path}|${k}">${t}</button>`).join("")}</div>`;
   const linha=x=>`<div class="vitem ${x.o.st||"p"}"><div class="stack" style="gap:6px"><div><b>${esc(x.t)}</b>${x.h?`<div class="hint">${esc(x.h)}</div>`:""}</div>
       ${x.esp?`<div class="vesp"><span class="eyebrow">Deve constar na arte</span><div>${x.rich?richHTML(x.esp):esc(x.esp)}</div>${x.nota?`<div class="hint">${esc(x.nota)}</div>`:""}${x.vis?`<div class="paper vvis">${svgOf(x.vis,3.7795)}</div>`:""}</div>`:""}
+      ${(x.o.ant||[]).length?`<div class="vant">${x.o.ant.map(a=>`<div><b>${ordV(a.v)}:</b> ${VST_TXT[a.st]||""}${a.obs?` — ${esc(a.obs)}`:""}</div>`).join("")}</div>`:""}
       ${x.extra!=null?`<label class="f">Item<input type="text" data-bind="${x.path}.titulo" value="${esc(x.o.titulo||"")}" placeholder="Ex.: Selo de qualidade"></label>`:""}
       ${sis&&x.esp&&x.o.st==="nc"?`<label class="check small"><input type="checkbox" data-vesp="${x.path}" ${x.o.semEsp?"":"checked"}><span>No relatório, mostrar o que deve constar${x.vis?" (com o desenho e o tamanho)":""}</span></label>`:""}
       <div class="row">${segV(x)}${x.extra!=null?`<button class="mini danger" data-vdel="${x.extra}">Remover</button>`:""}</div></div>
@@ -1156,17 +1172,18 @@ function viewValidacao(V){
   return `<header class="top">
     <div class="brand"><span class="eyebrow">Validação de rótulo · Consultoria Isadora Andrade</span>
       <h1>${esc(V.produto||"Nova validação")}</h1>
-      <div class="row">${nomeEmpresaV(V)?`<span class="chip neutral">${esc(nomeEmpresaV(V))}</span>`:""}<span id="savest" class="chip neutral"></span></div></div>
+      <div class="row">${nomeEmpresaV(V)?`<span class="chip neutral">${esc(nomeEmpresaV(V))}</span>`:""}<span class="chip neutral">${ordV(V.versao)} da arte</span>${V.status==="aprovado"?`<span class="chip">Aprovado em ${fmtD(V.aprovadoEm)}</span>`:""}<span id="savest" class="chip neutral"></span></div></div>
     <div class="row"><button class="ghost" data-act="home">Todas as validações</button></div></header>
   <div class="vwrap ${S.vLado&&ARTE.lista.length?"lado":""}"><main id="main" class="stack">
-    <div class="card stack"><h2>Rótulo analisado</h2>
+    ${V.status==="aprovado"?`<div class="alert info" style="align-items:center;flex-wrap:wrap"><span><b>Rótulo aprovado</b> em ${fmtD(V.aprovadoEm)}, na ${ordV(V.versao)} da arte. Ele saiu da lista de validações em andamento.</span><button class="mini" data-act="vreabrir">Reabrir validação</button></div>`:""}
+    <div class="card stack"><h2>Rótulo analisado · ${ordV(V.versao)}</h2>
       ${sis?`<div class="alert info" style="flex-wrap:wrap;align-items:center"><span>Arte da gráfica conferida com o rótulo <b>${esc(V.ref?.produto?.nome||V.produto)}</b>${V.clienteId?` (${esc(nomeCliente(V.clienteId))})`:""}, dados de ${new Date(V.refEm).toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}.</span>${DBR.lista.some(r=>r.id===V.rotuloId)?`<button class="mini" data-act="vref">Atualizar com o rótulo atual</button>`:`<span class="small muted">O rótulo original foi excluído; os dados acima continuam guardados.</span>`}</div>`:""}
       <div class="grid3">
       ${sis?"":sel("clienteId","Cliente",[["","Não é cliente (digitar a empresa)"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===V.clienteId).map(c=>[c.id,c.nome])],{re:true})}
       ${V.clienteId||sis?"":inp("empresa","Empresa")}
       ${inp("produto","Produto")}
       ${inp("marca","Marca")}
-      ${inp("arte","Arte analisada",{ph:"Ex.: arte v2 enviada em 03/11/2026"})}
+      ${inp("arte","Arte analisada",{ph:`Ex.: ${ordV(V.versao)} recebida em ${fmtD(new Date().toISOString())}`})}
       <label class="f">Data da validação<input type="date" data-bind="data" value="${esc(V.data||"")}"></label>
       ${inp("responsavel","Responsável pela validação")}
     </div>
@@ -1180,6 +1197,14 @@ function viewValidacao(V){
     <div class="card stack"><div><h2>Relatório para o cliente</h2><p class="muted small">PDF objetivo: conclusão, não conformidades com as observações, observações gerais e a arte.</p></div>
       ${n.p?`<div class="alert warn"><span>${n.p} item(ns) ainda sem conferir. Eles saem no relatório como “Não conferido”.</span></div>`:""}
       <div class="row"><button class="primary" data-act="vrel">Gerar relatório (PDF)</button></div></div>
+    ${V.status==="aprovado"?"":`<div class="card stack"><div><h2>Próximo passo</h2><p class="muted small">Mandou o relatório e a gráfica corrigiu? Receba a nova versão da arte aqui mesmo: a ${ordV(V.versao)} fica guardada no histórico, os itens não conformes voltam para “sem conferir” (com o que foi apontado) e os conformes continuam marcados.</p></div>
+      <div class="row"><button data-act="vnova">Receber nova versão da arte (${ordV(V.versao+1)})</button>
+        <button class="primary" data-act="vaprovar" ${podeAprovarV(n)?"":"disabled"}>Rótulo aprovado</button></div>
+      ${podeAprovarV(n)?`<span class="small muted">Todos os itens estão conformes: dá para aprovar.</span>`:`<span class="small muted">O botão “Rótulo aprovado” libera quando todos os itens estiverem conformes (${n.nc} não conforme(s), ${n.p} sem conferir).</span>`}</div>`}
+    ${V.historico.length?`<div class="card stack"><h2>Versões anteriores</h2>${V.historico.slice().reverse().map(h=>{const nc=h.itens.filter(x=>x.st==="nc"); const art=(ARTE.antigas||[]).filter(a=>(h.artes||[]).includes(a.id)); return `<details class="vhist"><summary><b>${ordV(h.versao)}</b> · validada em ${fmtD(h.data)}${h.arte?` · ${esc(h.arte)}`:""} · <span class="${h.n.nc?"bad":""}">${h.n.nc} não conforme(s)</span></summary>
+        <div class="stack" style="gap:6px;margin-top:8px">${nc.length?nc.map(x=>`<div class="small"><b>${esc(x.t)}</b>${x.obs?` — ${esc(x.obs)}`:""}</div>`).join(""):`<span class="small muted">Sem não conformidades.</span>`}
+        ${h.obsGerais?`<div class="small muted">Observações gerais: ${esc(h.obsGerais)}</div>`:""}
+        ${art.length||(h.imagens||[]).length?`<div class="row vimgs">${art.map(a=>`<a class="vthumb" href="${a.url}" target="_blank" title="${esc(a.nome)}"><img src="${a.url}" alt="${esc(a.nome)}"></a>`).join("")}${(h.imagens||[]).map(src=>`<a class="vthumb" href="${src}" target="_blank"><img src="${src}" alt="Arte"></a>`).join("")}</div>`:""}</div></details>`}).join("")}</div>`:""}
   </main>${S.vLado?painelArte():""}</div>
   ${ARTE.lista.length&&!S.vLado?`<button class="vfab primary" data-act="vlado">Ver a arte ao lado</button>`:""}`;
 }
@@ -1188,7 +1213,8 @@ function concluirV(n,sis){return n.nc?{t:sis?"ARTE COM NÃO CONFORMIDADES":"RÓT
   :{t:sis?"ARTE CONFORME":"RÓTULO CONFORME",d:sis?"A arte está de acordo com a ficha do rótulo em todos os itens conferidos.":"Os itens verificados estão conformes com a legislação de referência.",cor:[27,106,80]}}
 async function relatorioValidacao(V){
   const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15, W=210-2*M, BASE=297-18;
-  const {it,n}=resumoV(V); const cc=concluirV(n,V.origem==="sistema"); const logo=await carregarLogo();
+  const {it,n}=resumoV(V); let cc=concluirV(n,V.origem==="sistema"); const logo=await carregarLogo();
+  if(V.status==="aprovado") cc={t:"RÓTULO APROVADO",d:`Rótulo aprovado em ${fmtD(V.aprovadoEm)}, na ${ordV(V.versao)} da arte: todos os itens conferidos estão conformes.`,cor:[27,106,80]};
   const dt=V.data?V.data.split("-").reverse().join("/"):new Date().toLocaleDateString("pt-BR");
   doc.setFillColor(...LARANJA); doc.rect(0,0,210,4,"F"); if(logo) doc.addImage(logo.url,"JPEG",210-M-28,9,28,28);
   doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(...LARANJA); doc.text("Consultoria Isadora Andrade",M,16);
@@ -1200,7 +1226,7 @@ async function relatorioValidacao(V){
     doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.3);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);ls.forEach((l,i)=>doc.text(l,M+42,y+3.3+i*4.4));y+=ls.length*4.4+1.2};
   const h2=t=>{need(14);y+=4;doc.setFont("helvetica","bold");doc.setFontSize(10.5);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.setLineWidth(0.3);doc.line(M,y+6,M+W,y+6);y+=9};
   const sis=V.origem==="sistema";
-  kv("Empresa",nomeEmpresaV(V)); kv("Produto",V.produto); kv("Marca",V.marca); kv("Arte analisada",V.arte); kv("Data da validação",dt); kv("Responsável",V.responsavel);
+  kv("Empresa",nomeEmpresaV(V)); kv("Produto",V.produto); kv("Marca",V.marca); kv("Versão da arte",ordV(V.versao||1)); kv("Arte analisada",V.arte); kv("Data da validação",dt); kv("Responsável",V.responsavel);
   // conclusão
   y+=3; doc.setFontSize(9.5); const dl=doc.splitTextToSize(cc.d,W-10); const hb=11+dl.length*4.4; need(hb+2);
   doc.setDrawColor(...cc.cor); doc.setLineWidth(0.6); doc.roundedRect(M,y,W,hb,2,2,"S");
@@ -1229,6 +1255,9 @@ async function relatorioValidacao(V){
         doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(...CINZA);doc.text("OBSERVAÇÃO",M+3,y+3);y+=4.5;
         doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);ob.forEach(l=>{need(4.4);doc.text(l,M+3,y+3.3);y+=4.4}); y+=3; doc.setDrawColor(...LINHA);doc.setLineWidth(0.2);doc.line(M,y,M+W,y);y+=3; }); } }
   else tabela(it.filter(x=>x.o.st==="nc"),"Não conformidades");
+  if((V.historico||[]).length){ h2("Histórico de versões");
+    V.historico.forEach(h=>{ const nc=h.itens.filter(x=>x.st==="nc"); kv(ordV(h.versao),`Validada em ${fmtD(h.data)}${h.arte?` (${h.arte})`:""}: ${nc.length?`${nc.length} não conformidade(s) — ${nc.map(x=>x.t).join("; ")}`:"sem não conformidades"}.`); });
+    kv(ordV(V.versao),V.status==="aprovado"?`Aprovada em ${fmtD(V.aprovadoEm)}.`:`Esta validação (${n.nc} não conformidade(s)${n.p?`, ${n.p} não conferido(s)`:""}).`); y+=2; }
   if(String(V.obsGerais||"").trim()){h2("Observações gerais"); doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);
     String(V.obsGerais).split(/\n/).forEach(p=>{doc.splitTextToSize(p||" ",W).forEach(l=>{need(4.6);doc.text(l,M,y+3.4);y+=4.6})}); y+=2}
   const artes=ARTE.vid===V.id?ARTE.lista:[];
@@ -1241,7 +1270,7 @@ async function relatorioValidacao(V){
   y+=12; need(14); doc.setDrawColor(...TINTA);doc.setLineWidth(0.3);doc.line(M,y,M+70,y); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...TINTA);doc.text(V.responsavel||"Isadora Andrade",M,y+5);
   doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);doc.text("Consultoria Isadora Andrade",M,y+9.5);
   const np=doc.internal.getNumberOfPages(); for(let i=1;i<=np;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
-    doc.text(`Validação de rótulo · ${V.produto||""} · ${dt}`,M,297-9); doc.text(`Página ${i} de ${np}`,210-M,297-9,{align:"right"})}
+    doc.text(`Validação de rótulo · ${V.produto||""} · ${ordV(V.versao||1)} · ${dt}`,M,297-9); doc.text(`Página ${i} de ${np}`,210-M,297-9,{align:"right"})}
   return doc.output("blob");
 }
 // reduz a imagem (até 1600 px, JPEG) para guardar junto com a validação
@@ -1256,7 +1285,10 @@ async function carregarArtes(V){
   let data=null,error=null; try{({data,error}=await DBR.sb.from(TAB_ARTE).select("id,ordem,nome,imagem,largura_mm,altura_mm").eq("rotulo_id",V.id).order("ordem"))}catch(e){error=e}
   ARTE.carregando=false; ARTE.ok=!error;
   const loc=(V.imagens||[]).map((src,i)=>arteItem({id:"loc"+i,nome:`Imagem ${i+1}`,imagem:src},true));
-  ARTE.lista=(error?[]:(data||[]).sort((a,b)=>a.ordem-b.ordem).map(r=>arteItem(r))).concat(loc);
+  const antigas=new Set((V.historico||[]).flatMap(h=>h.artes||[]));
+  const todas=error?[]:(data||[]).sort((a,b)=>a.ordem-b.ordem); ARTE.total=todas.length;
+  ARTE.antigas=todas.filter(r=>antigas.has(r.id)).map(r=>arteItem(r));
+  ARTE.lista=todas.filter(r=>!antigas.has(r.id)).map(r=>arteItem(r)).concat(loc);
 }
 let PDFJS=null;
 async function pdfjs(){ if(PDFJS) return PDFJS; const m=await import("./vendor/pdfjs/pdf.min.mjs"); m.GlobalWorkerOptions.workerSrc=new URL("./vendor/pdfjs/pdf.worker.min.mjs",location.href).href; return PDFJS=m }
@@ -1279,7 +1311,7 @@ async function adicionarArtes(files){
     try{ if(f.type==="application/pdf"||/\.pdf$/i.test(f.name)) novas.push(...await pdfParaImagens(f,2400,espaco-novas.length));
       else novas.push({nome:f.name,imagem:await lerImagemV(f,2400)}); }catch(e){console.error(e); toast("Não foi possível ler "+f.name+(e&&e.message?": "+e.message:""))} }
   if(!novas.length){setStatus(S.sujo?"pendente":"salvo");return}
-  if(ARTE.ok){ S.sujo=true; await gravar(); const ord=ARTE.lista.filter(a=>!a.local).length;
+  if(ARTE.ok){ S.sujo=true; await gravar(); const ord=Math.max(ARTE.total||0,ARTE.lista.filter(a=>!a.local).length); ARTE.total=ord+novas.length;
     const rows=novas.map((x,i)=>({id:novoUUID(),rotulo_id:V.id,ordem:ord+i,nome:x.nome,imagem:x.imagem,largura_mm:x.largura_mm||null,altura_mm:x.altura_mm||null}));
     let error=null; try{({error}=await DBR.sb.from(TAB_ARTE).insert(rows))}catch(e){error=e}
     if(!error){ if(S.R!==V) return; const loc=ARTE.lista.filter(a=>a.local); ARTE.lista=ARTE.lista.filter(a=>!a.local).concat(rows.map(r=>arteItem(r)),loc); S.vLado=true; S.vPag=ARTE.lista.length-loc.length-rows.length; setStatus("salvo"); render(); toast(`${rows.length} página(s) da arte adicionada(s).`); return; }
@@ -1346,10 +1378,12 @@ function viewInicio(){
         <div class="stack"><b>Rótulo de outra empresa</b><span class="small muted">A empresa fez o próprio rótulo. A conferência usa a lista geral de itens obrigatórios.</span>
           <div class="row"><button data-act="novaVal">Nova validação</button></div></div>
       </div></div>
-    <div class="card stack"><div class="sec-t"><h2>Validações</h2><div class="row">${filtroSel}</div></div>
-    ${vals.length?`<div class="list">${vals.map(r=>{const V=r.dados||{}; const {n}=resumoV(migrarV(JSON.parse(JSON.stringify(V)))); return `<div class="it"><div><b>${esc(r.nome||"Sem nome")}</b><div class="small muted">${V.origem==="sistema"?"Arte da gráfica · ":""}${esc(r.cliente_id?nomeCliente(r.cliente_id):(V.empresa||"Sem empresa"))} · ${V.data?V.data.split("-").reverse().join("/"):""} · ${n.nc?`${n.nc} não conforme(s)`:n.p?`${n.p} sem conferir`:"conforme"}</div></div>
-      <div class="row"><button class="mini" data-abrir="${r.id}">Abrir</button><button class="mini" data-dup="${r.id}">Duplicar</button><button class="mini danger" data-del="${r.id}">Excluir</button></div></div>`}).join("")}</div>`
-    :`<p class="muted small">Nenhuma validação ainda. Clique em “Nova validação” para começar.</p>`}</div></section>`;
+    <div class="card stack"><div class="sec-t"><h2>Validações em andamento</h2><div class="row">${filtroSel}</div></div>
+    ${(()=>{const lin=r=>{const V=r.dados||{}; const {n}=resumoV(migrarV(JSON.parse(JSON.stringify(V)))); return `<div class="it"><div><b>${esc(r.nome||"Sem nome")}</b><div class="small muted">${V.origem==="sistema"?"Arte da gráfica · ":""}${esc(r.cliente_id?nomeCliente(r.cliente_id):(V.empresa||"Sem empresa"))} · ${V.data?V.data.split("-").reverse().join("/"):""} · ${ordV(V.versao||1)}${V.status==="aprovado"?` · aprovado em ${fmtD(V.aprovadoEm)}`:` · ${n.nc?`${n.nc} não conforme(s)`:n.p?`${n.p} sem conferir`:"tudo conforme, falta aprovar"}`}</div></div>
+      <div class="row"><button class="mini" data-abrir="${r.id}">Abrir</button><button class="mini" data-dup="${r.id}">Duplicar</button><button class="mini danger" data-del="${r.id}">Excluir</button></div></div>`};
+      const andam=vals.filter(r=>r.dados?.status!=="aprovado"), aprov=vals.filter(r=>r.dados?.status==="aprovado");
+      return `${andam.length?`<div class="list">${andam.map(lin).join("")}</div>`:`<p class="muted small">${vals.length?"Nenhuma validação em andamento.":"Nenhuma validação ainda. Clique em “Nova validação” para começar."}</p>`}</div>
+      ${aprov.length?`<div class="card stack"><details><summary style="cursor:pointer"><h2 style="display:inline">Rótulos aprovados (${aprov.length})</h2></summary><div class="list" style="margin-top:10px">${aprov.map(lin).join("")}</div></details>`:""}`})()}</div></section>`;
   const glyph={normal:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="12" width="28" height="26" rx="3"/><path d="M15 12V8h16v4M15 22h16M15 28h10"/></svg>`,
     balanco:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 6v34M10 40h26M8 14h30M8 14l-5 12a6 6 0 0 0 10 0zM38 14l-5 12a6 6 0 0 0 10 0z"/></svg>`,
     concentracao:`<svg class="glyph" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 20h30v8a15 12 0 0 1-30 0z"/><path d="M16 14c0-3 3-3 3-6M23 14c0-3 3-3 3-6M30 14c0-3 3-3 3-6"/></svg>`};
@@ -2205,9 +2239,13 @@ document.addEventListener("click",e=>{
   if(d.vpag!=null){S.vPag=+d.vpag;S.vLado=true;render();return}
   if(d.vzoom){S.vZoom=d.vzoom;render();return}
   if(d.act==="vlado"){S.vLado=!S.vLado;render();return}
-  if(d.act==="vrel"){(async()=>{try{b.disabled=true;b.textContent="Gerando…";const blob=await relatorioValidacao(S.R);await saveFile(`validacao-${slug(S.R.produto)}-${S.R.data||"rel"}.pdf`,blob)}catch(e){toast("Não foi possível gerar o relatório: "+(e.message||e))}finally{b.disabled=false;b.textContent="Gerar relatório (PDF)"}})();return}
+  if(d.act==="vnova"){ if(!b.dataset.armed){b.dataset.armed="1";b.textContent=`Confirmar: guardar a ${ordV(S.R.versao)} e receber a ${ordV(S.R.versao+1)}`;setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent=`Receber nova versão da arte (${ordV(S.R.versao+1)})`}},4000);return}
+    novaVersaoV(S.R); salvar(); carregarArtes(S.R).then(()=>{S.vLado=false;render();window.scrollTo(0,0);toast(`${ordV(S.R.versao)} aberta. Envie a nova arte e confira os itens que estavam não conformes.`)}); return}
+  if(d.act==="vaprovar"){const {n}=resumoV(S.R); if(!podeAprovarV(n)) return toast("Ainda há itens não conformes ou sem conferir."); S.R.status="aprovado"; S.R.aprovadoEm=new Date().toISOString().slice(0,10); salvar(); render(); window.scrollTo(0,0); toast("Rótulo aprovado."); return}
+  if(d.act==="vreabrir"){S.R.status=""; S.R.aprovadoEm=""; salvar(); render(); toast("Validação reaberta."); return}
+  if(d.act==="vrel"){(async()=>{try{b.disabled=true;b.textContent="Gerando…";const blob=await relatorioValidacao(S.R);await saveFile(`validacao-${slug(S.R.produto)}-v${S.R.versao||1}-${S.R.data||"rel"}.pdf`,blob)}catch(e){toast("Não foi possível gerar o relatório: "+(e.message||e))}finally{b.disabled=false;b.textContent="Gerar relatório (PDF)"}})();return}
   if(d.abrir){const row=DBR.lista.find(x=>x.id===d.abrir);if(row){const R=JSON.parse(JSON.stringify(row.dados));R.id=row.id;R.clienteId=row.cliente_id||"";S.status="salvo";abrir(R)}return}
-  if(d.dup){const row=DBR.lista.find(x=>x.id===d.dup);if(!row)return;const R=JSON.parse(JSON.stringify(row.dados));R.id=novoUUID();R.clienteId=row.cliente_id||"";if(R.kind==="validacao")R.produto=(R.produto||"")+" (cópia)";else R.produto.nome=(R.produto.nome||"")+" (cópia)";
+  if(d.dup){const row=DBR.lista.find(x=>x.id===d.dup);if(!row)return;const R=JSON.parse(JSON.stringify(row.dados));R.id=novoUUID();R.clienteId=row.cliente_id||"";if(R.kind==="validacao"){R.produto=(R.produto||"")+" (cópia)";R.historico=[];R.versao=1;R.status="";R.aprovadoEm="";R.imagens=[];}else R.produto.nome=(R.produto.nome||"")+" (cópia)";
     DBR.sb.from(TAB).insert(linhaDe(R)).then(async({error})=>{if(error)return toast("Não foi possível duplicar: "+error.message);await carregarLista();render();toast(R.kind==="validacao"?"Validação duplicada.":"Rótulo duplicado.")});return}
   if(d.del){if(b.dataset.armed){DBR.sb.from(TAB).delete().eq("id",d.del).then(({error})=>{if(error)return toast("Não foi possível excluir: "+error.message);DBR.lista=DBR.lista.filter(x=>x.id!==d.del);render();toast("Rótulo excluído.")})}else{b.dataset.armed="1";b.textContent="Confirmar exclusão";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="Excluir"}},3000)}return}
   if(d.act==="home"){(async()=>{await gravar();S.R=null;render();window.scrollTo(0,0)})();return}
