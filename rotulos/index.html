@@ -1399,8 +1399,8 @@ function viewProduto(R,C){
     <div class="grid3">
       ${sel("inspecao.servico","Serviço de inspeção",SERVICOS,{re:true})}
       ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.orgao",R.inspecao.servico==="SIE"?"Estado / órgão":"Município / órgão",{ph:R.inspecao.servico==="SIE"?"Ex.: IMA/MG":"Ex.: Prefeitura de Pomerode"}):""}
-      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regEstab","Nº de registro do estabelecimento",{n:true}):""}
       ${temCarimboModelo3(R.inspecao.servico)?inp("inspecao.regProduto",R.inspecao.servico==="SIE-SC"?"Nº sequencial do rótulo (produto)":"Nº de registro do produto",{n:true,hint:R.inspecao.servico==="SIE-SC"?"Ex.: 8º produto do SIE 2500 → 2500-008.":""}):""}
+      ${R.inspecao.servico&&R.inspecao.servico!=="nenhum"?inp("inspecao.regEstab","Nº de registro do estabelecimento",{n:true}):""}
       ${temCarimboModelo3(R.inspecao.servico)&&carimboSIF(R,calc(R)).escolha?sel("inspecao.diamSIF","Diâmetro do carimbo",[["2","2 cm"],["3","3 cm"]],{re:true,hint:"Embalagens de até 1 kg: 2 ou 3 cm."}):""}
       ${podeSisbi(R.inspecao.servico)?chk("inspecao.sisbi","Estabelecimento aderido ao SISBI-POA",{hint:"Leva também o logotipo do SISBI, além do carimbo."}):""}
       ${["SIE","SIM"].includes(R.inspecao.servico)?inp("inspecao.frase","Frase de registro (obrigatória)",{span:true,hint:"Use o texto exigido pelo regulamento do serviço de inspeção."}):""}
@@ -1667,7 +1667,7 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   kv("Código de barras",R.relatorio?.codigoBarras); kv("Redes sociais e site",(R.relatorio?.redes||"").replace(/\n+/g," · "));
   sec("Fabricante e registro");
   kv("Identificação de origem",origemTexto(R));
-  {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ kv("Serviço de inspeção",I.servico==="SIE-SC"?"SIE/SC (CIDASC)":I.servico+(I.orgao?` (${I.orgao})`:"")); kv("Nº de registro do estabelecimento",I.regEstab); if(I.regProduto) kv("Nº de registro do produto",I.regProduto); kv("Registro",fraseRegistro(R)); if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA","Estabelecimento aderido ao SISBI-POA"); }}
+  {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ kv("Serviço de inspeção",I.servico==="SIE-SC"?"SIE/SC (CIDASC)":I.servico+(I.orgao?` (${I.orgao})`:"")); if(I.regProduto) kv("Nº de registro do produto",I.regProduto); kv("Nº de registro do estabelecimento",I.regEstab); kv("Registro",fraseRegistro(R)); if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA","Estabelecimento aderido ao SISBI-POA"); }}
   sec("Conservação e validade");
   kv("Modo de conservação",P.conservacao); kv("Validade (embalagem fechada)",P.validade,{vazio:"—"}); kv("Validade após aberto",P.validadeAberto,{vazio:"—"});
   sec("Composição");
