@@ -152,6 +152,8 @@ table.calc td.num{font-family:var(--f-num)}
 .vimgs{align-items:flex-start}.vimg{display:flex;flex-direction:column;gap:6px;align-items:flex-start;max-width:180px}.vimg img{max-width:160px;max-height:160px;border:1px solid var(--line);border-radius:6px;background:#fff}
 @media (max-width:720px){.vitem{grid-template-columns:1fr}}
 .mini{font-size:.78rem;padding:5px 9px}
+.bal-passo{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}
+.bal-n{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:.85rem}
 .sumline{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.86rem}
 .sumline b{font-family:var(--f-num)}
 @media (prefers-reduced-motion:no-preference){.card,.type{transition:border-color .15s}}
@@ -317,7 +319,7 @@ const ALG_ST = {c:"Contém o ingrediente",d:"Contém derivados",cd:"Contém o in
 const FUNCOES = ["acidulante","antiespumante","antioxidante","antiumectante","aromatizante","conservador","corante","edulcorante","emulsificante","espessante","estabilizante","fermento químico","gelificante","melhorador de farinha","regulador de acidez","sequestrante","umectante","realçador de sabor","outro"];
 const TIPOS = {
   normal:{t:"Produto normal",d:"Tudo o que entra na formulação vai para o produto final, sem perda nem ganho de massa.",ex:"Queijo fundido, molhos, pães, bebidas misturadas"},
-  balanco:{t:"Com balanço de massa",d:"Parte da massa sai do processo como subproduto (soro, por exemplo), levando nutrientes com ela.",ex:"Queijos, iogurte grego, ricota, requeijão"},
+  balanco:{t:"Com balanço de massa",d:"Parte da massa sai do processo (soro, água, gordura…), levando nutrientes com ela.",ex:"Queijos, iogurte grego, ricota, requeijão"},
   concentracao:{t:"Com concentração",d:"O produto perde água por evaporação e os nutrientes se concentram no rendimento final.",ex:"Doce de leite, geleias, extrato de tomate"}
 };
 
@@ -351,7 +353,7 @@ function novoRotulo(tipo){
     origemD:{expressao:"Fabricado em",razao:"",classificacao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:"",industria:true},
     inspecao:{servico:"",orgao:"",regEstab:"",regProduto:"",frase:""},
     ingredientes:[novoIng()],
-    balanco:{subproduto:"Soro",modo:"massa",massaBase:"",rendimento:"",comp:{}},
+    balanco:{subproduto:"",nomeBase:"",modo:"sub",massaBase:"",massaSub:"",rendimento:"",comp:{}},
     concentracao:{massaFinal:""},
     porcao:{anexo:"",ref:"",medida:"",individualMedida:""},
     painel:{largura:"",altura:""},
@@ -395,13 +397,19 @@ function calc(R){
   if(R.tipo==="normal"){ massaFinal=tot.massa; N=tot.n; }
   else if(R.tipo==="balanco"){
     const T=somar(ings.filter(i=>i.etapa!=="depois")), D=somar(ings.filter(i=>i.etapa==="depois"));
-    const B=R.balanco; let mb = B.modo==="massa"? nz(B.massaBase) : T.massa*nz(B.rendimento)/100;
+    const B=R.balanco; const nomeSai=B.subproduto?String(B.subproduto).toLowerCase():"o que saiu"; const deSai=B.subproduto?`de ${nomeSai}`:"do que saiu";
+    let mb = B.modo==="massa"? nz(B.massaBase) : B.modo==="sub"? (String(B.massaSub??"").trim()===""?0:T.massa-nz(B.massaSub)) : T.massa*nz(B.rendimento)/100;
     const sub=T.massa-mb; const sc={};KEYS.forEach(k=>sc[k]=nz(B.comp[k]));
-    if(!(mb>0)) E.push("Informe a massa (ou o rendimento) do produto obtido após a separação.");
-    else if(sub<0) E.push("A massa do produto-base é maior do que a massa que entrou no tanque. Confira o rendimento.");
+    if(!String(B.subproduto||"").trim()) E.push("Balanço de massa: informe o que saiu no processo (ex.: soro, água, gordura).");
+    if(!(T.massa>0)) E.push("Balanço de massa: marque na Formulação quais ingredientes entram no tanque, antes da separação.");
+    else if(!(mb>0)) E.push(B.modo==="sub"&&String(B.massaSub??"").trim()!==""?`A massa ${deSai} é igual ou maior do que a massa que entrou no tanque. Confira.`:`Informe ${B.modo==="sub"?`a massa ${deSai}`:B.modo==="massa"?"a massa do produto obtido":"o rendimento"} no balanço de massa.`);
+    else if(sub<0) E.push("A massa do produto obtido é maior do que a massa que entrou no tanque. Confira os valores do balanço de massa.");
+    else if(mb/T.massa<0.3) W.push(`Balanço de massa: o produto obtido (${br(mb,1)} g) ficou com só ${br(mb/T.massa*100,1)}% do que entrou no tanque. Confira se a massa ${deSai} não foi informada no lugar da massa do produto.`);
     const Nb={}; KEYS.forEach(k=>{Nb[k]=T.n[k]-sub*sc[k]/100; if(Nb[k]<-1e-6){W.push(`${NUT[k].l}: o ${B.subproduto||"subproduto"} retiraria mais do que entrou (${br(Nb[k],1)}). Valor zerado; confira a composição do ${B.subproduto||"subproduto"}.`);Nb[k]=0} if(Nb[k]<0)Nb[k]=0});
     massaFinal=mb+D.massa; KEYS.forEach(k=>N[k]=Nb[k]+D.n[k]);
-    extra={massaTanque:T.massa,massaBase:mb,massaSub:sub,massaDepois:D.massa,base100:Object.fromEntries(KEYS.map(k=>[k,mb>0?Nb[k]/mb*100:0])),rendPct:T.massa>0?mb/T.massa*100:0};
+    extra={massaTanque:T.massa,massaBase:mb,massaSub:sub,massaDepois:D.massa,base100:Object.fromEntries(KEYS.map(k=>[k,mb>0?Nb[k]/mb*100:0])),rendPct:T.massa>0?mb/T.massa*100:0,
+      tanqueN:T.n,subN:Object.fromEntries(KEYS.map(k=>[k,sub*sc[k]/100])),baseN:Nb,depoisN:D.n,
+      tanqueIngs:ings.filter(i=>i.etapa!=="depois").map(i=>[i.nome||"ingrediente",nz(i.qtd)]),depoisIngs:ings.filter(i=>i.etapa==="depois").map(i=>[i.nome||"ingrediente",nz(i.qtd)])};
     if(!KEYS.some(k=>B.comp[k]!==""&&B.comp[k]!=null)) W.push(`Informe a composição do ${B.subproduto||"subproduto"} retirado; sem ela o balanço considera que ele não leva nutrientes.`);
   } else {
     massaFinal=nz(R.concentracao.massaFinal); N=tot.n;
@@ -1476,14 +1484,20 @@ function viewFormulacao(R,C){
         <div class="row" style="justify-content:space-between"><div class="row"><button class="mini" data-mv="${ix}|-1" ${ix===0?"disabled":""}>↑ Subir</button><button class="mini" data-mv="${ix}|1" ${ix===R.ingredientes.length-1?"disabled":""}>↓ Descer</button><button class="mini" data-dupi="${ix}">Duplicar</button></div><button class="mini danger" data-deli="${ix}">Remover ingrediente</button></div>
       </div></details>`}).join("");
   let proc="";
-  if(R.tipo==="balanco"){const B=R.balanco,X=C.extra;
-    proc=`<div class="card stack"><div><span class="eyebrow">Balanço de massa</span><h2>Separação do ${esc(B.subproduto||"subproduto")}</h2>
-      <p class="muted small">O sistema soma o que entrou no tanque, desconta o que saiu no ${esc(B.subproduto||"subproduto")} e divide pela massa obtida. Ingredientes marcados como “adicionado depois” entram só na mistura final.</p></div>
-      <div class="grid3">${inp("balanco.subproduto","Nome do subproduto retirado")}
-        ${sel("balanco.modo","Como informar o resultado",[["massa","Massa do produto obtido (g)"],["rendimento","Rendimento (% da massa do tanque)"]],{re:true})}
-        ${B.modo==="massa"?inp("balanco.massaBase","Massa do produto obtido (g)",{n:true}):inp("balanco.rendimento","Rendimento (%)",{n:true})}</div>
-      <h3>Composição do ${esc(B.subproduto||"subproduto")} por 100 g</h3>${compInputs("balanco.comp",B.comp,{extras:EXTRA_K.filter(k=>R.ingredientes.some(i=>extrasOf(i).includes(k)))})}
-      <div class="sumline" id="balsum">${balSum(C)}</div>
+  if(R.tipo==="balanco"){const B=R.balanco,X=C.extra; const nomeSai=B.subproduto||"o que saiu";
+    proc=`<div class="card stack"><div><span class="eyebrow">Balanço de massa</span><h2>O que entrou, o que saiu e o que ficou</h2>
+      <p class="muted small">Entra no tanque → parte sai no processo (soro, água, gordura…) levando nutrientes → o que fica é o produto obtido, com uma composição nova. Ingredientes marcados como “adicionado depois” entram só depois da separação.</p></div>
+      <div class="bal-passo"><span class="bal-n">1</span><div><b>Entrou no tanque</b><div class="small muted" id="bal-tanque">${balTanque(C)}</div><div class="small faint">Em cada ingrediente da Formulação, “Em que momento entra?” define se ele está no tanque ou se é adicionado depois.</div></div></div>
+      <div class="bal-passo"><span class="bal-n">2</span><div class="stack" style="gap:10px"><b>Saiu no processo</b>
+        <div class="grid3">${inp("balanco.subproduto","O que saiu?",{ph:"Ex.: soro, água, gordura, creme",re:true,hint:"Obrigatório. É o nome que aparece no balanço e na planilha."})}
+          ${sel("balanco.modo","Como você quer informar a quantidade",[["sub","Massa do que saiu (g)"],["massa","Massa do produto obtido (g)"],["rendimento","Rendimento (% do que entrou no tanque)"]],{re:true})}
+          ${B.modo==="sub"?inp("balanco.massaSub",B.subproduto?`Massa de ${esc(String(B.subproduto).toLowerCase())} que saiu (g)`:"Massa do que saiu (g)",{n:true}):B.modo==="massa"?inp("balanco.massaBase","Massa do produto obtido (g)",{n:true,hint:"Quanto pesou o produto que ficou, depois de retirar o que saiu."}):inp("balanco.rendimento","Rendimento (%)",{n:true})}</div>
+        <h3 style="margin:0">Composição de ${esc(nomeSai)} por 100 g</h3>${compInputs("balanco.comp",B.comp,{extras:EXTRA_K.filter(k=>R.ingredientes.some(i=>extrasOf(i).includes(k)))})}
+      </div></div>
+      <div class="bal-passo"><span class="bal-n">3</span><div class="stack" style="gap:10px"><b>Ficou: o produto obtido</b>
+        <div class="grid3">${inp("balanco.nomeBase","Nome do produto obtido (opcional)",{ph:"Ex.: iogurte, massa de queijo",hint:"Só para facilitar a leitura do balanço."})}</div>
+        <div id="balsum">${balSum(C)}</div>
+      </div></div>
       <details><summary class="small" style="cursor:pointer;color:var(--accent)">Converter litros em gramas</summary><div class="row" style="margin-top:8px"><input type="text" id="cvL" class="n" inputmode="decimal" placeholder="Litros" style="max-width:120px"><span>L ×</span><input type="text" id="cvD" class="n" inputmode="decimal" value="1,032" style="max-width:100px"><span>g/ml =</span><b class="num" id="cvR">—</b></div></details>
     </div>`;}
   if(R.tipo==="concentracao"){
@@ -1509,7 +1523,18 @@ function viewFormulacao(R,C){
     <div class="card stack"><div class="sec-t"><h2>Resultado do cálculo</h2><span class="small muted">Atualiza enquanto você digita</span></div><div id="resumo">${resumoHTML(C)}</div></div>
   </div>`;
 }
-function balSum(C){const X=C.extra;if(!X.massaTanque&&X.massaTanque!==0)return"";return `<span>Tanque: <b>${br(X.massaTanque,1)} g</b></span><span>Produto-base: <b>${br(X.massaBase,1)} g</b></span><span>${esc(S.R.balanco.subproduto||"Subproduto")}: <b>${br(X.massaSub,1)} g</b></span><span>Rendimento: <b>${br(X.rendPct,2)}%</b></span><span>Adicionado depois: <b>${br(X.massaDepois,1)} g</b></span>`}
+function balTanque(C){const X=C.extra; if(!X.tanqueIngs) return "";
+  return X.tanqueIngs.length? `${X.tanqueIngs.map(([n,q])=>`${esc(n)}: <b>${br(q,1)} g</b>`).join(" · ")} → total <b>${br(X.massaTanque,1)} g</b>` : `<span style="color:var(--err,#b42318)">Nenhum ingrediente marcado como “no tanque”.</span>`}
+function balSum(C){const X=C.extra; if(!X.tanqueN) return "";
+  const B=S.R.balanco, sai=esc(B.subproduto||"O que saiu"), fica=esc(B.nomeBase||"Produto obtido");
+  const ok=X.massaBase>0&&X.massaSub>=0;
+  const ks=KEYS.filter(k=>OBRIG.includes(k)||X.tanqueN[k]||nz(B.comp[k]));
+  const f=(v,d=1)=>br(v,d);
+  const linha=k=>`<tr><td>${NUT[k].l} (${NUT[k].u})</td><td>${f(X.tanqueN[k])}</td><td>− ${f(X.subN[k])}</td><td><b>${f(X.baseN[k])}</b></td><td><b>${ok?f(X.baseN[k]/X.massaBase*100,2):"—"}</b></td></tr>`;
+  const conf = ok? `<div class="small">Confere: tanque <b>${f(X.massaTanque)} g</b> = ${fica.toLowerCase()} <b>${f(X.massaBase)} g</b> + ${sai.toLowerCase()} <b>${f(X.massaSub)} g</b> · rendimento <b>${br(X.rendPct,2)}%</b></div>` : "";
+  const depois = X.depoisIngs&&X.depoisIngs.length? `<div class="small muted">Depois da separação entram: ${X.depoisIngs.map(([n,q])=>`${esc(n)} <b>${f(q)} g</b>`).join(" · ")}. Massa final do produto: <b>${f(X.massaBase+X.massaDepois)} g</b> (o resultado do cálculo, abaixo, já inclui esses ingredientes).</div>` : "";
+  return `${conf}<div class="tbl-wrap" style="margin-top:6px"><table class="calc"><thead><tr><th>Nutriente</th><th>Entrou no tanque</th><th>Saiu: ${sai}</th><th>Ficou: ${fica}</th><th>${fica} por 100 g</th></tr></thead><tbody>
+    <tr><td>Massa (g)</td><td>${f(X.massaTanque)}</td><td>− ${f(X.massaSub)}</td><td><b>${f(X.massaBase)}</b></td><td>100</td></tr>${ks.map(linha).join("")}</tbody></table></div>${depois}`}
 function concSum(C){const X=C.extra;return `<span>Entrada: <b>${br(X.massaEntrada,1)} g</b></span><span>Água evaporada: <b>${br(X.evaporado,1)} g</b></span><span>Fator de concentração: <b>${br(X.fator,3)}</b></span>`}
 function alertsHTML(C){return `<div class="alerts">${C.E.map(e=>`<div class="alert err"><b>Falta:</b> <span>${esc(e)}</span></div>`).join("")}${C.W.map(e=>`<div class="alert warn"><b>Atenção:</b> <span>${esc(e)}</span></div>`).join("")}${C.I.map(e=>`<div class="alert info"><span>${esc(e)}</span></div>`).join("")}</div>`}
 function resumoHTML(C){
@@ -1804,9 +1829,12 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   if(bal){const X=C.extra, B=R.balanco;
     const rTq=s3.addRow(["Massa no tanque (g)",F(`SUMIF(${colEt}${c0}:${colEt}${c1},"tanque",B${c0}:B${c1})`,X.massaTanque)]).number;
     const rDp=s3.addRow(["Adicionado depois (g)",F(`SUMIF(${colEt}${c0}:${colEt}${c1},"depois",B${c0}:B${c1})`,X.massaDepois)]).number;
-    const rBase=B.modo==="massa"? s3.addRow(["Massa do produto-base obtida (g) — informada",nz(B.massaBase)]).number
-      : (()=>{const rr=s3.addRow(["Rendimento (%) — informado",nz(B.rendimento)]).number; return s3.addRow(["Massa do produto-base (g)",F(`B${rTq}*B${rr}/100`,X.massaBase)]).number})();
-    const rSub=s3.addRow([`Massa de ${B.subproduto||"subproduto"} retirada (g)`,F(`B${rTq}-B${rBase}`,X.massaSub)]).number;
+    const nomeB=B.nomeBase||"produto obtido";
+    let rBase,rSub;
+    if(B.modo==="sub"){ rSub=s3.addRow([`Massa de ${B.subproduto||"subproduto"} retirada (g) — informada`,nz(B.massaSub)]).number; rBase=s3.addRow([`Massa de ${nomeB} (g)`,F(`B${rTq}-B${rSub}`,X.massaBase)]).number; }
+    else { rBase=B.modo==="massa"? s3.addRow([`Massa de ${nomeB} (g) — informada`,nz(B.massaBase)]).number
+      : (()=>{const rr=s3.addRow(["Rendimento (%) — informado",nz(B.rendimento)]).number; return s3.addRow([`Massa de ${nomeB} (g)`,F(`B${rTq}*B${rr}/100`,X.massaBase)]).number})();
+      rSub=s3.addRow([`Massa de ${B.subproduto||"subproduto"} retirada (g)`,F(`B${rTq}-B${rBase}`,X.massaSub)]).number; }
     rMF=s3.addRow(["Massa final do produto (g)",F(`B${rBase}+B${rDp}`,C.massaFinal)]).number;
     s3.addRow([]); hdrRow(["",`${B.subproduto||"Subproduto"} /100 g (informado)`,"",...KK.map(k=>COMP_LBL[k])]);
     const rSc=s3.addRow(["Composição do subproduto","","",...KK.map(k=>nz(B.comp[k]))]).number;
@@ -2079,7 +2107,7 @@ function busca(lista,q,fn,max=12){const f=fold(q).split(/\s+/).filter(Boolean);i
 /* ===================== EVENTOS ===================== */
 function updateLive(){ if(!S.R||S.R.kind==="validacao") return;
   const C=calc(S.R); const r=$("#resumo"); if(r) r.innerHTML=resumoHTML(C);
-  const b=$("#balsum"); if(b) b.innerHTML=balSum(C); const c=$("#concsum"); if(c) c.innerHTML=concSum(C);
+  const b=$("#balsum"); if(b) b.innerHTML=balSum(C); const bt=$("#bal-tanque"); if(bt) bt.innerHTML=balTanque(C); const c=$("#concsum"); if(c) c.innerHTML=concSum(C);
 }
 function afterRender(){
   document.querySelectorAll("details.ing").forEach(d=>d.addEventListener("toggle",()=>{S.open[d.dataset.ing]=d.open}));
