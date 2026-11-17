@@ -155,6 +155,7 @@ table.calc td.num{font-family:var(--f-num)}
 .vthumb{padding:0;border:none;background:none}
 .vfab{position:fixed;right:18px;bottom:18px;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.18)}
 @media (max-width:900px){.vwrap.lado{grid-template-columns:1fr}.varte{position:static;max-height:none;order:-1}.varte-img{max-height:70vh}}
+.decl-t{border-collapse:collapse;font-size:.86rem;min-width:1000px;width:100%}.decl-t select{min-width:150px}.decl-t th{text-align:left;font-weight:600;color:var(--muted);padding:4px 8px;border-bottom:1px solid var(--line)}.decl-t td{padding:4px 8px;border-bottom:1px solid var(--line)}.decl-t input,.decl-t select{padding:4px 6px}
 .vimgs{align-items:flex-start}.vimg{display:flex;flex-direction:column;gap:6px;align-items:flex-start;max-width:180px}.vimg img{max-width:160px;max-height:160px;border:1px solid var(--line);border-radius:6px;background:#fff}
 @media (max-width:720px){.vitem{grid-template-columns:1fr}}
 .mini{font-size:.78rem;padding:5px 9px}
@@ -486,6 +487,16 @@ function calc(R){
   if(!medida) W.push("Informe a medida caseira da porção (RDC 429/2020, art. 11).");
   const porcTxt=`Porção: ${br(porcao,1)} ${un}${medida?` (${medida})`:""}`;
   const pv={}; KEYS.forEach(k=>pv[k]=b100[k]*porcao/100);
+  // valores declarados no rótulo (margem de segurança ou laudo): substituem o calculado na tabela; a energia é recalculada com eles
+  const calc100={...b100}, calcP={...pv}, decl={};
+  Object.entries(R.declarados||{}).forEach(([k,o])=>{ if(!NUT[k]||!o||String(o.v??"").trim()==="") return; const v=nz(o.v);
+    const porP=o.base!=="100"; if(porP&&!(porcao>0)) return; const v100=porP?v*100/porcao:v;
+    b100[k]=v100; pv[k]=v100*porcao/100; decl[k]={motivo:o.motivo||"margem",base:porP?"porcao":"100",fonte:o.fonte||"",v,v100,vp:pv[k],c100:calc100[k],cP:calcP[k]};
+    const c=porP?calcP[k]:calc100[k];
+    if(o.motivo!=="laudo"&&c>0&&Math.abs(v-c)/c>0.2+1e-9) W.push(`${NUT[k].l}: o valor declarado (${br(v,2)} ${NUT[k].u}) difere ${br(Math.abs(v-c)/c*100,0)}% do calculado (${br(c,2)} ${NUT[k].u}). A tolerância entre o declarado e o produto é de ±20% (RDC 429/2020); confirme por análise.`); });
+  if(Object.keys(decl).length){ const chk2=(a,b,msg)=>{if(b100[a]>b100[b]+1e-6) W.push(msg)};
+    chk2("acAdd","acTot","Valores declarados: açúcares adicionados maiores que os açúcares totais."); chk2("acTot","carb","Valores declarados: açúcares totais maiores que os carboidratos.");
+    if(b100.sat+b100.trans>b100.gord+1e-6) W.push("Valores declarados: gorduras saturadas + trans maiores que as gorduras totais."); }
   const kcal = o=>4*o.carb+4*o.prot+9*o.gord+2*o.fibra;
   const e100=kcal(b100), eP=kcal(pv);
   // quantidades não significativas (Anexo IV, IN 75/2020): por 100 g/ml e por porção
@@ -495,7 +506,7 @@ function calc(R){
   const usados=new Set(ings.flatMap(extrasOf));
   const declarar=EXTRA_K.filter(k=>{
     if(k==="lac"||k==="gal") return claimLac;
-    if(!usados.has(k)) return false;
+    if(!usados.has(k)&&!decl[k]) return false;
     if(["vit","min"].includes(NUT[k].gr) && NUT[k].vdr && pv[k]/NUT[k].vdr*100<5-1e-9){ I.push(`${NUT[k].l} não entra na tabela: a porção tem menos de 5% do VDR (RDC 429/2020, art. 6º, I).`); return false; }
     return true;
   });
@@ -532,13 +543,13 @@ function calc(R){
   let sem=null;
   if(opc.length&&!R._semOpc){
     const R2=JSON.parse(JSON.stringify(R)); R2._semOpc=true; R2.lupa.anexo16="";
-    R2.ingredientes=R2.ingredientes.filter(i=>!i.opcional);
+    R2.ingredientes=R2.ingredientes.filter(i=>!i.opcional); R2.declarados={};
     if(R.tipo==="concentracao") R2.concentracao.massaFinal=String(Math.max(0,massaFinal-opc.reduce((a,i)=>a+nz(i.qtd),0)));
     sem=calc(R2).b100;
   }
   LUPA_K.forEach(([k])=>{
-    comV[k]=b100[k]; semV[k]=sem?sem[k]:b100[k];
-    const d100=sem?b100[k]-sem[k]:0, dP=d100*porcao/100;
+    comV[k]=calc100[k]; semV[k]=sem?sem[k]:calc100[k];
+    const d100=sem?calc100[k]-sem[k]:0, dP=d100*porcao/100;
     contrib[k]=d100;
     // açúcares adicionados: qualquer aumento altera; gordura saturada e sódio: aumento acima das quantidades não significativas (Anexo IV), por 100 g/ml ou por porção
     alt[k]= !!sem && (k==="acAdd" ? d100>1e-9 : (d100>NUT[k].ns+1e-9 || dP>NUT[k].ns+1e-9));
@@ -574,7 +585,7 @@ function calc(R){
     if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`); }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
-  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area,hid};
+  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area,hid,calc100,calcP,decl};
 }
 // Anexo III, IN 75/2020
 function arred(v,u){
@@ -1669,8 +1680,27 @@ function viewPorcao(R,C){
         <tbody>${[["acAdd","Açúcares adicionados",2,"g"],["sat","Gordura saturada",2,"g"],["sodio","Sódio",0,"mg"]].map(([k,n,d,u])=>{const lim=C.lupa.lim[k],nm={acAdd:"AÇÚCAR ADICIONADO",sat:"GORDURA SATURADA",sodio:"SÓDIO"}[k];const st=C.lupa.nutrientes.includes(nm)?"<b>Sim</b>":C.lupa.vedados.includes(nm)?"Vedada":"Abaixo do limite";const df=C.lupa.contrib[k];return `<tr style="border-bottom:1px solid #eee"><td style="padding:4px 10px 4px 0">${n}</td><td style="padding:4px 10px" class="num">${br(C.lupa.semV[k],d)} ${u}</td><td style="padding:4px 10px" class="num">${br(C.lupa.comV[k],d)} ${u}</td><td style="padding:4px 10px" class="num">${df>0?"+":""}${br(df,d===0?1:3)} ${u}</td><td style="padding:4px 10px">${C.lupa.alt[k]?"<b>Sim</b>":"Não"}</td><td style="padding:4px 10px">${st}</td></tr>`}).join("")}</tbody></table></div>
       <span class="hint">Agrega valor: açúcar adicionado com qualquer aumento; gordura saturada acima de 0,1 g e sódio acima de 5 mg (Anexo IV, por 100 ${C.un} ou porção). A lupa sai só para o nutriente que agrega valor e passa do limite no total do produto (${C.liquido?"7,5 g / 3 g / 300 mg":"15 g / 6 g / 600 mg"}) — RDC 429/2020, art. 18, §2º; Anvisa, P&R 169.${R.tipo==="concentracao"?" Na concentração, o “sem” desconta a massa do opcional da massa final.":""}</span>`:""}
     </div>`:""}
-  </div></div>`;
+  </div>
+  ${declaradosCard(R,C)}</div>`;
 }
+function declaradosCard(R,C){ const un=C.un, D=R.declarados||{};
+  const naTab=C.linhas.filter(l=>l.k!=="energia").map(l=>l.k); const ks=[...naTab,...Object.keys(D).filter(k=>NUT[k]&&!naTab.includes(k))];
+  const fm=(v,u)=>v==null?"—":`${arred(v,u)} ${u}`;
+  const linha=k=>{const n=NUT[k], o=D[k]||{}, d=C.decl[k], p=`declarados.${k}`;
+    return `<tr><td><b>${esc(n.l)}</b></td><td class="num">${fm(C.calc100[k],n.u)}</td><td class="num">${fm(C.calcP[k],n.u)}</td>
+      <td><input type="text" inputmode="decimal" data-bind="${p}.v" data-reblur="1" value="${esc(o.v??"")}" placeholder="calculado" style="width:90px"></td>
+      <td><select data-bind="${p}.base" data-rerender="1"><option value="porcao" ${o.base!=="100"?"selected":""}>por porção</option><option value="100" ${o.base==="100"?"selected":""}>por 100 ${un}</option></select></td>
+      <td><select data-bind="${p}.motivo" data-rerender="1"><option value="margem" ${o.motivo!=="laudo"?"selected":""}>Margem de segurança</option><option value="laudo" ${o.motivo==="laudo"?"selected":""}>Laudo</option></select></td>
+      <td><input type="text" data-bind="${p}.fonte" value="${esc(o.fonte||"")}" placeholder="${o.motivo==="laudo"?"Nº do laudo":"Opcional"}" style="width:130px"></td>
+      <td class="num">${d?`<b>${fm(d.v100,n.u)}</b> / <b>${fm(d.vp,n.u)}</b>`:`<span class="faint">calculado</span>`}</td></tr>`};
+  const outros=EXTRA_K.filter(k=>!ks.includes(k));
+  return `<div class="card stack"><div><span class="eyebrow">Tabela final</span><h2>Valores declarados no rótulo</h2>
+    <p class="muted small">O cálculo continua igual. Aqui você informa o valor que vai no rótulo quando ele for diferente do calculado: com margem de segurança (ex.: calculado 16 g de proteína por porção, declarar 15 g) ou pelo laudo da análise. Deixe em branco para usar o calculado. A energia é recalculada com os valores declarados.</p></div>
+    <div style="overflow-x:auto"><table class="decl-t"><thead><tr><th>Nutriente</th><th>Calculado / 100 ${un}</th><th>Calculado / porção</th><th>Declarar</th><th>Base</th><th>Motivo</th><th>Fonte</th><th>Na tabela (100 ${un} / porção)</th></tr></thead>
+      <tbody>${ks.map(linha).join("")}</tbody></table></div>
+    <div class="row"><select id="declAdd" style="width:auto"><option value="">Incluir nutriente do laudo…</option>${outros.map(k=>`<option value="${k}">${esc(NUT[k].l)} (${NUT[k].u})</option>`).join("")}</select>
+      <span class="small muted">Vitaminas e minerais só entram na tabela com 5% ou mais do VDR na porção (RDC 429/2020, art. 6º, I).</span></div>
+  </div>`}
 function viewRotulo(R,C){
   const T=textos(R,C); const tabs=modelosTab(R).map(m=>layTabela(R,C,m)); const tab=tabs[0]; const lup=layLupa(R,C); const dec=layDecl(R,C,T); const Sz=tamanhos(R,C);
   const z=S.real?3.7795:S.zoom*3.7795; const P=R.produto;
@@ -1827,6 +1857,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes. Referências: RDC 727/2022 e Lei 10.674/2003.`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
     {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
+  {const ds=Object.entries(C.decl); if(ds.length) para("Valores declarados diferentes do cálculo: "+ds.map(([k,d])=>`${NUT[k].l} ${String(+d.v.toFixed(3)).replace(".",",")} ${NUT[k].u} ${d.base==="porcao"?"por porção":"por 100 "+C.un}${d.motivo==="laudo"?` (${d.fonte||"laudo"})`:` (margem de segurança; calculado ${String(+(d.base==="porcao"?d.cP:d.c100).toFixed(2)).replace(".",",")} ${NUT[k].u}${d.fonte?"; "+d.fonte:""})`}`).join("; ")+". A energia foi calculada com os valores declarados.",{size:8.5});}
   h2("Demais informações"); kv("Conservação",P.conservacao);
   kv("Fabricação, validade e lote",`O rótulo precisa ter um campo reservado para a data de fabricação, o prazo de validade e o lote, preenchidos no dia da produção (RDC 727/2022).${String(P.campoFVL||"").trim()?` Dimensão do campo: ${String(P.campoFVL).trim()}.`:""}`); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
   {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico==="SIE-SC"?"SIE/SC":I.servico}`);
@@ -2220,8 +2251,10 @@ document.addEventListener("input",e=>{
     showAC(el,r.map(x=>({t:x[1],s:`${x[2]} · ${x[3]} · ${x[0].split(" - ")[0]}`,x})),it=>{const x=it.x; S.R.porcao.anexo=x[1]; const v=nz(String(x[2]).match(/[\d.,]+/)?.[0]); if(v) S.R.porcao.ref=String(v); if(/ml/i.test(x[2])&&S.R.produto.estado!=="liquido") toast("Esta porção é em ml: confira se o produto é líquido."); salvar(); render()})}
 });
 document.addEventListener("change",e=>{const el=e.target;
+  if(el.dataset.reblur){const y=window.scrollY;render();window.scrollTo(0,y);return}
   if(el.id==="filtroCli"){S.filtroCliente=el.value;render();return}
   if(el.id==="valCli"){S.valCli=el.value;render();return}
+  if(el.id==="declAdd"&&el.value){S.R.declarados=S.R.declarados||{}; S.R.declarados[el.value]={v:"",base:"100",motivo:"laudo",fonte:""}; salvar(); render(); setTimeout(()=>{const x=document.querySelector(`[data-bind="declarados.${el.value}.v"]`);x&&x.focus()},30); return}
   if(el.dataset.vesp){const o=getP(S.R,el.dataset.vesp); o.semEsp=!el.checked; salvar(); return}
   if(el.id==="vimgfile"&&el.files.length){const fs=[...el.files]; el.value=""; adicionarArtes(fs); return}
   if(el.dataset.modelo){let m=modelosTab(S.R); m=el.checked?[...new Set([...m,el.dataset.modelo])]:m.filter(x=>x!==el.dataset.modelo); if(!m.length){m=["vertical"];toast("Deixe pelo menos um modelo marcado.")} S.R.tabela.modelos=m; salvar(); render(); return}
