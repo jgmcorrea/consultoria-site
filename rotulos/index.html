@@ -362,7 +362,7 @@ function novoRotulo(tipo){
     ingredientes:[novoIng()],
     balanco:{subproduto:"",nomeBase:"",modo:"sub",massaBase:"",massaSub:"",rendimento:"",comp:{}},
     concentracao:{massaFinal:""},
-    lactase:{modo:"residual",residualMg:"",pct:"",fonte:""},
+    lactase:{modo:"residual",residualMg:"",galactoseG:"",pct:"",fonte:""},
     porcao:{anexo:"",ref:"",medida:"",individualMedida:""},
     painel:{largura:"",altura:""},
     tabela:{modelos:["vertical"],reduzida:false,lactoseGal:false,largLinear:"90"},
@@ -446,9 +446,13 @@ function calc(R){
     if(depois!=null){
       if(antes>0&&depois>antes+1e-9) W.push("A lactose informada para o produto final é maior do que a que entrou pelos ingredientes. Confira o laudo e a lactose dos ingredientes.");
       const H=Math.max(0,antes-depois);
-      if(fontesSem.length&&L.modo!=="pct") W.push(`Informe a lactose (g/100 g) de ${fontesSem.map(i=>`“${i.nome}”`).join(", ")} para o sistema calcular a galactose formada pela lactase (ela entra na tabela quando há alegação sobre lactose).`);
-      per100g.lac=depois; per100g.gal=(per100g.gal||0)+H*0.5263; per100g.acTot+=H*0.0526; per100g.carb+=H*0.0526;
-      hid={antes,depois,H,gal:H*0.5263,glic:H*0.5263,agua:H*0.0526,modo:L.modo,enzimas:enzLac.map(i=>i.nome),semFonte:fontesSem.length>0};
+      if(fontesSem.length&&L.modo!=="pct"&&String(L.galactoseG??"").trim()==="") W.push(`Informe a lactose (g/100 g) de ${fontesSem.map(i=>`“${i.nome}”`).join(", ")} para o sistema calcular a galactose formada pela lactase (ela entra na tabela quando há alegação sobre lactose).`);
+      per100g.lac=depois; const galCalc=(per100g.gal||0)+H*0.5263; per100g.acTot+=H*0.0526; per100g.carb+=H*0.0526;
+      // galactose do produto final pelo laudo (quando informada, substitui a calculada)
+      const galLaudo=String(L.galactoseG??"").trim()===""?null:nz(L.galactoseG)/(liquido?dens:1);
+      per100g.gal=galLaudo!=null?galLaudo:galCalc;
+      if(galLaudo==null&&alegLac(R)) W.push(`Há alegação sobre lactose: informe também a galactose do produto final pelo laudo (g por 100 ${liquido?"ml":"g"}), no card “Hidrólise da lactose”. Enquanto isso, a tabela usa a galactose calculada.`);
+      hid={antes,depois,H,gal:per100g.gal,galCalc,galLaudo,glic:H*0.5263,agua:H*0.0526,modo:L.modo,enzimas:enzLac.map(i=>i.nome),semFonte:fontesSem.length>0};
     }
   }
   const b100={}; KEYS.forEach(k=>b100[k]=per100g[k]*(liquido?dens:1));
@@ -559,7 +563,7 @@ function calc(R){
   if(b100.lac>0.1+1e-9) lactose="CONTÉM LACTOSE";
   else if(semValorLac.length){lactose="CONTÉM LACTOSE"; W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
   if(claimLac){ const semGal=ings.filter(i=>i.lactose&&!i.lactase&&(i.comp.gal===""||i.comp.gal==null));
-    if(semGal.length&&!(hid&&hid.H>0)) W.push(`Com alegação sobre lactose, a tabela declara lactose e galactose (RDC 429/2020, art. 5º, §4º). Informe a galactose (g/100 g) de ${semGal.map(i=>`“${i.nome}”`).join(", ")}; sem ela, a galactose sai como 0.`); }
+    if(semGal.length&&!(hid&&(hid.H>0||hid.galLaudo!=null))) W.push(`Com alegação sobre lactose, a tabela declara lactose e galactose (RDC 429/2020, art. 5º, §4º). Informe a galactose (g/100 g) de ${semGal.map(i=>`“${i.nome}”`).join(", ")}; sem ela, a galactose sai como 0.`); }
   if(b100.lac+b100.gal>b100.acTot+0.05) W.push("Lactose + galactose passam dos açúcares totais. Lactose e galactose são açúcares: confira os açúcares totais dos ingredientes.");
   if(R.tabela.lactoseGal && !aLac) W.push("Escolha qual é a alegação sobre lactose (etapa Produto): zero lactose, baixo teor de lactose etc.");
   if(aLac){ const al=ALEG_LAC.find(a=>a[0]===aLac); const lim=al?al[2]:null; const mg=b100.lac*1000;
@@ -1599,13 +1603,14 @@ function lactaseCard(R,C){const L=R.lactase;
     <p class="muted small">A lactase quebra a lactose dos ingredientes em glicose e galactose durante o processo. O leite (e os outros ingredientes) continuam cadastrados com lactose; aqui você informa quanto de lactose <b>fica no produto final</b>. É esse valor que decide o “CONTÉM LACTOSE” e as alegações (zero lactose até 100 mg/100 ${C.un}; baixo teor até 1 g/100 ${C.un}, RDC 135/2017).</p></div>
     <div class="grid3">${sel("lactase.modo","Como informar",[["residual","Lactose que fica no produto (laudo)"],["pct","% de hidrólise da lactose"]],{re:true})}
       ${L.modo==="pct"?inp("lactase.pct","Hidrólise da lactose (%)",{n:true,hint:"Ex.: 99,5. Precisa da lactose dos ingredientes."}):inp("lactase.residualMg",`Lactose no produto final (mg por 100 ${C.un})`,{n:true,hint:"Do laudo do produto pronto."})}
+      ${inp("lactase.galactoseG",`Galactose no produto final (g por 100 ${C.un})`,{n:true,hint:alegLac(R)?"Do laudo do produto pronto. Obrigatória com alegação sobre lactose: entra na tabela nutricional.":"Do laudo do produto pronto. Se ficar em branco, o sistema calcula pela lactose hidrolisada."})}
       ${inp("lactase.fonte","Fonte (laudo, ficha da enzima…)",{ph:"Ex.: laudo nº 123/2026"})}</div>
     <div class="sumline" id="lacsum">${lacSum(C)}</div>
-    <p class="small faint">Uma alegação de lactose (zero, baixo teor) deve ser comprovada pela análise do produto final.</p>
+    <p class="small faint">Uma alegação de lactose (zero, baixo teor) deve ser comprovada pela análise do produto final, com lactose e galactose do laudo, que entram na tabela nutricional.</p>
   </div>`}
 function lacSum(C){const h=C.hid; if(!h) return `<span class="muted">Sem hidrólise aplicada ainda: informe o valor acima.</span>`;
   const mg=v=>`${br(v*1000*(C.liquido?C.dens:1),0)} mg`;
-  return `<span>Lactose dos ingredientes: <b>${h.semFonte&&!h.antes?"não informada":mg(h.antes)}</b></span><span>Depois da lactase: <b>${mg(h.depois)}</b> por 100 ${C.un}</span><span>Galactose formada: <b>${br(h.gal*(C.liquido?C.dens:1),2)} g</b></span><span>Glicose formada: <b>${br(h.glic*(C.liquido?C.dens:1),2)} g</b></span><span>Resultado: <b>${C.lactose?"CONTÉM LACTOSE":h.depois<=0.1+1e-9?"até 100 mg (pode ser zero lactose)":h.depois<=1+1e-9?"até 1 g (pode ser baixo teor)":"acima de 1 g"}</b></span>`}
+  return `<span>Lactose dos ingredientes: <b>${h.semFonte&&!h.antes?"não informada":mg(h.antes)}</b></span><span>Depois da lactase: <b>${mg(h.depois)}</b> por 100 ${C.un}</span><span>Galactose ${h.galLaudo!=null?"(laudo)":"formada"}: <b>${br(h.gal*(C.liquido?C.dens:1),2)} g</b>${h.galLaudo!=null?` <span class="faint">(calculada: ${br(h.galCalc*(C.liquido?C.dens:1),2)} g)</span>`:""}</span><span>Glicose formada: <b>${br(h.glic*(C.liquido?C.dens:1),2)} g</b></span><span>Resultado: <b>${C.lactose?"CONTÉM LACTOSE":h.depois<=0.1+1e-9?"até 100 mg (pode ser zero lactose)":h.depois<=1+1e-9?"até 1 g (pode ser baixo teor)":"acima de 1 g"}</b></span>`}
 function balTanque(C){const X=C.extra; if(!X.tanqueIngs) return "";
   return X.tanqueIngs.length? `${X.tanqueIngs.map(([n,q])=>`${esc(n)}: <b>${br(q,1)} g</b>`).join(" · ")} → total <b>${br(X.massaTanque,1)} g</b>` : `<span style="color:var(--err,#b42318)">Nenhum ingrediente marcado como “no tanque”.</span>`}
 function balSum(C){const X=C.extra; if(!X.tanqueN) return "";
@@ -1782,7 +1787,7 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   kv("Ingredientes",T.ing,{rich:true});
   kv("Alérgicos",T.alg||"Não contém alergênicos de declaração obrigatória.",{bold:!!T.alg});
   if(T.lac) kv("Lactose",T.lac,{bold:true});
-  if(C.hid) kv("Lactase",`Lactose hidrolisada pela lactase (${C.hid.enzimas.join(", ")}): ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg de lactose por 100 ${C.un} no produto final${R.lactase.fonte?` (${R.lactase.fonte})`:""}.`);
+  if(C.hid) kv("Lactase",`Lactose hidrolisada pela lactase (${C.hid.enzimas.join(", ")}): ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg de lactose e ${br(C.hid.gal*(C.liquido?C.dens:1),2)} g de galactose${C.hid.galLaudo!=null?" (laudo)":" (calculada)"} por 100 ${C.un} no produto final${R.lactase.fonte?` (${R.lactase.fonte})`:""}.`);
   kv("Glúten",T.gluten,{bold:true});
   if(T.ogm){ const hT=Math.max(simboloT(C).h*10,4.2)+2; need(hT); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...CINZ);doc.text("Transgênico",M,y+3.4); y+=pdfTFrase(doc,C,T,M+LW,y,W-LW)+2; }
   // tabela
@@ -1950,7 +1955,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
     s3.addRow([`${d.l} (${d.u})${hk?" — após a lactase":""}`,hk?C.b100[k]:F(f100,C.b100[k]),F(`B${rr}*$B$${rPor}/100`,C.pv[k]),d.vdr||"",d.vdr?F(`ROUND(C${rr}/D${rr}*100,0)`,C.pv[k]/d.vdr*100):"",ln.v100??"(não declarado)",ln.vp??"",ln.vd??""]).font=A(9)});
   {const rr=s3.rowCount+1; const g=k=>rowOf[k];
     s3.addRow(["Valor energético (kcal)",F(`4*B${g("carb")}+4*B${g("prot")}+9*B${g("gord")}+2*B${g("fibra")}`,C.e100),F(`4*C${g("carb")}+4*C${g("prot")}+9*C${g("gord")}+2*C${g("fibra")}`,C.eP),2000,F(`ROUND(C${rr}/D${rr}*100,0)`,C.eP/20),C.linhas[0].v100,C.linhas[0].vp,C.linhas[0].vd]).font=A(9,true);}
-  if(C.hid) nota(`Lactase: lactose do produto final = ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg/100 ${C.un} (${C.hid.modo==="pct"?`hidrólise de ${R.lactase.pct}%`:"informada pelo laudo"}). Cada 1 g de lactose hidrolisada vira 0,5263 g de galactose e 0,5263 g de glicose; açúcares totais e carboidratos sobem 0,0526 g (água incorporada).`);
+  if(C.hid) nota(`Lactase: lactose do produto final = ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg/100 ${C.un} (${C.hid.modo==="pct"?`hidrólise de ${R.lactase.pct}%`:"informada pelo laudo"}); galactose = ${br(C.hid.gal*(C.liquido?C.dens:1),2)} g/100 ${C.un} (${C.hid.galLaudo!=null?"informada pelo laudo":"calculada"}). Cada 1 g de lactose hidrolisada vira 0,5263 g de galactose e 0,5263 g de glicose; açúcares totais e carboidratos sobem 0,0526 g (água incorporada).`);
   nota("Valor energético = 4 × (carboidratos + proteínas) + 9 × gorduras totais + 2 × fibras (Anexo XXII, IN 75/2020).");
   nota("As colunas “Rótulo” trazem os valores já arredondados pelo sistema (Anexo III) e zerados quando não significativos (Anexo IV).");
   s3.addRow([]);
