@@ -1681,7 +1681,9 @@ function viewPorcao(R,C){
       <span class="hint">Agrega valor: açúcar adicionado com qualquer aumento; gordura saturada acima de 0,1 g e sódio acima de 5 mg (Anexo IV, por 100 ${C.un} ou porção). A lupa sai só para o nutriente que agrega valor e passa do limite no total do produto (${C.liquido?"7,5 g / 3 g / 300 mg":"15 g / 6 g / 600 mg"}) — RDC 429/2020, art. 18, §2º; Anvisa, P&R 169.${R.tipo==="concentracao"?" Na concentração, o “sem” desconta a massa do opcional da massa final.":""}</span>`:""}
     </div>`:""}
   </div>
-  ${declaradosCard(R,C)}</div>`;
+  ${declaradosCard(R,C)}
+  <div class="card stack"><div><h2>Observações</h2><p class="muted small">Saem no fim da ficha do rótulo, antes do serviço de inspeção.</p></div>
+    ${inp("porcao.obs","Observações",{area:true,span:true,ph:"Ex.: a lista de ingredientes pode ir no painel lateral, junto da tabela."})}</div></div>`;
 }
 function declaradosCard(R,C){ const un=C.un, D=R.declarados||{};
   const naTab=C.linhas.filter(l=>l.k!=="energia").map(l=>l.k); const ks=[...naTab,...Object.keys(D).filter(k=>NUT[k]&&!naTab.includes(k))];
@@ -1860,6 +1862,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   {const ds=Object.entries(C.decl); if(ds.length) para("Valores declarados diferentes do cálculo: "+ds.map(([k,d])=>`${NUT[k].l} ${String(+d.v.toFixed(3)).replace(".",",")} ${NUT[k].u} ${d.base==="porcao"?"por porção":"por 100 "+C.un}${d.motivo==="laudo"?` (${d.fonte||"laudo"})`:` (margem de segurança; calculado ${String(+(d.base==="porcao"?d.cP:d.c100).toFixed(2)).replace(".",",")} ${NUT[k].u}${d.fonte?"; "+d.fonte:""})`}`).join("; ")+". A energia foi calculada com os valores declarados.",{size:8.5});}
   h2("Demais informações"); kv("Conservação",P.conservacao);
   kv("Fabricação, validade e lote",`O rótulo precisa ter um campo reservado para a data de fabricação, o prazo de validade e o lote, preenchidos no dia da produção (RDC 727/2022).${String(P.campoFVL||"").trim()?` Dimensão do campo: ${String(P.campoFVL).trim()}.`:""}`); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
+  if(String(R.porcao.obs||"").trim()){ h2("Observações"); String(R.porcao.obs).trim().split(/\n+/).forEach(t=>para(t.trim())); }
   {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico==="SIE-SC"?"SIE/SC":I.servico}`);
     if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
     kv("Frase obrigatória",fraseRegistro(R));
