@@ -54,7 +54,14 @@
     return d < 0 ? d + 1440 : d; // passou da meia-noite
   };
   const minDocumental = (sg) => (sg?.documental || []).reduce((s, i) => s + minIntervalo(i), 0);
-  const resumoSaudiGap = (sg) => sg ? `${sg.fazenda ? `${sg.fazenda} · ` : ""}On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${(sg.documental || []).length ? (minDocumental(sg) ? `${fmtDur(minDocumental(sg))}${sg.documental.length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "") + (sg.documental.some((i) => !i.inicio || !i.fim) ? (minDocumental(sg) ? " (em andamento)" : "em andamento") : "") : "a fazer"}` : "";
+  const resumoSaudiGap = (sg) => sg ? `${sg.fazenda ? `${sg.fazenda} · ` : ""}On-line ${fmtData(sg.online?.data)} ${sg.online?.inicio || ""}–${sg.online?.fim || ""} (${fmtDur(minIntervalo(sg.online))}) · Documental ${sg.concluido_em ? `concluído em ${fmtData(sg.concluido_em)}${minDocumental(sg) ? ` (${fmtDur(minDocumental(sg))})` : ""}` : (sg.documental || []).length ? (minDocumental(sg) ? `${fmtDur(minDocumental(sg))}${sg.documental.length > 1 ? ` em ${sg.documental.length} intervalos` : ""}` : "") + (sg.documental.some((i) => !i.inicio || !i.fim) ? (minDocumental(sg) ? " (em andamento)" : "em andamento") : "") : "a fazer"}` : "";
+  const SAUDI_GAP_DIAS = 30; // ela recebe 30 dias depois do documental concluído
+  const liberaSG = (sg) => sg?.concluido_em ? (() => { const d = new Date(sg.concluido_em + "T12:00"); d.setDate(d.getDate() + SAUDI_GAP_DIAS); return d.toISOString().slice(0, 10); })() : "";
+  const situacaoSG = (x) => { const sg = x.saudi_gap || {};
+    if (sg.fatura_id) { const f = S.dados.faturas.find((y) => y.id === sg.fatura_id); return { k: "nota", f, txt: f ? `NF ${f.nf_numero || "s/ nº"}` : "Nota registrada" }; }
+    if (!sg.concluido_em) return { k: "andamento", txt: "Documental em andamento" };
+    const lib = liberaSG(sg), d = diasAte(lib);
+    return d > 0 ? { k: "aguarda", lib, d, txt: `Nota em ${fmtData(lib)} (faltam ${d} dia${d === 1 ? "" : "s"})` } : { k: "liberada", lib, txt: `Liberada em ${fmtData(lib)}` }; };
   const saudiGapsDe = (c, ym) => servicosDe(c, ym).filter((x) => x.saudi_gap);
   const plural = (q, nome) => `${fmtNum(q)} ${nome}${Number(q) === 1 ? "" : "s"}`;
 
@@ -70,7 +77,8 @@
     const horas = minutos / 60;
     const modelo = c.modelo_cobranca || "hora";
     const servs = servicosDe(c, ym);
-    const comNF = servs.filter((x) => x.emite_nf !== false), semNF = servs.filter((x) => x.emite_nf === false);
+    // SAUDI GAP tem nota própria (30 dias depois do documental concluído): fica fora da nota do mês
+    const comNF = servs.filter((x) => x.emite_nf !== false && !x.saudi_gap), semNF = servs.filter((x) => x.emite_nf === false);
     const out = { modelo, minutos, horas, quantidade: 0, valor: 0, reembolso: 0, linhas: [], configurado: true,
       servicosNF: comNF.length, semNota: r2(semNF.reduce((s, x) => s + Number(x.valor || 0), 0)), semNotaQtd: semNF.length,
       servicosTxt: comNF.map((x) => x.descricao).join("; ") };
@@ -122,8 +130,12 @@
     return fim(out);
   }
 
-  const faturasDe = (c, ym) => S.dados.faturas.filter((f) => f.cliente_id === c.id && (!ym || f.mes.startsWith(ym)))
-    .sort((a, b) => (b.mes + (b.nf_emitida_em || "")).localeCompare(a.mes + (a.nf_emitida_em || "")));
+  // notas próprias do SAUDI GAP (ligadas pelo saudi_gap.fatura_id do serviço) não contam como "nota do mês"
+  const idsNotaSG = () => new Set((S.dados.servicos || []).map((x) => x.saudi_gap?.fatura_id).filter(Boolean));
+  const servicoDaNota = (f) => (S.dados.servicos || []).find((x) => x.saudi_gap?.fatura_id === f.id);
+  const ordNotas = (a, b) => (b.mes + (b.nf_emitida_em || "")).localeCompare(a.mes + (a.nf_emitida_em || ""));
+  const notasTodasDe = (c) => S.dados.faturas.filter((f) => f.cliente_id === c.id).sort(ordNotas);
+  const faturasDe = (c, ym) => { const sg = idsNotaSG(); return S.dados.faturas.filter((f) => f.cliente_id === c.id && !sg.has(f.id) && (!ym || f.mes.startsWith(ym))).sort(ordNotas); };
   const lancDe = (f) => f.lancamento_id && S.dados.lancamentos.find((l) => l.id === f.lancamento_id);
   const statusDe = (f) => (lancDe(f)?.status || f.status);
   const descricaoNF = (c, ym, k) => (c.descricao_nf || (c.modelo_cobranca === "servico" ? DESCRICAO_SERVICO : DESCRICAO_PADRAO))
@@ -154,6 +166,9 @@
     const comecou = !c.inicio_contrato || c.inicio_contrato.slice(0, 7) <= ant;
     if (comecou && k.configurado && k.valor > 0 && (k.minutos > 0 || k.quantidade > 0 || k.servicosNF > 0 || (k.visitas || []).some((v) => v.valor > 0)) && !faturasDe(c, ant).length)
       out.push({ cor: "amarelo", ordem: 100, html: `${nome}${nomeMes(ant).toLowerCase()} fechou em ${moeda(k.valor)}: é hora de emitir a nota. <a href="#/c/${c.id}/financeiro" data-acao="fincli-ir-mes" data-mes="${ant}">Emitir nota</a>` });
+    // SAUDI GAP: 30 dias depois do documental concluído, é hora de emitir a nota própria
+    servicosDe(c).filter((x) => x.saudi_gap && !x.saudi_gap.fatura_id && x.saudi_gap.concluido_em && diasAte(liberaSG(x.saudi_gap)) <= 0).forEach((x) =>
+      out.push({ cor: "amarelo", ordem: 99, html: `${nome}o SAUDI GAP${x.saudi_gap.fazenda ? ` da fazenda ${esc(x.saudi_gap.fazenda)}` : ""} completou ${SAUDI_GAP_DIAS} dias do documental concluído (${fmtData(x.saudi_gap.concluido_em)}): é hora de emitir a nota. <button class="link" data-acao="fincli-saudi-nota" data-id="${x.id}">Emitir nota</button>` }));
     if (!comNome) out.forEach((x) => (x.html = x.html.charAt(0).toUpperCase() + x.html.slice(1)));
     return out.sort((a, b) => a.ordem - b.ordem);
   }
@@ -186,7 +201,7 @@
       ? (emAndamento ? `A nota destes serviços é emitida em ${mesNome(ym)} mesmo (este cliente fatura no próprio mês).` : `Serviços de ${mesNome(ym)}, nota emitida e recebida no próprio mês.`)
       : (emAndamento ? `${nomeMes(ym)} ainda está em andamento. A nota destes serviços sai em ${mesNome(addMes(ym, 1))}.` : `Serviços de ${mesNome(ym)}, nota emitida e recebida em ${mesNome(addMes(ym, 1))}.`);
     const notas = faturasDe(c, ym);
-    const todas = faturasDe(c);
+    const todas = notasTodasDe(c);
     const ano = ym.slice(0, 4);
     const faturadoAno = todas.filter((f) => f.mes.startsWith(ano)).reduce((s, f) => s + Number(f.valor), 0);
     const aReceber = todas.filter((f) => statusDe(f) !== "pago").reduce((s, f) => s + Number(f.valor), 0);
@@ -260,9 +275,9 @@
           ${servs.map((x) => `<tr>
             <td>${fmtData(x.data)}</td>
             <td><button class="link" data-acao="fincli-servico-editar" data-id="${x.id}">${esc(x.descricao)}</button>${x.saudi_gap ? `<small class="card-ref">${esc(resumoSaudiGap(x.saudi_gap))}</small>` : ""}${x.observacoes ? `<small class="card-ref">${esc(x.observacoes)}</small>` : ""}</td>
-            <td>${x.emite_nf === false ? `<span class="chip semnf">Sem nota</span>` : `<span class="chip nf">Com nota</span>`}</td>
+            <td>${x.saudi_gap ? (() => { const st = situacaoSG(x); return st.k === "nota" ? `<button class="link" data-acao="fincli-editar" data-id="${st.f?.id || ""}">${esc(st.txt)}</button>` : st.k === "liberada" ? `<button class="mini ok" data-acao="fincli-saudi-nota" data-id="${x.id}">Emitir nota</button><small class="card-ref">${st.txt}</small>` : st.k === "aguarda" ? `<span class="chip">${st.txt}</span>` : `<span class="chip semnf">${st.txt}</span> <button class="mini" data-acao="fincli-saudi-concluir" data-id="${x.id}">Concluir documental</button>`; })() : x.emite_nf === false ? `<span class="chip semnf">Sem nota</span>` : `<span class="chip nf">Com nota</span>`}</td>
             <td class="dir num">${moeda(x.valor)}</td>
-            <td>${x.emite_nf === false ? `<button class="mini ${x.status === "pago" ? "ok" : ""}" data-acao="fincli-servico-status" data-id="${x.id}" title="Clique para alternar">${x.status === "pago" ? "Recebido" : "A receber"}</button>` : `<span class="dica">Na nota de ${mesNome(ym)}</span>`}</td>
+            <td>${x.saudi_gap ? (() => { const st = situacaoSG(x); return st.k === "nota" && st.f ? `<button class="mini ${statusDe(st.f) === "pago" ? "ok" : ""}" data-acao="fincli-status" data-id="${st.f.id}">${statusDe(st.f) === "pago" ? "Recebida" : "A receber"}</button>` : `<span class="dica">Nota própria</span>`; })() : x.emite_nf === false ? `<button class="mini ${x.status === "pago" ? "ok" : ""}" data-acao="fincli-servico-status" data-id="${x.id}" title="Clique para alternar">${x.status === "pago" ? "Recebido" : "A receber"}</button>` : `<span class="dica">Na nota de ${mesNome(ym)}</span>`}</td>
             <td class="acoes-linha"><button class="link" data-acao="fincli-servico-editar" data-id="${x.id}">Editar</button><button class="link perigo" data-acao="fincli-servico-excluir" data-id="${x.id}">Excluir</button></td>
           </tr>`).join("")}</tbody></table></div>` : `<p class="vazio">Nenhum serviço registrado neste mês.${c.modelo_cobranca === "servico" ? "" : " Use para serviços avulsos, fora da forma de cobrança do contrato."}</p>`}
         <p class="dica">Com nota: entra no valor da nota do mês e, ao emitir, no Financeiro da empresa. Sem nota: fica só aqui no cliente, fora da nota e do Financeiro da empresa.${semNotaAReceber ? ` Serviços sem nota a receber (todos os meses): <b>${moeda(semNotaAReceber)}</b>.` : ""}</p>
@@ -273,7 +288,7 @@
           <p class="fc-kpis"><span>Faturado em ${ano}: <b>${moeda(faturadoAno)}</b></span><span>A receber: <b>${moeda(aReceber)}</b></span>${reembAReceber ? `<span>Reembolsos a receber: <b>${moeda(reembAReceber)}</b></span>` : ""}</p></div>
         ${todas.length ? `<div class="tabela-rolagem"><table class="tabela-prosp tabela-notas"><thead><tr><th>Serviços de</th><th>Nota</th><th>Emitida em</th><th class="dir">Valor</th>${todas.some((f) => Number(f.reembolso) > 0) ? `<th class="dir">Reembolso</th>` : ""}<th>Situação</th><th><span class="sr">Ações</span></th></tr></thead><tbody>
           ${todas.map((f) => { const st = statusDe(f); const temReemb = todas.some((x) => Number(x.reembolso) > 0); return `<tr class="${f.mes.startsWith(ym) ? "atual" : ""}">
-            <td>${compCurta(f.mes.slice(0, 7))}</td>
+            <td>${servicoDaNota(f) ? `SAUDI GAP${servicoDaNota(f).saudi_gap.fazenda ? `<small class="card-ref">${esc(servicoDaNota(f).saudi_gap.fazenda)}</small>` : ""}` : compCurta(f.mes.slice(0, 7))}</td>
             <td><button class="link" data-acao="fincli-editar" data-id="${f.id}">NF ${esc(f.nf_numero || "s/ nº")}</button></td>
             <td>${fmtData(f.nf_emitida_em)}</td>
             <td class="dir num">${moeda(f.valor)}</td>
@@ -330,7 +345,7 @@
         quantidade: unid ? Number(g("quantidade") || 0) : null, reembolso: unid ? r2(g("reembolso") || 0) : 0,
       };
       const lanc = {
-        tipo: "entrada", data: nota.nf_emitida_em, descricao: `NF ${nota.nf_numero} - ${c.nome} - serviços de ${compCurta(ym)}`,
+        tipo: "entrada", data: nota.nf_emitida_em, descricao: f && servicoDaNota(f) ? `NF ${nota.nf_numero} - ${c.nome} - SAUDI GAP${servicoDaNota(f).saudi_gap.fazenda ? ` ${servicoDaNota(f).saudi_gap.fazenda}` : ""}` : `NF ${nota.nf_numero} - ${c.nome} - serviços de ${compCurta(ym)}`,
         categoria: "Serviços (nota fiscal)", pessoa: c.nome, valor: nota.valor, status: nota.status,
         conta_faturamento: true, nota_fiscal: nota.nf_numero, observacoes: "Lançada pela aba Financeiro do cliente",
       };
@@ -345,6 +360,44 @@
         guardarLocal("faturas", await DB.salvar("faturas", { id: f.id, ...nota }));
         toast("Nota salva.");
       }
+    });
+    document.querySelector(".modal").classList.add("modal-larga");
+  }
+
+  function modalNotaSG(c, sv) {
+    const sg = sv.saudi_gap, tom = tomadorNF(c), lib = liberaSG(sg);
+    const desc = `Serviço de auditoria SAUDI GAP${sg.fazenda ? ` - ${sg.fazenda}` : ""}: auditoria on-line em ${fmtData(sg.online?.data)} e auditoria documental concluída em ${fmtData(sg.concluido_em)}.`;
+    abrirModal(`Emitir nota do SAUDI GAP${sg.fazenda ? ` · ${esc(sg.fazenda)}` : ""}`, `
+      ${diasAte(lib) > 0 ? `<p class="aviso">A nota deste SAUDI GAP só fica liberada em ${fmtData(lib)} (${SAUDI_GAP_DIAS} dias depois do documental concluído).</p>` : ""}
+      <dl class="fc-copiar">
+        ${copiar("Tomador", tom.nome)}
+        ${tom.cnpj ? copiar("CNPJ", tom.cnpj) : `<div><dt>CNPJ</dt><dd><a href="#/c/${c.id}/dados">Cadastre o CNPJ ${tom.outra ? "da empresa da nota" : "do cliente"}</a></dd></div>`}
+        ${tom.endereco ? copiar("Endereço", tom.endereco) : ""}
+        ${tom.cidade ? copiar("Cidade", tom.cidade) : ""}
+        ${tom.email ? copiar("E-mail", tom.email) : ""}
+        ${copiar("Valor", Number(sv.valor).toFixed(2).replace(".", ","))}
+        ${copiar("Descrição", desc)}
+      </dl>
+      <p class="fc-links"><a class="botao" href="${NFSE_EMISSOR}" target="_blank" rel="noopener">Abrir Emissor Nacional</a><a class="botao-sec" href="${NFSE_EMITIDAS}" target="_blank" rel="noopener">Notas emitidas</a></p>
+      <h3 class="fc-sub">Depois de emitir, registre a nota aqui</h3>
+      <div class="grade-form">
+        <label class="campo"><span>Nº da nota</span><input name="nf_numero" required></label>
+        <label class="campo"><span>Emitida em</span><input type="date" name="nf_emitida_em" required value="${hoje()}"></label>
+        <label class="campo"><span>Valor da nota (R$)</span><input type="number" step="0.01" min="0" name="valor" required value="${Number(sv.valor).toFixed(2)}"></label>
+        <label class="campo"><span>Situação</span><select name="status"><option value="pendente" selected>A receber</option><option value="pago">Recebida</option></select></label>
+        <label class="campo largo"><span>Observações</span><textarea name="observacoes" rows="2"></textarea></label>
+      </div>
+      <p class="dica">Ao salvar, a nota entra em Financeiro › Entradas e saídas como nota de serviço.</p>`,
+    async (form) => {
+      const g = (n) => form.elements[n]?.value.trim() ?? "";
+      const nota = { nf_numero: g("nf_numero"), nf_emitida_em: g("nf_emitida_em"), valor: r2(g("valor")), status: g("status"), observacoes: g("observacoes") || null, quantidade: null, reembolso: 0 };
+      const l = await DB.salvar("lancamentos", { tipo: "entrada", data: nota.nf_emitida_em, descricao: `NF ${nota.nf_numero} - ${c.nome} - SAUDI GAP${sg.fazenda ? ` ${sg.fazenda}` : ""}`,
+        categoria: "Serviços (nota fiscal)", pessoa: c.nome, valor: nota.valor, status: nota.status, conta_faturamento: true, nota_fiscal: nota.nf_numero, observacoes: "Lançada pela aba Financeiro do cliente (SAUDI GAP)" });
+      guardarLocal("lancamentos", l);
+      const f = await DB.salvar("faturas", { ...nota, cliente_id: c.id, mes: (lib || nota.nf_emitida_em).slice(0, 7) + "-01", minutos: minIntervalo(sg.online) + minDocumental(sg), lancamento_id: l.id });
+      guardarLocal("faturas", f);
+      guardarLocal("servicos", await DB.salvar("servicos", { id: sv.id, saudi_gap: { ...sg, fatura_id: f.id } }));
+      toast(`Nota ${nota.nf_numero} do SAUDI GAP registrada e lançada no Financeiro.`);
     });
     document.querySelector(".modal").classList.add("modal-larga");
   }
@@ -476,11 +529,11 @@
     const ym = S.finMes || mesTrabalhoPadrao(c);
     const dataPadrao = hoje().startsWith(ym) ? hoje() : (() => { const [a, m] = ym.split("-").map(Number); return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`; })();
     const sg = sv?.saudi_gap || { online: { data: dataPadrao }, documental: [{ data: hoje() }] };
-    const faturado = !novo && faturasDe(c, sv.data.slice(0, 7)).length;
+    const faturado = !novo && sv.saudi_gap?.fatura_id;
     abrirModal(novo ? "Lançar SAUDI GAP" : "SAUDI GAP", `
-      ${faturado ? `<p class="aviso">A nota dos serviços de ${mesNome(sv.data.slice(0, 7))} já foi registrada. Se mudar a data deste SAUDI GAP para outro mês, confira as notas.</p>` : ""}
+      ${faturado ? `<p class="aviso">A nota deste SAUDI GAP já foi registrada. Mudanças aqui não alteram a nota.</p>` : ""}
       <label class="campo largo sg-fazenda"><span>Fazenda auditada</span><input name="fazenda" value="${esc(sg.fazenda || "")}" placeholder="Nome da fazenda"></label>
-      <p class="dica">Serviço à parte, sempre <b>${moeda(SAUDI_GAP_VALOR)}</b>, com nota. Entra na nota do mês junto com os outros serviços.</p>
+      <p class="dica">Serviço à parte, sempre <b>${moeda(SAUDI_GAP_VALOR)}</b>, com nota. Tem <b>nota própria</b>, liberada ${SAUDI_GAP_DIAS} dias depois de concluir o documental.</p>
       <fieldset class="sg-etapa"><legend>1. Auditoria On-line <small>horas corridas</small></legend>
         <div class="sg-online">
           <label class="campo"><span>Data</span><input type="date" name="o_data" value="${sg.online?.data || ""}" required></label>
@@ -491,6 +544,11 @@
       <fieldset class="sg-etapa"><legend>2. Auditoria Documental <small>pode ser em vários horários · dá para salvar sem e preencher depois</small></legend>
         <div class="sg-docs">${(sg.documental?.length ? sg.documental : [{ data: hoje() }]).map((i, n) => linhaDoc(i, n + 1)).join("")}</div>
         <button type="button" class="add-horario" data-acao="sg-add">+ Adicionar horário</button>
+        <div class="sg-concluido">
+          <label class="check"><input type="checkbox" name="concluido" ${sg.concluido_em ? "checked" : ""} data-acao="sg-concluido-toggle"> <b>Documental concluído</b></label>
+          <label class="campo"><span>Concluído em</span><input type="date" name="concluido_em" value="${sg.concluido_em || hoje()}" ${sg.concluido_em ? "" : "disabled"}></label>
+          <span class="dica" id="sg-libera">${sg.concluido_em ? `A nota fica liberada em ${fmtData(liberaSG(sg))} (${SAUDI_GAP_DIAS} dias depois).` : `Ao concluir, o sistema conta ${SAUDI_GAP_DIAS} dias para liberar a nota deste SAUDI GAP.`}</span>
+        </div>
       </fieldset>
       <label class="campo largo"><span>Observações</span><textarea name="observacoes" rows="2">${esc(sv?.observacoes || "")}</textarea></label>
       <p class="previa-visita" id="previa-sg"></p>`,
@@ -505,11 +563,11 @@
       const dados = {
         ...(novo ? { cliente_id: c.id, status: "pendente" } : { id: sv.id }),
         descricao: SAUDI_GAP_NOME, data: online.data, valor: SAUDI_GAP_VALOR, emite_nf: true,
-        observacoes: v("observacoes") || null, saudi_gap: { fazenda: v("fazenda") || null, online, documental },
+        observacoes: v("observacoes") || null, saudi_gap: { ...(sv?.saudi_gap || {}), fazenda: v("fazenda") || null, online, documental, concluido_em: fe.concluido.checked ? (v("concluido_em") || hoje()) : null },
       };
       guardarLocal("servicos", await DB.salvar("servicos", dados));
       if (dados.data.slice(0, 7) !== ym) S.finMes = dados.data.slice(0, 7);
-      toast(novo ? "SAUDI GAP lançado." : "SAUDI GAP salvo.");
+      toast(dados.saudi_gap.concluido_em && !sv?.saudi_gap?.concluido_em ? `SAUDI GAP salvo. A nota fica liberada em ${fmtData(liberaSG(dados.saudi_gap))}.` : novo ? "SAUDI GAP lançado." : "SAUDI GAP salvo.");
     },
     novo ? "" : `<button type="button" class="botao-perigo" data-acao="fincli-servico-excluir" data-id="${sv.id}">Excluir</button>`);
     const form = document.querySelector('[data-form="modal"]');
@@ -520,6 +578,7 @@
       document.getElementById("previa-sg").innerHTML = `On-line: <b>${fmtDur(on)}</b> · Documental: <b>${fmtDur(doc)}</b> · Total: <b>${fmtDur(on + doc)}</b> · Valor: <b>${moeda(SAUDI_GAP_VALOR)}</b>`;
     };
     form._previaSG = previa;
+    form.elements.concluido_em.addEventListener("change", () => { if (form.elements.concluido.checked) document.getElementById("sg-libera").textContent = `A nota fica liberada em ${fmtData(liberaSG({ concluido_em: form.elements.concluido_em.value }))} (${SAUDI_GAP_DIAS} dias depois).`; });
     form.addEventListener("input", previa); form.addEventListener("change", previa); previa();
     document.querySelector(".modal").classList.add("modal-larga");
   }
@@ -809,6 +868,18 @@
       try { if (el.dataset.formato === "pdf") await relatorioSGPDF(c, ym); else await relatorioSGWord(c, ym); toast("Relatório gerado."); }
       catch (e) { falha(e); } finally { el.disabled = false; el.textContent = txt; }
     },
+    "sg-concluido-toggle": (el) => {
+      const f = el.closest("form"), d = f.elements.concluido_em; d.disabled = !el.checked; if (el.checked && !d.value) d.value = hoje();
+      const atual = () => { document.getElementById("sg-libera").textContent = el.checked ? `A nota fica liberada em ${fmtData(liberaSG({ concluido_em: d.value }))} (${SAUDI_GAP_DIAS} dias depois).` : `Ao concluir, o sistema conta ${SAUDI_GAP_DIAS} dias para liberar a nota deste SAUDI GAP.`; };
+      atual();
+    },
+    "fincli-saudi-concluir": async (el) => {
+      const x = S.dados.servicos.find((y) => y.id === el.dataset.id);
+      const sg = { ...x.saudi_gap, concluido_em: hoje() };
+      guardarLocal("servicos", await DB.salvar("servicos", { id: x.id, saudi_gap: sg }));
+      render(); toast(`Documental concluído. A nota fica liberada em ${fmtData(liberaSG(sg))}.`);
+    },
+    "fincli-saudi-nota": (el) => { const x = S.dados.servicos.find((y) => y.id === el.dataset.id); modalNotaSG(cliente(x.cliente_id), x); },
     "sg-agora": (el) => {
       const d = new Date(), inp = el.closest(".com-botao").querySelector("input");
       inp.value = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
@@ -862,8 +933,10 @@
       const f = fatura(el.dataset.id);
       if (!confirm(`Excluir a nota ${f.nf_numero || ""}${f.lancamento_id ? " e a entrada ligada a ela no Financeiro" : ""}? Isso não cancela a nota no Emissor Nacional.`)) return;
       if (f.lancamento_id) { await DB.excluir("lancamentos", f.lancamento_id).catch(() => {}); S.dados.lancamentos = S.dados.lancamentos.filter((l) => l.id !== f.lancamento_id); }
+      const svNota = servicoDaNota(f);
       await DB.excluir("faturas", f.id);
       S.dados.faturas = S.dados.faturas.filter((x) => x.id !== f.id);
+      if (svNota) { const sg = { ...svNota.saudi_gap }; delete sg.fatura_id; guardarLocal("servicos", await DB.salvar("servicos", { id: svNota.id, saudi_gap: sg })); }
       render(); toast("Nota excluída.");
     },
     copiar: async (el) => {

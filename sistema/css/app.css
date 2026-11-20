@@ -512,3 +512,7 @@ a.botao-sec { color: var(--tinta); text-decoration: none; }
 .botao-olho:hover { color: var(--tinta); border-color: var(--tinta-3); }
 .sg-online .com-botao, .sg-linha .com-botao { display: flex; gap: 4px; }
 .sg-online .com-botao input, .sg-linha .com-botao input { flex: 1; min-width: 0; }
+.sg-concluido { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--linha); }
+.sg-concluido .check { display: inline-flex; align-items: center; gap: 8px; padding-bottom: 10px; }
+.sg-concluido .campo { max-width: 200px; }
+.sg-concluido .dica { flex: 1 1 220px; padding-bottom: 10px; }
