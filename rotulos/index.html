@@ -205,6 +205,9 @@ const CLASSIF_EST = [
   ["Produtos de abelhas",["Unidade de beneficiamento de produtos de abelhas"]],
   ["Armazenagem",["Entreposto de produtos de origem animal","Casa atacadista"]]
 ];
+// classificações com a inicial de cada palavra em maiúscula (menos de, e, do...): "Unidade de Beneficiamento de Leite e Derivados"
+const tituloCls=t=>String(t||"").split(" ").map((w,i)=>(i&&/^(de|da|do|das|dos|e|em|com|para|a|o)$/i.test(w))?w.toLowerCase():w.split("-").map(p=>p?p[0].toUpperCase()+p.slice(1):p).join("-")).join(" ");
+CLASSIF_EST.forEach(g=>{g[1]=g[1].map(tituloCls)});
 // Anexo XVI da IN 75/2020 — alimentos com rotulagem nutricional frontal vedada (itens 1 a 6: vedação condicional, RDC 429/2020, art. 18, §2º)
 const ANEXO16=["Frutas, hortaliças, leguminosas, tubérculos, cereais, nozes, castanhas, sementes e cogumelos","Farinhas","Carnes e pescados embalados, refrigerados ou congelados","Ovos","Leites fermentados","Queijos","Leites de todas as espécies de animais mamíferos","Leite em pó","Azeite de oliva e outros óleos vegetais, prensados a frio ou refinados","Sal destinado ao consumo humano","Fórmulas infantis","Fórmulas para nutrição enteral","Alimentos para controle de peso","Suplementos alimentares","Bebidas alcoólicas","Produtos destinados exclusivamente ao processamento industrial","Produtos destinados exclusivamente aos serviços de alimentação","Aditivos alimentares e coadjuvantes de tecnologia"];
 const UFS="AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split(" ");
@@ -236,6 +239,7 @@ function migrar(R){
   if(!R.lactase) R.lactase={modo:"residual",residualMg:"",pct:"",fonte:""};
   if(!R.distribuidor) R.distribuidor={ativo:false,expressao:"Distribuído por",razao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:""};
   if(!R.origemD) R.origemD={expressao:"Fabricado em",razao:"",classificacao:"",endereco:"",municipio:"",uf:"",cep:"",pais:"Brasil",cnpj:"",telefone:"",email:"",industria:true};
+  {const c=R.origemD.classificacao; if(c){const m=CLASSIF_EST.flatMap(g=>g[1]).find(x=>fold(x)===fold(c)); if(m) R.origemD.classificacao=m;}}
   if(!R.inspecao||(!R.inspecao.servico&&R.relatorio?.sif)){ const rd=R.relatorio||{}; R.inspecao={servico:rd.sif?"SIF":"",orgao:"",regEstab:rd.registroSif||"",regProduto:"",frase:rd.expressao||""}; }
   if(R.produto.temDrenado==null){R.produto.temDrenado="";R.produto.drenado=""}
   return R;
@@ -522,6 +526,9 @@ function calc(R){
     order.splice(ix+1,0,[k,lvl]); });
   const linhas=[{k:"energia",l:"Valor energético (kcal)",lvl:0,v100:NS.energia?"0":String(rhu(e100,0)),vp:NS.energia?"0":String(rhu(eP,0)),vd:NS.energia?"0":String(rhu(eP/2000*100,0)),raw100:e100,rawP:eP}];
   order.forEach(([k,lvl])=>{const d=NUT[k];linhas.push({k,l:`${d.l} (${d.u})`,lvl,v100:NS[k]?"0":arred(b100[k],d.u),vp:NS[k]?"0":arred(pv[k],d.u),vd:d.vdr?(NS[k]?"0":String(rhu(pv[k]/d.vdr*100,0))):"",raw100:b100[k],rawP:pv[k]})});
+  // declaração simplificada (Anexo X, IN 75/2020; RDC 429/2020, art. 15, §3º): constituintes em quantidade não significativa saem das linhas e vão para a frase
+  let nsSimpl=null; if(R.tabela.simplificada){ const ks=linhas.filter(x=>x.v100==="0"&&x.vp==="0"&&!(NUT[x.k]&&(NUT[x.k].gr==="vit"||NUT[x.k].gr==="min"))).map(x=>x.k);
+    if(ks.length) nsSimpl={keys:new Set(ks),frase:"Não contém quantidades significativas de "+joinE(ks.map(k=>k==="energia"?"valor energético":NUT[k].l.toLowerCase()))+"."}; }
   // lupa
   const lim = liquido?{acAdd:7.5,sat:3,sodio:300}:{acAdd:15,sat:6,sodio:600};
   const LUPA_K=[["acAdd","AÇÚCAR ADICIONADO"],["sat","GORDURA SATURADA"],["sodio","SÓDIO"]];
@@ -585,7 +592,76 @@ function calc(R){
     if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`); }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
-  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,NS,lupa,lactose,extra,claimLac,area,hid,calc100,calcP,decl};
+  if(Object.values(R.alegacoes||{}).some(Boolean)) alegacoesNut(R,{pv,b100,eP,e100,porcao,un,lupa,linhas}).forEach(a=>{ if(!a.ok) W.push(`Alegação “${a.texto}” não atende ao Anexo XX da IN 75/2020: ${a.motivo}`) });
+  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,nsSimpl,NS,lupa,lactose,extra,claimLac,area,hid,calc100,calcP,decl};
+}
+// alegações nutricionais (RDC 429/2020, arts. 24 a 30; termos do Anexo XIX e critérios do Anexo XX da IN 75/2020). Comparativas (reduzido/aumentado) não entram: dependem de alimento de referência.
+// cada uma: [chave, grupo, texto padrão, verificação(c) → {ok, motivo, frases[], notas[]}]; c = {pv, b100, eP, e100, porcao, R, C}
+const ALEG_NUT=(()=>{ const b50=(c,vp,v100)=>c.porcao<=30?v100/2:vp, base=c=>c.porcao<=30?"por 50 g":"por porção";
+  const lim=(nome,v,max,u,txt)=>({ok:v<=max+1e-9,motivo:`${nome}: ${br(v,2)} ${u} ${txt} (máximo ${br(max,2)} ${u}).`});
+  const min=(nome,v,mn,u,txt)=>({ok:v>=mn-1e-9,motivo:`${nome}: ${br(v,2)} ${u} ${txt} (mínimo ${br(mn,2)} ${u}).`});
+  const ambos=(c,k,max,nome)=>{const a=lim(nome,c.pv[k]||0,max,NUT[k].u,"por porção"), b=lim(nome,c.b100[k]||0,max,NUT[k].u,`por 100 ${c.C.un}`); return a.ok?b:a};
+  const naoBaixoEn=c=>(b50(c,c.eP,c.e100)>40)?["ESTE NÃO É UM ALIMENTO BAIXO OU REDUZIDO EM VALOR ENERGÉTICO"]:[];
+  const satB=c=>{const sm=(c.pv.sat||0)+(c.pv.trans||0), pct=c.eP>0?9*(c.pv.sat||0)/c.eP*100:0; return sm>1.5?{ok:false,motivo:`Saturadas + trans: ${br(sm,2)} g por porção (máximo 1,5 g).`}:pct>10?{ok:false,motivo:`As gorduras saturadas dão ${br(pct,1)}% do valor energético (máximo 10%).`}:{ok:true,motivo:`Saturadas + trans ${br(sm,2)} g por porção; ${br(pct,1)}% do valor energético.`}};
+  const e=(...rs)=>rs.find(r=>!r.ok)||rs[0]; // primeira condição que falha (ou a principal, se todas passam)
+  const semLupaSod=c=>c.C.lupa.precisa&&c.C.lupa.nutrientes.some(n=>/S[ÓO]DIO/.test(n))?{ok:false,motivo:"O produto tem lupa de ALTO EM SÓDIO."}:{ok:true,motivo:""};
+  const temCol=c=>c.C.linhas.some(l=>l.k==="col")?{ok:true,motivo:""}:{ok:false,motivo:"Informe o colesterol (laudo ou ingredientes); ele precisa estar na tabela."};
+  const naoBaixoSat=c=>{const s=(c.pv.sat||0)+(c.pv.trans||0); return (s>1.5||9*(c.pv.sat||0)>0.1*c.eP)?["ESTE NÃO É UM ALIMENTO BAIXO OU REDUZIDO EM GORDURAS SATURADAS"]:[]};
+  const L=[
+  ["en_nc","Valor energético","NÃO CONTÉM VALOR ENERGÉTICO",c=>e(lim("Valor energético",c.eP,4,"kcal","por porção"),lim("Valor energético",c.e100,4,"kcal",`por 100 ${c.C.un}`))],
+  ["en_baixo","Valor energético","BAIXO EM VALOR ENERGÉTICO",c=>lim("Valor energético",b50(c,c.eP,c.e100),40,"kcal",base(c))],
+  ["ac_nc","Açúcares","ZERO AÇÚCARES",c=>{const r=ambos(c,"acTot",0.5,"Açúcares totais"); r.frases=[...((c.b100.acAdd||0)>0?["(*) FORNECE QUANTIDADES NÃO SIGNIFICATIVAS DE AÇÚCARES"]:[]),...naoBaixoEn(c)]; return r}],
+  ["ac_baixo","Açúcares","BAIXO EM AÇÚCARES",c=>lim("Açúcares totais",b50(c,c.pv.acTot||0,c.b100.acTot||0),5,"g",base(c))],
+  ["ac_sa","Açúcares","SEM ADIÇÃO DE AÇÚCARES",c=>{ const enz=c.R.ingredientes.some(i=>i.lactase);
+    const r=(c.b100.acAdd||0)>0?{ok:false,motivo:`O produto tem ${br(c.b100.acAdd,2)} g de açúcares adicionados por 100 ${c.C.un}.`}:enz?{ok:false,motivo:"A lactase (enzima) aumenta os açúcares do produto final pela hidrólise da lactose: o Anexo XX não permite “sem adição de açúcares” nesse caso."}:{ok:true,motivo:"Sem açúcares adicionados."};
+    r.frases=[...(((c.pv.acTot||0)>0.5||(c.b100.acTot||0)>0.5)?["CONTÉM AÇÚCARES PRÓPRIOS DOS INGREDIENTES"]:[]),...naoBaixoEn(c)];
+    r.notas=["Confirme que nenhum ingrediente tem açúcar adicionado nem foi usado para adoçar no lugar do açúcar (ex.: suco concentrado, fruta seca, mel)."]; return r}],
+  ["gord_nc","Gorduras totais","ZERO GORDURAS",c=>e(ambos(c,"gord",0.5,"Gorduras totais"),...["sat","trans","col"].map(k=>({ok:!((c.b100[k]||0)>(NUT[k].ns??0)),motivo:`${NUT[k].l} acima de zero na tabela.`})))],
+  ["gord_baixo","Gorduras totais","BAIXO EM GORDURAS",c=>lim("Gorduras totais",b50(c,c.pv.gord||0,c.b100.gord||0),3,"g",base(c))],
+  ["sat_nc","Gorduras saturadas","ZERO GORDURAS SATURADAS",c=>{const r=ambos(c,"sat",0.1,"Gorduras saturadas"); r.notas=["Para leites, leites fermentados e queijos desnatados o limite é 0,2 g."]; return r}],
+  ["sat_baixo","Gorduras saturadas","BAIXO EM GORDURAS SATURADAS",c=>satB(c)],
+  ["trans_nc","Gorduras trans","ZERO GORDURAS TRANS",c=>e(ambos(c,"trans",0.1,"Gorduras trans"),satB(c))],
+  ["col_nc","Colesterol","ZERO COLESTEROL",c=>e(temCol(c),ambos(c,"col",5,"Colesterol"),satB(c))],
+  ["col_baixo","Colesterol","BAIXO EM COLESTEROL",c=>e(temCol(c),lim("Colesterol",b50(c,c.pv.col||0,c.b100.col||0),20,"mg",base(c)),satB(c))],
+  ["sod_nc","Sódio","ZERO SÓDIO",c=>ambos(c,"sodio",5,"Sódio")],
+  ["sod_mb","Sódio","MUITO BAIXO EM SÓDIO",c=>e(lim("Sódio",b50(c,c.pv.sodio||0,c.b100.sodio||0),40,"mg",base(c)),semLupaSod(c))],
+  ["sod_baixo","Sódio","BAIXO EM SÓDIO",c=>e(lim("Sódio",b50(c,c.pv.sodio||0,c.b100.sodio||0),80,"mg",base(c)),semLupaSod(c))],
+  ["sal_sa","Sal","SEM ADIÇÃO DE SAL",c=>{const r=c.C.lupa.precisa&&c.C.lupa.nutrientes.some(n=>/S[ÓO]DIO/.test(n))?{ok:false,motivo:"O produto tem lupa de ALTO EM SÓDIO: a alegação não é permitida."}:{ok:true,motivo:"Sem lupa de sódio."};
+    r.frases=(c.pv.sodio||0)>5||(c.b100.sodio||0)>5?["CONTÉM SÓDIO PRÓPRIO DOS INGREDIENTES"]:[]; r.notas=["Confirme que não há sal nem outros sais de sódio adicionados (também nos ingredientes) e que o alimento de referência leva sal."]; return r}],
+  ["prot_fonte","Proteínas","FONTE DE PROTEÍNAS",c=>{const r=min("Proteínas",c.pv.prot||0,5,"g","por porção (10% do VDR)"); r.notas=["A proteína adicionada precisa atender aos aminoácidos essenciais do Anexo XXI da IN 75/2020."]; return r}],
+  ["prot_alto","Proteínas","ALTO CONTEÚDO DE PROTEÍNAS",c=>{const r=min("Proteínas",c.pv.prot||0,10,"g","por porção (20% do VDR)"); r.notas=["A proteína adicionada precisa atender aos aminoácidos essenciais do Anexo XXI da IN 75/2020."]; return r}],
+  ["fib_fonte","Fibras alimentares","FONTE DE FIBRAS",c=>min("Fibras alimentares",c.pv.fibra||0,2.5,"g","por porção (10% do VDR)")],
+  ["fib_alto","Fibras alimentares","ALTO CONTEÚDO DE FIBRAS",c=>min("Fibras alimentares",c.pv.fibra||0,5,"g","por porção (20% do VDR)")],
+  ["om3_fonte","Ômegas","FONTE DE ÔMEGA 3",c=>{const r=min("Ômega 3",c.pv.om3||0,300,"mg","por porção (ácido alfa-linolênico; ou 40 mg de EPA + DHA)"); r.frases=naoBaixoSat(c); return r}],
+  ["om3_alto","Ômegas","ALTO CONTEÚDO DE ÔMEGA 3",c=>{const r=min("Ômega 3",c.pv.om3||0,600,"mg","por porção (ácido alfa-linolênico; ou 80 mg de EPA + DHA)"); r.frases=naoBaixoSat(c); return r}],
+  ["om6_fonte","Ômegas","FONTE DE ÔMEGA 6",c=>{const r=min("Ômega 6",c.pv.om6||0,1.5,"g","por porção"); r.frases=naoBaixoSat(c); r.notas=["Há outras condições no Anexo XX (proporção dos ácidos graxos)."]; return r}],
+  ["om6_alto","Ômegas","ALTO CONTEÚDO DE ÔMEGA 6",c=>{const r=min("Ômega 6",c.pv.om6||0,3,"g","por porção"); r.frases=naoBaixoSat(c); r.notas=["Há outras condições no Anexo XX (proporção dos ácidos graxos)."]; return r}],
+  ["om9_fonte","Ômegas","FONTE DE ÔMEGA 9",c=>{const r=min("Ômega 9",c.pv.om9||0,2,"g","por porção"); r.frases=naoBaixoSat(c); r.notas=["Há outras condições no Anexo XX (proporção dos ácidos graxos)."]; return r}],
+  ["om9_alto","Ômegas","ALTO CONTEÚDO DE ÔMEGA 9",c=>{const r=min("Ômega 9",c.pv.om9||0,4,"g","por porção"); r.frases=naoBaixoSat(c); r.notas=["Também: no mínimo 45% dos ácidos graxos como ácido oleico e mais de 20% do valor energético vindo dele (Anexo XX)."]; return r}]];
+  // vitaminas e minerais: fonte ≥ 15% e alto conteúdo ≥ 30% do VDR por porção
+  EXTRAS.filter(e=>(e[7]==="vit"||e[7]==="min")&&e[4]).forEach(([k,l,,u,vdr])=>{
+    L.push([`vm_fonte_${k}`,"Vitaminas e minerais",`FONTE DE ${l.toUpperCase()}`,c=>min(l,c.pv[k]||0,vdr*0.15,u,"por porção (15% do VDR)")]);
+    L.push([`vm_alto_${k}`,"Vitaminas e minerais",`ALTO CONTEÚDO DE ${l.toUpperCase()}`,c=>min(l,c.pv[k]||0,vdr*0.30,u,"por porção (30% do VDR)")]); });
+  return L; })();
+function alegacoesNut(R,C){ const sel=R.alegacoes||{}; const c={pv:C.pv,b100:C.b100,eP:C.eP,e100:C.e100,porcao:C.porcao,R,C};
+  return ALEG_NUT.filter(a=>sel[a[0]]).map(([k,g,t,f])=>{let r; try{r=f(c)}catch(e){r={ok:false,motivo:"Não foi possível verificar."}} return {k,g,texto:String(R.alegTexto?.[k]||t).toUpperCase(),padrao:t,ok:r.ok,motivo:r.motivo,frases:r.frases||[],notas:r.notas||[]}});
+}
+function alegacoesCard(R,C){ const sel=R.alegacoes||{}; const lista=alegacoesNut(R,C); const grupos=[...new Set(ALEG_NUT.map(a=>a[1]))];
+  const vmTab=new Set(C.linhas.map(l=>l.k));
+  return `<div class="card stack"><div><span class="eyebrow">RDC 429/2020, arts. 24 a 30 · IN 75/2020, Anexos XIX e XX</span><h2>Alegações nutricionais</h2>
+    <p class="muted small">Marque as alegações que vão no rótulo. O sistema confere com a tabela final (porção; por 50 g quando a porção é de até 30 g) e mostra as frases complementares obrigatórias. Alegações comparativas (reduzido, aumentado, light) não entram aqui.</p></div>
+    ${grupos.map(g=>{const its=ALEG_NUT.filter(a=>a[1]===g&&(g!=="Vitaminas e minerais"||vmTab.has(a[0].replace(/^vm_(fonte|alto)_/,""))||sel[a[0]])); if(!its.length) return "";
+      return `<div class="stack" style="gap:4px"><b class="small">${esc(g)}</b><div class="row" style="gap:4px 18px">${its.map(a=>`<label class="check small"><input type="checkbox" data-bind="alegacoes.${a[0]}" data-rerender="1" ${sel[a[0]]?"checked":""}><span>${esc(a[2])}</span></label>`).join("")}</div></div>`}).join("")}
+    ${!C.linhas.some(l=>NUT[l.k]&&(NUT[l.k].gr==="vit"||NUT[l.k].gr==="min"))?`<span class="small faint">Vitaminas e minerais aparecem aqui quando estão na tabela (ingredientes ou valores declarados pelo laudo).</span>`:""}
+    ${lista.length?`<div class="stack" style="gap:8px">${lista.map(a=>`<div class="alert ${a.ok?"info":"err"}" style="flex-direction:column;align-items:stretch;gap:4px">
+        <div class="row" style="justify-content:space-between"><b>${a.ok?"Atende":"Não atende"}: ${esc(a.texto)}</b></div>
+        <span class="small">${esc(a.motivo)}</span>
+        ${a.frases.length?`<span class="small"><b>Frase obrigatória junto à alegação</b> (no mínimo 50% do tamanho da alegação, em cor contrastante): ${a.frases.map(esc).join(" · ")}</span>`:""}
+        ${a.notas.map(n=>`<span class="small muted">${esc(n)}</span>`).join("")}
+        <label class="f" style="max-width:420px"><span class="small">Texto no rótulo</span><input type="text" data-bind="alegTexto.${a.k}" value="${esc(R.alegTexto?.[a.k]||"")}" placeholder="${esc(a.padrao)}"></label></div>`).join("")}
+      ${C.lupa.precisa?`<span class="small muted">Com lupa: as alegações não podem ficar na metade superior do painel principal nem ter letras maiores que as da lupa (RDC 429/2020, art. 30).</span>`:""}
+      <span class="small muted">Se a característica é própria de todos os alimentos desse tipo, a alegação precisa de um esclarecimento logo depois (RDC 429/2020, art. 29).</span></div>`:""}
+  </div>`;
 }
 // Anexo III, IN 75/2020
 function arred(v,u){
@@ -710,7 +786,7 @@ function layTabela(R,C,modelo){
   modelo=modelo||modelosTab(R)[0]||"vertical";
   if(modelo==="linear") return layLinear(R,C);
   const red=!!R.tabela.reduzida, g=red?0.75:1, ft=red?8:10, fs=red?6:8, ff=6, fv=red?6:8; // Anexo XII (retificado em 2022): valores 6 pt na formatação reduzida
-  const L=linhasTab(R,C), ops=[], P=v=>v*PT;
+  const L=linhasTab(R,C).filter(x=>!(C.nsSimpl&&C.nsSimpl.keys.has(x.k))), ops=[], P=v=>v*PT;
   const twp=(s,size,bold)=>tw(s,P(size),bold)/PT; // largura em pt
   const cols=["100 "+C.un,`${br(C.porcao,1)} ${C.un}`,"%VD*"];
   const ind=3.4*g;
@@ -735,6 +811,8 @@ function layTabela(R,C,modelo){
     return y;
   };
   let W,Ht;
+  // frase "Não contém quantidades significativas de…" abaixo da última linha da grade, separada por uma linha (Anexo X)
+  const nsB=(x0,xEnd,y)=>{ if(!C.nsSimpl) return y; let yy=y+1.5*g; wrap(C.nsSimpl.frase,P(fs),false,P(xEnd-x0)).forEach(l=>{yy+=fs*1.22; T(x0,yy,l,fs)}); yy+=3.2*g; H(x0,xEnd,yy,LWT.fina); marks.nsBase=yy; return yy; };
   const subs=[C.porcoesTxt,C.porcTxt].filter(Boolean);
   if(modelo==="vertical"){
     const M=2.75*g, nw=nameW(L);
@@ -746,7 +824,7 @@ function layTabela(R,C,modelo){
     const th=y+4.03*g; H(M,W-M,th,LWT.grossa); marks.thickY=th;
     marks.headBase=th+15.19*g;
     const med=bloco(M,nw2,L,th+3.63*g,th+15.19*g,th+18.09*g,10.77*g,8.29*g,L.length); marks.mediumY=med;
-    const fb=med+7.21; T(M,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+    const fb=nsB(M,W-M,med)+7.21; T(M,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
     Ht=fb+5.3;
   } else if(modelo==="vquebrado"){
     const M=2.6*g, gap=3*g;
@@ -761,7 +839,7 @@ function layTabela(R,C,modelo){
     const x2=W-M-3*colW-nw2;
     const med=bloco(M,nw1,esq,th+4.83*g,th+16.36*g,th+19.22*g,11.49*g,8.66*g,n);
     bloco(x2,nw2,dir,th+4.83*g,th+16.36*g,th+19.22*g,11.49*g,8.66*g,n); marks.mediumY=med;
-    const fb=med+7.2; T(M,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+    const fb=nsB(M,W-M,med)+7.2; T(M,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
     Ht=fb+7.75;
   } else { // horizontal e horizontal quebrado: bloco do título à esquerda
     const M=2.6*g, lw=Math.max(twp("INFORMAÇÃO",ft,true),twp("NUTRICIONAL",ft,true))+2.5*g, gapL=5.67*g;
@@ -774,7 +852,7 @@ function layTabela(R,C,modelo){
       const nw=Math.max(nameW(L),footW-3*colW+1); W=x1+nw+3*colW+2.9*g;
       marks.headBase=16.92*g;
       const med=bloco(x1,nw,L,5.42*g,16.92*g,19.75*g,11.49*g,8.66*g,L.length); marks.mediumY=med;
-      const fb=med+7.62; T(x1,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+      const fb=nsB(x1,W-2.9*g,med)+7.62; T(x1,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
       Ht=Math.max(fb+5.42, ly-11*g+6);
     } else {
       const [esq,dir]=dividir(L);
@@ -783,7 +861,7 @@ function layTabela(R,C,modelo){
       marks.headBase=15.5*g;
       const med=bloco(x1,nw1,esq,5.42*g,15.5*g,19.75*g,11.49*g,8.66*g,n);
       bloco(x1+nw1+3*colW+gap,nw2,dir,5.42*g,15.5*g,19.75*g,11.49*g,8.66*g,n); marks.mediumY=med;
-      const fb=med+7.6; T(x1,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
+      const fb=nsB(x1,W-2.7*g,med)+7.6; T(x1,fb,"*Percentual de valores diários fornecidos pela porção.",ff); marks.footBase=fb;
       Ht=Math.max(fb+5.4, ly-11*g+6);
     }
   }
@@ -793,19 +871,23 @@ function layTabela(R,C,modelo){
 }
 // texto do modelo linear em trechos (regular / negrito)
 function linearRuns(R,C){
-  const L=Object.fromEntries(C.linhas.map(x=>[x.k,x])); const red=true;
+  const L=Object.fromEntries(C.linhas.map(x=>[x.k,x])); const sk=k=>!L[k]||(C.nsSimpl&&C.nsSimpl.keys.has(k));
   const p=`${br(C.porcao,1)} ${C.un}`; const runs=[]; const t=(s,b=false)=>runs.push({t:s,b});
   const f=(k,nome,u,vd=true)=>{const x=L[k]; t(`${nome} ${x.v100} ${u} (`); t(`${x.vp} ${u}`,true); t(vd?`, ${x.vd}%)`:")")};
+  const nm=k=>NUT[k].ab||NUT[k].l, ext=gr=>C.linhas.filter(x=>NUT[x.k]&&NUT[x.k].gr===gr&&!sk(x.k));
+  const grupos=[]; // cada grupo: função que escreve os trechos
+  if(!sk("energia")) grupos.push(()=>{t(`Valor energético ${L.energia.v100} kcal (`); t(`${L.energia.vp} kcal`,true); t(`, ${L.energia.vd}%)`)});
+  const comFilhos=(pai,nomePai,filhos,quais=", dos quais: ")=>{ const fs=filhos.filter(x=>!sk(x[0])); if(sk(pai)&&!fs.length) return;
+    grupos.push(()=>{ if(!sk(pai)){ f(pai,nomePai,"g"); if(fs.length) t(quais); } fs.forEach((x,i)=>{ if(i) t(", "); f(x[0],x[1],x[2],x[3]); }); }); };
+  comFilhos("carb","Carboidratos",[["acTot","Açúcares totais","g",false],["acAdd","Aç adicionados","g",true],...ext("carb").map(x=>[x.k,nm(x.k),NUT[x.k].u,!!NUT[x.k].vdr])]);
+  if(!sk("prot")) grupos.push(()=>f("prot","Proteínas","g"));
+  comFilhos("gord","Gorduras totais",[["sat","Gord saturadas","g",true],["trans","Gord trans","g",true],...ext("gord").map(x=>[x.k,nm(x.k),NUT[x.k].u,!!NUT[x.k].vdr])],", das quais: ");
+  if(!sk("fibra")) grupos.push(()=>f("fibra","Fibras","g"));
+  if(!sk("sodio")) grupos.push(()=>f("sodio","Sódio","mg"));
+  ["vit","min","outro"].forEach(g=>ext(g).forEach(x=>grupos.push(()=>f(x.k,nm(x.k),NUT[x.k].u,!!NUT[x.k].vdr))));
   t(`Por 100 ${C.un} (`); t(p,true); t(", %VD*): ");
-  t(`Valor energético ${L.energia.v100} kcal (`); t(`${L.energia.vp} kcal`,true); t(`, ${L.energia.vd}%) ● `);
-  f("carb","Carboidratos","g"); t(", dos quais: "); f("acTot","Açúcares totais","g",false); t(", "); f("acAdd","Aç adicionados","g");
-  const nm=k=>NUT[k].ab||NUT[k].l, ext=gr=>C.linhas.filter(x=>NUT[x.k]&&NUT[x.k].gr===gr);
-  ext("carb").forEach(x=>{t(", ");f(x.k,nm(x.k),NUT[x.k].u,!!NUT[x.k].vdr)});
-  t(" ● "); f("prot","Proteínas","g"); t(" ● "); f("gord","Gorduras totais","g"); t(", das quais: "); f("sat","Gord saturadas","g"); t(", "); f("trans","Gord trans","g");
-  ext("gord").forEach(x=>{t(", ");f(x.k,nm(x.k),NUT[x.k].u,!!NUT[x.k].vdr)});
-  t(" ● "); f("fibra","Fibras","g"); t(" ● "); f("sodio","Sódio","mg");
-  ["vit","min","outro"].forEach(g=>ext(g).forEach(x=>{t(" ● ");f(x.k,nm(x.k),NUT[x.k].u,!!NUT[x.k].vdr)}));
-  t(".");
+  grupos.forEach((g,i)=>{ if(i) t(" ● "); g(); }); t(".");
+  if(C.nsSimpl) t(" "+C.nsSimpl.frase);
   return runs;
 }
 function linearTexto(C,R){return linearRuns(R||S.R,C).map(r=>r.t).join("")}
@@ -1082,7 +1164,7 @@ function exemplo(tipo){
     Object.assign(R.painel,{largura:"10",altura:"8"});
   }
   // dados estruturados de origem e inspeção (Pomerode Alimentos, exemplos das planilhas)
-  R.origemD={expressao:"Fabricado em",razao:"Pomerode Alimentos LTDA",classificacao:"Unidade de beneficiamento de leite e derivados",endereco:"Rua dos Atiradores, 71, Centro",municipio:"Pomerode",uf:"SC",cep:"89355-272",pais:"Brasil",cnpj:"04.630.689/0001-99",telefone:"(47) 3387-3983",email:"contato@queijospomerode.com.br",industria:true};
+  R.origemD={expressao:"Fabricado em",razao:"Pomerode Alimentos LTDA",classificacao:"Unidade de Beneficiamento de Leite e Derivados",endereco:"Rua dos Atiradores, 71, Centro",municipio:"Pomerode",uf:"SC",cep:"89355-272",pais:"Brasil",cnpj:"04.630.689/0001-99",telefone:"(47) 3387-3983",email:"contato@queijospomerode.com.br",industria:true};
   if(tipo==="concentracao") R.inspecao={servico:"SIF",orgao:"",regEstab:"1414",regProduto:"0110",frase:""};
   R.produto.temDrenado="nao";
   R.ingredientes.forEach(i=>{ i.glutenR=i.glutenR||(i.gluten?"sim":"nao"); i.lactoseR=i.lactoseR||(i.lactose?"sim":"nao"); i.alergR=i.alergR||(Object.values(i.alerg||{}).some(Boolean)?"sim":"nao"); });
@@ -1126,6 +1208,7 @@ function itensDoRotulo(ref){
   add(PP,"denominacao","Denominação de venda",P.denominacao); // só a denominação: a alegação de lactose tem item próprio
   add(PP,"fantasia","Denominação fantasia",R.relatorio?.fantasia);
   add(PP,"marca","Marca",P.marca);
+  {const al=alegacoesNut(R,C); if(al.length) add(PP,"alegacoesNut","Alegações nutricionais",al.map(a=>a.texto+(a.frases.length?` — com a frase “${a.frases.join("”, “")}” (no mínimo 50% do tamanho da alegação)`:"")).join("; ")+(C.lupa.precisa?". Fora da metade superior do painel principal, com letras não maiores que as da lupa.":"."));}
   if(alegLac(R)) add(PP,"alegacao","Alegação sobre lactose",C.lupa.precisa?`${alegLac(R)} — na metade inferior do painel principal (o rótulo tem lupa).`:`${alegLac(R)} — próximo à denominação de venda.`);
   {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; add(PP,"conteudo",C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e unidade com 2/3 dessa altura, no painel principal`:""}`:"");}
   if(C.temDren) add(PP,"drenado","Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal.`);
@@ -1165,7 +1248,7 @@ function novaVersaoV(V){
     n:{...n,total:it.length}, itens:it.map(x=>({g:x.g,t:x.t,st:x.o.st||"",obs:x.o.obs||""})),
     artes:ARTE.vid===V.id?ARTE.lista.filter(a=>!a.local).map(a=>a.id):[], imagens:(V.imagens||[]).slice()});
   it.forEach(x=>{ if(x.o.st==="nc"){ x.o.ant=(x.o.ant||[]).concat({v:V.versao,st:"nc",obs:x.o.obs||""}); x.o.st=""; x.o.obs=""; } });
-  V.versao++; V.arte=""; V.obsGerais=""; V.imagens=[]; V.data=new Date().toISOString().slice(0,10); V.status=""; V.aprovadoEm="";
+  V.versao++; V.arte=""; V.obsGerais=""; V.obsImgs=[]; V.imagens=[]; V.data=new Date().toISOString().slice(0,10); V.status=""; V.aprovadoEm="";
 }
 const podeAprovarV=n=>n.nc===0&&n.p===0&&(n.c+n.na)>0;
 // todos os itens na ordem do relatório: [grupo, chave/obj, título, dica]
@@ -1210,7 +1293,7 @@ function viewValidacao(V){
     <div class="card"><div class="sumline vsum"><span class="chip">${n.c} conforme(s)</span><span class="chip bad">${n.nc} não conforme(s)</span>${sis?"":`<span class="chip neutral">${n.na} não se aplica</span>`}<span class="chip warn">${n.p} sem conferir</span><span class="small muted">${total} itens</span></div></div>
     ${grupos.map(g=>`<div class="card stack"><h2>${esc(g)}</h2>${it.filter(x=>x.g===g).map(linha).join("")}</div>`).join("")}
     <div class="row"><button class="mini" data-act="vadd">+ Adicionar item</button></div>
-    <div class="card stack"><h2>Observações gerais</h2>${inp("obsGerais","Sai no fim do relatório",{area:true,span:true})}</div>
+    <div class="card stack"><h2>Observações gerais</h2>${inp("obsGerais","Sai no fim do relatório",{area:true,span:true})}${imgsObsHTML("obsImgs",V.obsImgs)}</div>
     <div class="card stack"><div><h2>Relatório para o cliente</h2><p class="muted small">PDF objetivo: conclusão, não conformidades com as observações, observações gerais e a arte.</p></div>
       ${n.p?`<div class="alert warn"><span>${n.p} item(ns) ainda sem conferir. Eles saem no relatório como “Não conferido”.</span></div>`:""}
       <div class="row"><button class="primary" data-act="vrel">Gerar relatório (PDF)</button></div></div>
@@ -1277,6 +1360,7 @@ async function relatorioValidacao(V){
     kv(ordV(V.versao),V.status==="aprovado"?`Aprovada em ${fmtD(V.aprovadoEm)}.`:`Esta validação (${n.nc} não conformidade(s)${n.p?`, ${n.p} não conferido(s)`:""}).`); y+=2; }
   if(String(V.obsGerais||"").trim()){h2("Observações gerais"); doc.setFont("helvetica","normal");doc.setFontSize(9.5);doc.setTextColor(...TINTA);
     String(V.obsGerais).split(/\n/).forEach(p=>{doc.splitTextToSize(p||" ",W).forEach(l=>{need(4.6);doc.text(l,M,y+3.4);y+=4.6})}); y+=2}
+  if((V.obsImgs||[]).length){ if(!String(V.obsGerais||"").trim()) h2("Observações gerais"); const st={get y(){return y},set y(v){y=v},need}; await pdfImgsObs(doc,V.obsImgs,M,W,st); }
   const artes=ARTE.vid===V.id?ARTE.lista:[];
   for(let i=0;i<artes.length;i++){const src=artes[i].imagem; const im=await new Promise(r=>{const g=new Image();g.onload=()=>r(g);g.onerror=()=>r(null);g.src=src}); if(!im) continue;
     const maxW=W, maxH=BASE-M-14; let w=maxW, h=w*im.height/im.width; if(h>maxH){h=maxH;w=h*im.width/im.height}
@@ -1351,6 +1435,18 @@ function painelArte(){ const L=ARTE.lista; if(!L.length) return ""; const ix=Mat
     <div class="seg">${[["fit","Ajustar"],...(a.wmm?[["real","Tamanho real"]]:[]),["2","2×"],["4","4×"]].map(([k,t])=>`<button class="${z===k?"on":""}" data-vzoom="${k}">${t}</button>`).join("")}</div>
     <div class="varte-img"><img src="${a.url}" alt="${esc(a.nome)}" style="${est}"></div></aside>`;
 }
+// imagens anexadas às observações (logo, foto, detalhe): ficam no próprio registro, reduzidas
+function imgsObsHTML(path,lista){lista=lista||[];return `<div class="stack" style="gap:6px"><span class="small muted" style="font-weight:600">Imagens das observações (saem no documento)</span>
+  <div class="row vimgs">${lista.map((a,i)=>`<div class="vimg"><img src="${a.src}" alt="${esc(a.nome)}"><span class="small muted">${esc(a.nome)}</span><button class="mini danger" data-obsimgdel="${path}|${i}">Remover</button></div>`).join("")}
+  ${lista.length<8?`<button class="mini" data-obsimgadd="${path}">Anexar imagem ou PDF</button>`:""}</div></div>`}
+async function anexarImgsObs(path,files){const L=getP(S.R,path)||[]; if(!getP(S.R,path)) setP(S.R,path,L); toast("Lendo o arquivo…");
+  for(const f of files){ if(L.length>=8) break; try{ if(f.type==="application/pdf"||/\.pdf$/i.test(f.name)){ for(const pg of await pdfParaImagens(f,1400,Math.min(4,8-L.length))) L.push({nome:pg.nome,src:pg.imagem}); }
+      else L.push({nome:f.name,src:await lerImagemV(f,1400)}); }catch(e){console.error(e);toast("Não foi possível ler "+f.name)} }
+  salvar(); render();}
+async function pdfImgsObs(doc,lista,M,W,st){ // st={y,need,BASE}; desenha cada imagem (até 120 × 90 mm) com o nome embaixo
+  for(const a of (lista||[])){const im=await new Promise(r=>{const g=new Image();g.onload=()=>r(g);g.onerror=()=>r(null);g.src=a.src}); if(!im) continue;
+    let w=Math.min(W,120), h=w*im.height/im.width; if(h>90){h=90;w=h*im.width/im.height} st.need(h+8); doc.addImage(a.src,"JPEG",st.M??M,st.y,w,h); st.y+=h+1;
+    doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(110,120,114);doc.text(String(a.nome||""),M,st.y+3); st.y+=7;}}
 function lerImagemV(file,max=1600){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const g=new Image();g.onerror=rej;g.onload=()=>{const k=Math.min(1,max/Math.max(g.width,g.height));
   const cv=document.createElement("canvas");cv.width=Math.round(g.width*k);cv.height=Math.round(g.height*k);const x=cv.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,cv.width,cv.height);x.drawImage(g,0,0,cv.width,cv.height);res(cv.toDataURL("image/jpeg",0.82))};g.src=fr.result};fr.readAsDataURL(file)})}
 
@@ -1664,6 +1760,7 @@ function viewPorcao(R,C){
       ${(()=>{const n=C.lupa.nutrientes.length;const ops=Object.entries(LUPA_LAYOUTS).filter(([k,v])=>v.ok(Math.max(n,1))).map(([k,v])=>[k,v.t]);const cur=lupaModelo(R,Math.max(n,1));if(R.lupa.modelo!==cur)R.lupa.modelo=cur;return sel("lupa.modelo","Disposição da lupa",ops,{re:true,hint:n?`Variações da malha construtiva da Anvisa para ${n+1} blocos.`:"Este produto não precisa de lupa."})})()}
     </div>
     <div class="grid2">
+      ${chk("tabela.simplificada","Declaração simplificada: tirar da tabela o que é zero e usar a frase “Não contém quantidades significativas de…”",{hint:"Anexo X da IN 75/2020. Vale para valor energético e nutrientes (não para vitaminas e minerais)."+(C.nsSimpl?" Neste produto: "+C.nsSimpl.frase:"")})}
       ${chk("tabela.reduzida","Usar formatação reduzida (título 8 pt, demais informações 6 pt)",{hint:"Só quando não houver espaço em superfície contínua fora do painel principal (art. 16, §3º)."})}
       ${R.tabela.lactoseGal&&!alegLac(R)?chk("tabela.lactoseGal","Produto com alegação de restrição de lactose",{hint:"Escolha a alegação na etapa Produto; depois desmarque aqui."}):`<div class="small muted">${alegLac(R)?`Alegação “${esc(alegLac(R))}”: a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º).`:"Sem alegação sobre lactose (escolha na etapa Produto, se houver)."}</div>`}
     </div>
@@ -1682,8 +1779,10 @@ function viewPorcao(R,C){
     </div>`:""}
   </div>
   ${declaradosCard(R,C)}
+  ${alegacoesCard(R,C)}
   <div class="card stack"><div><h2>Observações</h2><p class="muted small">Saem no fim da ficha do rótulo, antes do serviço de inspeção.</p></div>
-    ${inp("porcao.obs","Observações",{area:true,span:true,ph:"Ex.: a lista de ingredientes pode ir no painel lateral, junto da tabela."})}</div></div>`;
+    ${inp("porcao.obs","Observações",{area:true,span:true,ph:"Ex.: a lista de ingredientes pode ir no painel lateral, junto da tabela."})}
+    ${imgsObsHTML("obsImgs",R.obsImgs)}</div></div>`;
 }
 function declaradosCard(R,C){ const un=C.un, D=R.declarados||{};
   const naTab=C.linhas.filter(l=>l.k!=="energia").map(l=>l.k); const ks=[...naTab,...Object.keys(D).filter(k=>NUT[k]&&!naTab.includes(k))];
@@ -1808,7 +1907,7 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   sec("Identificação do produto");
   if(!mesmoNome(P)) kv("Nome do produto",P.nome); kv("Denominação de venda",P.denominacao); kv("Denominação fantasia",R.relatorio?.fantasia); kv("Marca",P.marca);
   kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""); if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade}`);
-  if(alegLac(R)) kv("Alegação",alegLac(R)); kv("Descrição",P.descricao);
+  if(alegLac(R)) kv("Alegação",alegLac(R)); {const al=alegacoesNut(R,C); if(al.length) kv("Alegações nutricionais",al.map(a=>a.texto).join("; "));} kv("Descrição",P.descricao);
   kv("Código de barras",R.relatorio?.codigoBarras); kv("Redes sociais e site",(R.relatorio?.redes||"").replace(/\n+/g," · "));
   sec("Fabricante e registro");
   kv("Identificação de origem",origemTexto(R));
@@ -1846,6 +1945,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
   h2("Painel principal"); if(!mesmoNome(P)) kv("Denominação de venda",P.denominacao); if((R.relatorio?.fantasia||"").trim()) kv("Denominação fantasia",R.relatorio.fantasia); kv("Marca",P.marca);
+  {const al=alegacoesNut(R,C); if(al.length) kv("Alegações nutricionais",al.map(a=>a.texto+(a.frases.length?` (com a frase: ${a.frases.join("; ")})`:"")).join("; ")+`. Frases complementares com no mínimo 50% do tamanho da alegação, em cor contrastante.${C.lupa.precisa?" Com lupa, as alegações ficam fora da metade superior do painel principal e com letras não maiores que as da lupa (RDC 429/2020, art. 30).":""}`);}
   if(alegLac(R)) kv("Alegação",C.lupa.precisa?`${alegLac(R)} — a alegação deve ficar na metade inferior do painel principal, pois este rótulo possui lupa de ${joinE(C.lupa.nutrientes)} (RDC 429/2020, art. 30).`:`${alegLac(R)} — próximo à denominação de venda (RDC 135/2017).`);
   {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021)`:""}`:"");}
   if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021).`);
@@ -1859,10 +1959,11 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes. Referências: RDC 727/2022 e Lei 10.674/2003.`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
     {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
-  {const ds=Object.entries(C.decl); if(ds.length) para("Valores declarados diferentes do cálculo: "+ds.map(([k,d])=>`${NUT[k].l} ${String(+d.v.toFixed(3)).replace(".",",")} ${NUT[k].u} ${d.base==="porcao"?"por porção":"por 100 "+C.un}${d.motivo==="laudo"?` (${d.fonte||"laudo"})`:` (margem de segurança; calculado ${String(+(d.base==="porcao"?d.cP:d.c100).toFixed(2)).replace(".",",")} ${NUT[k].u}${d.fonte?"; "+d.fonte:""})`}`).join("; ")+". A energia foi calculada com os valores declarados.",{size:8.5});}
+  // valores declarados (laudo ou margem) não são comentados na ficha: a tabela já mostra o valor final
   h2("Demais informações"); kv("Conservação",P.conservacao);
   kv("Fabricação, validade e lote",`O rótulo precisa ter um campo reservado para a data de fabricação, o prazo de validade e o lote, preenchidos no dia da produção (RDC 727/2022).${String(P.campoFVL||"").trim()?` Dimensão do campo: ${String(P.campoFVL).trim()}.`:""}`); kv("Identificação de origem",origemTexto(R)); if((R.relatorio?.redes||"").trim()) kv("Redes sociais e site",R.relatorio.redes.replace(/\n+/g," · ")); if((R.relatorio?.codigoBarras||"").trim()) kv("Código de barras",R.relatorio.codigoBarras);
-  if(String(R.porcao.obs||"").trim()){ h2("Observações"); String(R.porcao.obs).trim().split(/\n+/).forEach(t=>para(t.trim())); }
+  if(String(R.porcao.obs||"").trim()||(R.obsImgs||[]).length){ h2("Observações"); String(R.porcao.obs||"").trim().split(/\n+/).filter(Boolean).forEach(t=>para(t.trim()));
+    if((R.obsImgs||[]).length){const st={get y(){return y},set y(v){y=v},need}; await pdfImgsObs(doc,R.obsImgs,M,W,st);} }
   {const I=R.inspecao||{}; if(I.servico&&I.servico!=="nenhum"){ h2(`Serviço de inspeção — ${I.servico==="SIE-SC"?"SIE/SC":I.servico}`);
     if(I.orgao) kv("Órgão",I.orgao); kv("Registro do estabelecimento",I.regEstab||"—"); if(I.regProduto) kv("Registro do produto",I.regProduto);
     kv("Frase obrigatória",fraseRegistro(R));
@@ -1871,7 +1972,8 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
     else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}.`);
     if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA",TXT_SISBI);
   }}
-  {const pend=C.E.concat(C.W.filter(t=>!/^“CONTÉM LACTOSE” foi incluído/.test(t))); if(pend.length){h2("Pendências"); pend.forEach(t=>para("• "+t,{size:8.5}))}} // teor de lactose normalmente não é informado: não vai para a ficha
+  {const tabLaudo=OBRIG.every(k=>C.decl[k]); const compRx=/sem composição nutricional|Informe a composição do|informe a lactose \(g\/100 g\)|Informe a galactose \(g\/100 g\)|ingrediente opcional sem composição|do calculado \(|Para confirmar a alegação/i;
+   const pend=C.E.concat(C.W.filter(t=>!/^“CONTÉM LACTOSE” foi incluído/.test(t)&&!(tabLaudo&&compRx.test(t)))); if(pend.length){h2("Pendências"); pend.forEach(t=>para("• "+t,{size:8.5}))}} // teor de lactose normalmente não é informado: não vai para a ficha
   para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
   const emitido=new Date().toLocaleDateString("pt-BR"), n=doc.internal.getNumberOfPages();
   for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
@@ -2250,8 +2352,13 @@ document.addEventListener("input",e=>{
       const ing=S.R.ingredientes[ix]; const x=it.x; ing.nome=ing.nome||x[0];
       ["carb","acTot","acAdd","prot","gord","sat","trans","fibra","sodio"].forEach((k,j)=>ing.comp[k]=String(x[j+1]));
       ing.fonte="Tabela IBGE (POF): "+x[0]; S.open[ing.id]=true; salvar(); render(); toast("Composição preenchida com a tabela IBGE.")})}
-  if(el.dataset.anexo){const r=busca(ANEXO5,el.value,x=>x[1]+" "+x[0]);
-    showAC(el,r.map(x=>({t:x[1],s:`${x[2]} · ${x[3]} · ${x[0].split(" - ")[0]}`,x})),it=>{const x=it.x; S.R.porcao.anexo=x[1]; const v=nz(String(x[2]).match(/[\d.,]+/)?.[0]); if(v) S.R.porcao.ref=String(v); if(/ml/i.test(x[2])&&S.R.produto.estado!=="liquido") toast("Esta porção é em ml: confira se o produto é líquido."); salvar(); render()})}
+  if(el.dataset.anexo){const q=fold(el.value).split(/\s+/).filter(Boolean); // nome do produto primeiro; grupo do anexo só depois
+    const sc=x=>{const n=fold(x[1]),g=fold(x[0]); if(!q.every(w=>n.includes(w)||g.includes(w))) return -1; return q.reduce((a,w)=>a+(new RegExp("(^|[^a-z])"+w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).test(n)?4:n.includes(w)?2:0),0)};
+    const r=q.length?ANEXO5.map(x=>[x,sc(x)]).filter(a=>a[1]>=0).sort((a,b)=>b[1]-a[1]).slice(0,15).map(a=>a[0]):[];
+    showAC(el,r.map(x=>({t:x[1],s:`${x[2]} · ${x[3]} · ${x[0].split(" - ")[0]}`,x})),it=>{const x=it.x; S.R.porcao.anexo=x[1]; const txt=String(x[2]);
+      if(/^quantidade/i.test(txt)){ toast(`Porção de referência: “${txt}”. Informe a quantidade do produto, como exposto à venda, que corresponde a isso (ex.: peso de 1 unidade).`); }
+      else { const liq=S.R.produto.estado==="liquido"; const m=txt.match(liq?/([\d.,]+)\s*ml/i:/([\d.,]+)\s*g/i)||txt.match(/[\d.,]+/); const v=nz(m&&(m[1]||m[0])); if(v) S.R.porcao.ref=String(v); if(/^[\d.,]+\s*ml$/i.test(txt.trim())&&!liq) toast("Esta porção é em ml: confira se o produto é líquido."); }
+      salvar(); render()})}
 });
 document.addEventListener("change",e=>{const el=e.target;
   if(el.dataset.reblur){const y=window.scrollY;render();window.scrollTo(0,y);return}
@@ -2277,6 +2384,8 @@ document.addEventListener("click",e=>{
   if(d.vst){const [p,k]=d.vst.split("|");const o=getP(S.R,p);o.st=o.st===k?"":k;salvar();const y=window.scrollY;render();window.scrollTo(0,y);if(k==="nc"&&o.st==="nc"){const t=document.querySelector(`textarea[data-bind="${p}.obs"]`);t&&t.focus()}return}
   if(d.act==="vadd"){S.R.extras.push({titulo:"",st:"",obs:""});salvar();render();setTimeout(()=>{const el=document.querySelector(`input[data-bind="extras.${S.R.extras.length-1}.titulo"]`);el&&el.focus()},30);return}
   if(d.vdel!=null){if(b.dataset.armed){S.R.extras.splice(+d.vdel,1);salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
+  if(d.obsimgadd){const inpF=document.createElement("input");inpF.type="file";inpF.accept="image/*,application/pdf,.pdf";inpF.multiple=true;inpF.onchange=()=>{if(inpF.files.length) anexarImgsObs(d.obsimgadd,[...inpF.files])};inpF.click();return}
+  if(d.obsimgdel){const [p,i]=d.obsimgdel.split("|");const L=getP(S.R,p)||[];L.splice(+i,1);salvar();render();return}
   if(d.act==="vimgadd"){$("#vimgfile").click();return}
   if(d.vimgdel!=null){if(b.dataset.armed){removerArte(+d.vimgdel)}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
   if(d.vpag!=null){S.vPag=+d.vpag;S.vLado=true;render();return}
