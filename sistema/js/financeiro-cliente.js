@@ -467,15 +467,15 @@
     <div class="sg-linha">
       <span class="linha-num">${n}</span>
       <label class="campo"><span>Data</span><input type="date" name="d_data" value="${i?.data || ""}"></label>
-      <label class="campo"><span>Começou</span><input type="time" name="d_inicio" value="${i?.inicio || ""}"></label>
-      <label class="campo"><span>Terminou</span><input type="time" name="d_fim" value="${i?.fim || ""}"></label>
+      <label class="campo"><span>Começou</span><span class="com-botao"><input type="time" name="d_inicio" value="${i?.inicio || ""}"><button type="button" class="botao-mini" data-acao="sg-agora" data-alvo="d_inicio" title="Hora atual">Agora</button></span></label>
+      <label class="campo"><span>Terminou</span><span class="com-botao"><input type="time" name="d_fim" value="${i?.fim || ""}"><button type="button" class="botao-mini" data-acao="sg-agora" data-alvo="d_fim" title="Hora atual">Agora</button></span></label>
       <button type="button" class="remover-horario" data-acao="sg-remover" aria-label="Remover este horário" title="Remover este horário">×</button>
     </div>`;
   function modalSaudiGap(c, sv) {
     const novo = !sv;
     const ym = S.finMes || mesTrabalhoPadrao(c);
     const dataPadrao = hoje().startsWith(ym) ? hoje() : (() => { const [a, m] = ym.split("-").map(Number); return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`; })();
-    const sg = sv?.saudi_gap || { online: { data: dataPadrao }, documental: [{ data: dataPadrao }] };
+    const sg = sv?.saudi_gap || { online: { data: dataPadrao }, documental: [{ data: hoje() }] };
     const faturado = !novo && faturasDe(c, sv.data.slice(0, 7)).length;
     abrirModal(novo ? "Lançar SAUDI GAP" : "SAUDI GAP", `
       ${faturado ? `<p class="aviso">A nota dos serviços de ${mesNome(sv.data.slice(0, 7))} já foi registrada. Se mudar a data deste SAUDI GAP para outro mês, confira as notas.</p>` : ""}
@@ -484,12 +484,12 @@
       <fieldset class="sg-etapa"><legend>1. Auditoria On-line <small>horas corridas</small></legend>
         <div class="sg-online">
           <label class="campo"><span>Data</span><input type="date" name="o_data" value="${sg.online?.data || ""}" required></label>
-          <label class="campo"><span>Começou</span><input type="time" name="o_inicio" value="${sg.online?.inicio || ""}" required></label>
-          <label class="campo"><span>Terminou</span><input type="time" name="o_fim" value="${sg.online?.fim || ""}" required></label>
+          <label class="campo"><span>Começou</span><span class="com-botao"><input type="time" name="o_inicio" value="${sg.online?.inicio || ""}" required><button type="button" class="botao-mini" data-acao="sg-agora" data-alvo="o_inicio" title="Hora atual">Agora</button></span></label>
+          <label class="campo"><span>Terminou</span><span class="com-botao"><input type="time" name="o_fim" value="${sg.online?.fim || ""}" required><button type="button" class="botao-mini" data-acao="sg-agora" data-alvo="o_fim" title="Hora atual">Agora</button></span></label>
         </div>
       </fieldset>
       <fieldset class="sg-etapa"><legend>2. Auditoria Documental <small>pode ser em vários horários · dá para salvar sem e preencher depois</small></legend>
-        <div class="sg-docs">${(sg.documental?.length ? sg.documental : [{}]).map((i, n) => linhaDoc(i, n + 1)).join("")}</div>
+        <div class="sg-docs">${(sg.documental?.length ? sg.documental : [{ data: hoje() }]).map((i, n) => linhaDoc(i, n + 1)).join("")}</div>
         <button type="button" class="add-horario" data-acao="sg-add">+ Adicionar horário</button>
       </fieldset>
       <label class="campo largo"><span>Observações</span><textarea name="observacoes" rows="2">${esc(sv?.observacoes || "")}</textarea></label>
@@ -809,10 +809,14 @@
       try { if (el.dataset.formato === "pdf") await relatorioSGPDF(c, ym); else await relatorioSGWord(c, ym); toast("Relatório gerado."); }
       catch (e) { falha(e); } finally { el.disabled = false; el.textContent = txt; }
     },
+    "sg-agora": (el) => {
+      const d = new Date(), inp = el.closest(".com-botao").querySelector("input");
+      inp.value = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      el.closest("form")._previaSG?.();
+    },
     "sg-add": (el) => {
       const f = el.closest("form"), box = f.querySelector(".sg-docs");
-      const ult = [...box.querySelectorAll('[name="d_data"]')].pop();
-      box.insertAdjacentHTML("beforeend", linhaDoc({ data: ult?.value || f.elements.o_data.value }, box.children.length + 1));
+      box.insertAdjacentHTML("beforeend", linhaDoc({ data: hoje() }, box.children.length + 1)); // novo horário já vem com a data de hoje
       box.lastElementChild.querySelector('[name="d_inicio"]').focus();
       f._previaSG?.();
     },

@@ -24,6 +24,11 @@
   // ---------- utilidades ----------
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const hoje = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+  // Olhinho da Visão geral: esconde os valores em R$ (fica guardado neste navegador)
+  const ocultarValores = () => { try { return localStorage.getItem("sis-ocultar-valores") === "1"; } catch (e) { return false; } };
+  const valorVisivel = (v) => ocultarValores() ? "R$ •••••" : SIS.moeda(v);
+  const OLHO_ABERTO = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const OLHO_FECHADO = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.1-5.9M9.9 5.2A9.7 9.7 0 0 1 12 5c7 0 11 7 11 7a19.9 19.9 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M1 1l22 22"/></svg>`;
   const agoraHora = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
   const fmtData = (iso) => iso ? iso.split("-").reverse().join("/") : "";
   const fmtDataCurta = (iso) => { if (!iso) return ""; const [a, m, d] = iso.split("-"); return `${d}/${m}` + (a !== hoje().slice(0, 4) ? `/${a.slice(2)}` : ""); };
@@ -165,7 +170,7 @@
 
     return `
       <header class="topo">
-        <h1>Visão geral</h1>
+        <div class="topo-linha"><h1>Visão geral</h1><button type="button" class="botao-olho" data-acao="ocultar-valores" aria-pressed="${ocultarValores() ? "true" : "false"}" title="${ocultarValores() ? "Mostrar os valores" : "Ocultar os valores"}">${ocultarValores() ? OLHO_FECHADO : OLHO_ABERTO} <span>${ocultarValores() ? "Mostrar valores" : "Ocultar valores"}</span></button></div>
         <p class="topo-meta">${nomeMes(mes)} · ${fmtDur(minMes)} registradas no mês</p>
       </header>
       ${(() => { const av = SIS.avisosGerais ? SIS.avisosGerais() : []; return av.length ? `<section class="painel-avisos"><h2>Avisos</h2><ul>${av.map((a) => `<li class="aviso ${a.cor}">${a.html}</li>`).join("")}</ul></section>` : ""; })()}
@@ -178,9 +183,8 @@
               <div><dt>Tarefas abertas</dt><dd>${n.abertos}</dd></div>
               <div class="${n.vencidos ? "alerta" : ""}"><dt>Prazos vencidos</dt><dd>${n.vencidos}</dd></div>
               <div><dt>Horas no mês</dt><dd>${fmtDur(n.minMes)}</dd></div>
-              ${SIS.calcMes && SIS.mesmoMes(c) ? `<div class="bloco-valor"><dt>Nota de ${nomeMes(mes).split(" ")[0].toLowerCase()} · serviços do próprio mês</dt><dd>${SIS.moeda(SIS.calcMes(c, mes).valor)}</dd></div>` : ""}
-              ${SIS.calcMes && !SIS.mesmoMes(c) ? (() => { const ant = SIS.mesAnterior(mes); return `<div class="bloco-valor"><dt>Nota a emitir · serviços de ${nomeMes(ant).split(" ")[0].toLowerCase()}</dt><dd>${SIS.moeda(SIS.calcMes(c, ant).valor)}</dd></div>
-              <div class="bloco-valor sec"><dt>Acumulado de ${nomeMes(mes).split(" ")[0].toLowerCase()} · nota no mês que vem</dt><dd>${SIS.moeda(SIS.calcMes(c, mes).valor)}</dd></div>`; })() : ""}
+              ${SIS.calcMes && SIS.mesmoMes(c) ? `<div class="bloco-valor"><dt>Nota de ${nomeMes(mes).split(" ")[0].toLowerCase()} · serviços do próprio mês</dt><dd>${valorVisivel(SIS.calcMes(c, mes).valor)}</dd></div>` : ""}
+              ${SIS.calcMes && !SIS.mesmoMes(c) ? `<div class="bloco-valor"><dt>Acumulado de ${nomeMes(mes).split(" ")[0].toLowerCase()} · nota no mês que vem</dt><dd>${valorVisivel(SIS.calcMes(c, mes).valor)}</dd></div>` : ""}
             </dl>
           </a>`; }).join("")}
         <button class="bloco-novo" data-acao="novo-cliente">+ Novo cliente</button>
@@ -727,6 +731,7 @@
           location.hash = "#/"; toast("Cliente excluído.");
           break;
         }
+        case "ocultar-valores": { try { localStorage.setItem("sis-ocultar-valores", ocultarValores() ? "0" : "1"); } catch (e) {} render(); break; }
         case "agora": { el.closest(".linha-hora").querySelector(`[name="${el.dataset.alvo}"]`).value = agoraHora(); atualizarDuracao(); break; }
         case "add-horario": {
           const f = el.closest("form"); const box = f.querySelector(".linhas-hora");

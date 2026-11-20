@@ -505,3 +505,10 @@ a.botao-sec { color: var(--tinta); text-decoration: none; }
 .sg-linha .campo, .sg-online .campo { min-width: 0; }
 .sg-linha input, .sg-online input { font-variant-numeric: tabular-nums; }
 @media (max-width: 520px) { .sg-online { grid-template-columns: 1fr 1fr; } .sg-online .campo:first-child { grid-column: 1 / -1; } .sg-linha { grid-template-columns: 20px 1fr 1fr 22px; } .sg-linha .campo:first-of-type { grid-column: 2 / 4; } }
+
+/* Visão geral: olhinho para esconder os valores */
+.topo-linha { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.botao-olho { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--linha); background: transparent; color: var(--tinta-2); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.botao-olho:hover { color: var(--tinta); border-color: var(--tinta-3); }
+.sg-online .com-botao, .sg-linha .com-botao { display: flex; gap: 4px; }
+.sg-online .com-botao input, .sg-linha .com-botao input { flex: 1; min-width: 0; }
