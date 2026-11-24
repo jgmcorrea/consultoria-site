@@ -193,8 +193,30 @@ const EXTRAS = [
   ["colina","Colina","","mg",550,0,"zn","outro"]
 ];
 const EXTRA_K = EXTRAS.map(e=>e[0]);
-// alegações sobre lactose (RDC 135/2017): "zero" até 100 mg/100 g ou ml; "baixo" acima de 100 mg até 1 g/100 g ou ml
+// alegações sobre lactose (RDC 715/2022): "zero" até 100 mg/100 g ou ml; "baixo" acima de 100 mg até 1 g/100 g ou ml
 const ALEG_LAC = [["","Sem alegação sobre lactose",null],["ZERO LACTOSE","Zero lactose",0.1],["ISENTO DE LACTOSE","Isento de lactose",0.1],["SEM LACTOSE","Sem lactose",0.1],["0% LACTOSE","0% lactose",0.1],["NÃO CONTÉM LACTOSE","Não contém lactose",0.1],["BAIXO TEOR DE LACTOSE","Baixo teor de lactose",1],["BAIXO EM LACTOSE","Baixo em lactose",1]];
+// açúcares que obrigam "DIABÉTICOS: CONTÉM ..." nos alimentos para dietas com restrição de lactose (RDC 715/2022, art. 8º, I)
+const ACUCARES_DIAB=[["glicose",/\b(glicose|dextrose|xarope de milho|mel|acucar invertido|xarope de agave)\b/],
+  ["sacarose",/\b(acucar|sacarose|rapadura|melado)\b/],
+  ["frutose",/\b(frutose|mel|acucar invertido|xarope de agave)\b/]];
+const FRUTA_RX=/\b(fruta|frutas|polpa|suco|geleia|doce de|morango|amora|framboesa|mirtilo|pessego|abacaxi|manga|maracuja|uva|banana|maca|laranja|limao|goiaba|damasco|ameixa|figo|coco ralado adocado)\b/;
+function acucaresPresentes(ings,hid){ const r={glicose:[],sacarose:[],frutose:[]};
+  if(hid&&hid.H>0) r.glicose.push("lactose hidrolisada pela lactase");
+  ings.filter(i=>!i.omitir&&nz(i.qtd)>0&&!i.lactase).forEach(i=>{ const n=fold(i.nome+" "+(i.sub||""));
+    ACUCARES_DIAB.forEach(([a,rx])=>{ if(rx.test(n)&&!/sem acucar|zero acucar/.test(n)) r[a].push(i.nome) });
+    if(FRUTA_RX.test(n)) ["glicose","sacarose","frutose"].forEach(a=>{ if(!r[a].includes(i.nome)) r[a].push(i.nome+" (fruta)") }); });
+  return r; }
+// sugestão do grupo do Anexo XVI pelo item do Anexo V e pela denominação
+function sugerir16(R){ const a=fold((R.porcao.anexo||"")+" | "+(R.produto.denominacao||"")+" | "+(R.produto.nome||""));
+  if(/leite fermentado|iogurte|yogurt|coalhada|kefir|leite acidofilo/.test(a)&&!/bebida lactea/.test(a)) return 5;
+  if(/leite em po/.test(a)) return 8;
+  if(/\bqueijo|\bqueijos/.test(a)&&!/pao de queijo|requeijao|biscoito|salgad/.test(a)) return 6;
+  if(/\bleite\b/.test(a)&&!/doce de leite|leite condensado|creme de leite|bebida|achocolatado|leite de coco|composto lacteo|fermentado/.test(a)) return 7;
+  if(/^\s*ovo|\bovos? (de galinha|in natura|caipira|vermelho|branco)/.test(a)) return 4;
+  if(/\bfarinha/.test(a)&&!/farinha lactea/.test(a)) return 2;
+  if(/azeite|oleo (de|vegetal)/.test(a)) return 9;
+  if(/^\s*sal\b|sal (refinado|marinho|grosso|iodado)/.test(a)) return 10;
+  return 0; }
 const alegLac = R=>String(R.relatorio?.alegacaoLactose||"").trim().toUpperCase();
 // classificação dos estabelecimentos — Decreto 9.013/2017 (RIISPOA), arts. 17 a 23
 const CLASSIF_EST = [
@@ -402,6 +424,19 @@ function calc(R){
     if(i.aditivo&&!i.funcao) W.push(`O aditivo “${i.nome}” está sem função tecnológica (RDC 727/2022, art. 12).`);
     const temComp=KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null);
     if(!temComp && !(i.acucarAdic)) W.push(`“${i.nome||"Ingrediente"}” está sem composição nutricional; entra no cálculo como zero.`);
+    // lactose obrigatória quando o ingrediente é fonte de lactose (sem ela a lactose do produto, a glicose da lactase e as advertências saem erradas)
+    if(i.lactose&&!i.lactase&&(i.comp.lac===""||i.comp.lac==null)&&!alegLac(R)&&!R.ingredientes.some(x=>x.lactase)) W.push(`“${i.nome}” está marcado como fonte de lactose: informe a lactose (g/100 g) na composição.`);
+    // faixas de plausibilidade (erro de unidade ou de digitação)
+    if(temComp){ const cv=k=>i.comp[k]===""||i.comp[k]==null?null:nz(i.comp[k]); const nmF=fold(i.nome||"");
+      const lacteo=/\b(leite|soro|whey|queijo|creme de leite|iogurte|lacteo|lactea|concentrado proteico|proteina do soro|caseina|nata|coalhada)\b/.test(nmF)&&!/\b(coco|soja|amendoa|aveia|arroz|castanha)\b/.test(nmF);
+      const sod=cv("sodio");
+      if(sod!=null&&((lacteo&&sod<5)||(!lacteo&&sod>0&&sod<0.5&&!/\b(oleo|azeite|acucar|agua|gordura)\b/.test(nmF))))
+        W.push(`Sódio de “${i.nome}”: ${br(sod,3)} mg/100 g parece baixo demais${lacteo?" para ingrediente lácteo (o esperado fica por volta de 30 a 60 mg/100 g)":""}. Confira se o valor está em mg.`);
+      const mac=["carb","prot","gord","fibra"].reduce((a,k)=>a+(cv(k)||0),0); if(mac>100.5) W.push(`“${i.nome}”: carboidratos + proteínas + gorduras + fibras somam ${br(mac,1)} g por 100 g (mais de 100 g). Confira a composição.`);
+      if(cv("sat")!=null&&cv("gord")!=null&&cv("sat")>cv("gord")+0.01) W.push(`“${i.nome}”: gorduras saturadas maiores que as gorduras totais.`);
+      if(cv("acTot")!=null&&cv("carb")!=null&&cv("acTot")>cv("carb")+0.01) W.push(`“${i.nome}”: açúcares totais maiores que os carboidratos.`);
+      if(cv("acAdd")!=null&&cv("acTot")!=null&&cv("acAdd")>cv("acTot")+0.01) W.push(`“${i.nome}”: açúcares adicionados maiores que os açúcares totais.`);
+      if(lacteo&&(cv("carb")||0)>=3&&cv("acTot")!=null&&cv("acTot")<0.75*cv("carb")) W.push(`“${i.nome}”: açúcares totais (${br(cv("acTot"),1)} g) bem menores que os carboidratos (${br(cv("carb"),1)} g). Em ingrediente lácteo quase todo o carboidrato é lactose; confira.`); }
     if(i.ogm&&!i.gene.trim()) W.push(`Informe a espécie doadora do gene de “${i.nome}” (Decreto 4.680/2003).`);
     if(i.ogmTipo==="deriv"&&!String(i.ogmDeriv||"").trim()) W.push(`Informe quais derivados transgênicos “${i.nome}” contém (ex.: proteína de soja e dextrose de milho).`);
     if(i.ogmTipo==="ing"&&String(i.ogmComp||"").trim()&&fold(i.sub||"").indexOf(fold(i.ogmComp))<0) W.push(`O componente transgênico “${i.ogmComp}” não aparece nos ingredientes de “${i.nome}”; a indicação “transgênico” foi para o nome do ingrediente.`);
@@ -460,6 +495,10 @@ function calc(R){
       hid={antes,depois,H,gal:per100g.gal,galCalc,galLaudo,glic:H*0.5263,agua:H*0.0526,modo:L.modo,enzimas:enzLac.map(i=>i.nome),semFonte:fontesSem.length>0};
     }
   }
+  // balanço de açúcares: açúcares totais ≥ lactose + galactose (+ glicose formada pela lactase)
+  { const glic=hid?hid.glic:0, soma=(per100g.lac||0)+(per100g.gal||0)+glic;
+    if((per100g.lac>0||per100g.gal>0||glic>0)&&per100g.acTot+0.2<soma) W.push(`Açúcares totais (${br(per100g.acTot,2)} g/100 g) menores que lactose + galactose${hid?" + glicose formada pela lactase":""} (${br(soma,2)} g/100 g). Confira os açúcares totais dos ingredientes ou o laudo.`);
+    if(hid&&hid.galLaudo!=null&&hid.galLaudo<=1e-9) W.push("Há lactase, mas a galactose informada pelo laudo é 0. Isso é tecnicamente improvável (a hidrólise forma galactose): confirme o laudo."); }
   const b100={}; KEYS.forEach(k=>b100[k]=per100g[k]*(liquido?dens:1));
   const un=liquido?"ml":"g";
   // embalagem e porção
@@ -533,6 +572,10 @@ function calc(R){
   const lim = liquido?{acAdd:7.5,sat:3,sodio:300}:{acAdd:15,sat:6,sodio:600};
   const LUPA_K=[["acAdd","AÇÚCAR ADICIONADO"],["sat","GORDURA SATURADA"],["sodio","SÓDIO"]];
   const acima=LUPA_K.filter(([k])=>b100[k]>=lim[k]);
+  LUPA_K.forEach(([k,n])=>{ const v=b100[k]; if(v<lim[k]&&v>=lim[k]*0.95) W.push(`${n.charAt(0)+n.slice(1).toLowerCase()}: ${br(v,2)} ${NUT[k].u} por 100 ${un}, a menos de 5% do limite da lupa (${br(lim[k],1)} ${NUT[k].u}). Uma pequena variação de lote ou de laudo muda o rótulo.`) });
+  { const limO=liquido?{acAdd:15,sat:6,sodio:600}:{acAdd:7.5,sat:3,sodio:300}; const vO=k=>liquido?per100g[k]:per100g[k]*dens;
+    const aO=LUPA_K.filter(([k])=>vO(k)>=limO[k]).map(x=>x[1]), aA=acima.map(x=>x[1]);
+    if(aO.join()!==aA.join()) I.push(`Se o produto fosse ${liquido?"sólido ou semissólido":"líquido"}, a lupa ficaria ${aO.length?"ALTO EM "+joinE(aO):"dispensada"} (hoje: ${aA.length?"ALTO EM "+joinE(aA):"sem lupa"}). Confira o estado físico (Anexo XV, IN 75/2020).`); }
   // Anexo XVI (IN 75/2020) + RDC 429/2020, art. 18, §§1º e 2º
   { const I=R.inspecao||{};
     if(!I.servico) E.push("Escolha o serviço de inspeção (etapa Produto).");
@@ -542,6 +585,7 @@ function calc(R){
   if(R.lupa.anexo16===undefined) R.lupa.anexo16=R.lupa.vedada?"cond":"";
   if(R.lupa.item16!==undefined&&R.lupa.item16!==null){const n=+R.lupa.item16; R.lupa.anexo16=n?(n<=6?"cond":"total"):"";}
   const modo16=R.lupa.anexo16;
+  { const sg=sugerir16(R); if(sg&&!R.lupa.item16&&!R.lupa.anexo16) W.push(`O produto parece se enquadrar no Anexo XVI da IN 75/2020, item ${sg} (${ANEXO16[sg-1]}), mas está marcado como “Não está no Anexo XVI”. Confira o enquadramento (etapa Porção e embalagem).`); }
   if(R.lupa.temOpcional===undefined) R.lupa.temOpcional=R.ingredientes.some(i=>i.opcional)?"sim":"";
   const temOpc=R.lupa.temOpcional;
   const opc=(modo16==="cond"&&temOpc==="sim")?ings.filter(i=>i.opcional):[];
@@ -585,15 +629,28 @@ function calc(R){
   if(b100.lac+b100.gal>b100.acTot+0.05) W.push("Lactose + galactose passam dos açúcares totais. Lactose e galactose são açúcares: confira os açúcares totais dos ingredientes.");
   if(R.tabela.lactoseGal && !aLac) W.push("Escolha qual é a alegação sobre lactose (etapa Produto): zero lactose, baixo teor de lactose etc.");
   if(aLac){ const al=ALEG_LAC.find(a=>a[0]===aLac); const lim=al?al[2]:null; const mg=b100.lac*1000;
-    if(lim!=null && b100.lac>lim+1e-9) E.push(`A alegação “${aLac}” exige no máximo ${lim<1?"100 mg":"1 g"} de lactose por 100 ${un}; o produto tem ${br(mg,0)} mg (RDC 135/2017).`);
+    if(lim!=null && b100.lac>lim+1e-9) E.push(`A alegação “${aLac}” exige no máximo ${lim<1?"100 mg":"1 g"} de lactose por 100 ${un}; o produto tem ${br(mg,0)} mg (RDC 715/2022).`);
     else if(lim===1 && b100.lac<=0.1+1e-9) I.push(`Com ${br(mg,0)} mg de lactose por 100 ${un}, o produto também atende “ZERO LACTOSE” (até 100 mg/100 ${un}).`);
     if(semValorLac.length) W.push(`Para confirmar a alegação “${aLac}”, informe a lactose (g/100 g) de ${joinE(semValorLac.map(i=>`“${i.nome}”`))}.`);
     if(lactose) E.push(`“${aLac}” não pode aparecer junto com “CONTÉM LACTOSE”.`);
     if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`); }
+  // alimento para dietas com restrição de lactose (RDC 715/2022): denominação com a finalidade e advertências do art. 8º
+  let restLac=null;
+  if(aLac){ const RL=R.restLac||{}; const auto=acucaresPresentes(ings,hid);
+    const pres=RL.manual?["glicose","sacarose","frutose"].filter(a=>RL.acucares&&RL.acucares[a]):["glicose","sacarose","frutose"].filter(a=>auto[a].length);
+    restLac={auto,pres,manual:!!RL.manual,fonte:RL.fonte||"",
+      diab:pres.length?`DIABÉTICOS: CONTÉM ${joinE(pres.map(x=>x.toUpperCase()),", "," E ")}`:"",
+      orient:"CONSUMIR PREFERENCIALMENTE SOB ORIENTAÇÃO DE NUTRICIONISTA OU MÉDICO"};
+    if(!/para dietas com restri[çc][ãa]o de lactose[\s.]*$/i.test(String(P.denominacao||"").trim()))
+      W.push(`Com a alegação “${aLac}”, o produto é alimento para dietas com restrição de lactose: a denominação de venda deve terminar com “para dietas com restrição de lactose” (RDC 715/2022, art. 6º, IV). Ex.: “${String(P.denominacao||"Iogurte").trim()} para dietas com restrição de lactose”.`);
+    if(RL.manual&&!String(RL.fonte||"").trim()) W.push("Açúcares presentes no produto final informados à mão: informe a fonte (laudo).");
+    if(hid&&hid.H>0&&!pres.includes("glicose")) W.push("A lactase forma glicose no produto: confira a advertência “DIABÉTICOS: CONTÉM GLICOSE” (RDC 715/2022, art. 8º, I).");
+  }
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
   if(Object.values(R.alegacoes||{}).some(Boolean)) alegacoesNut(R,{pv,b100,eP,e100,porcao,un,lupa,linhas}).forEach(a=>{ if(!a.ok) W.push(`Alegação “${a.texto}” não atende ao Anexo XX da IN 75/2020: ${a.motivo}`) });
-  return {E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,nsSimpl,NS,lupa,lactose,extra,claimLac,area,hid,calc100,calcP,decl};
+  const Cret={E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,nsSimpl,NS,lupa,lactose,restLac,extra,claimLac,area,hid,calc100,calcP,decl};
+  avisosExtras(R,Cret); return Cret;
 }
 // alegações nutricionais (RDC 429/2020, arts. 24 a 30; termos do Anexo XIX e critérios do Anexo XX da IN 75/2020). Comparativas (reduzido/aumentado) não entram: dependem de alimento de referência.
 // cada uma: [chave, grupo, texto padrão, verificação(c) → {ok, motivo, frases[], notas[]}]; c = {pv, b100, eP, e100, porcao, R, C}
@@ -613,9 +670,9 @@ const ALEG_NUT=(()=>{ const b50=(c,vp,v100)=>c.porcao<=30?v100/2:vp, base=c=>c.p
   ["ac_nc","Açúcares","ZERO AÇÚCARES",c=>{const r=ambos(c,"acTot",0.5,"Açúcares totais"); r.frases=[...((c.b100.acAdd||0)>0?["(*) FORNECE QUANTIDADES NÃO SIGNIFICATIVAS DE AÇÚCARES"]:[]),...naoBaixoEn(c)]; return r}],
   ["ac_baixo","Açúcares","BAIXO EM AÇÚCARES",c=>lim("Açúcares totais",b50(c,c.pv.acTot||0,c.b100.acTot||0),5,"g",base(c))],
   ["ac_sa","Açúcares","SEM ADIÇÃO DE AÇÚCARES",c=>{ const enz=c.R.ingredientes.some(i=>i.lactase);
-    const r=(c.b100.acAdd||0)>0?{ok:false,motivo:`O produto tem ${br(c.b100.acAdd,2)} g de açúcares adicionados por 100 ${c.C.un}.`}:enz?{ok:false,motivo:"A lactase (enzima) aumenta os açúcares do produto final pela hidrólise da lactose: o Anexo XX não permite “sem adição de açúcares” nesse caso."}:{ok:true,motivo:"Sem açúcares adicionados."};
+    const r=(c.b100.acAdd||0)>0?{ok:false,motivo:`O produto tem ${br(c.b100.acAdd,2)} g de açúcares adicionados por 100 ${c.C.un}.`}:enz?{ok:false,motivo:"Há lactase (enzima que hidrolisa açúcares): verificar a condição de não aumento de açúcares por processo enzimático (IN 75/2020, Anexo XX). Pela hidrólise, os açúcares do produto aumentam."}:{ok:true,motivo:"Sem açúcares adicionados."};
     r.frases=[...(((c.pv.acTot||0)>0.5||(c.b100.acTot||0)>0.5)?["CONTÉM AÇÚCARES PRÓPRIOS DOS INGREDIENTES"]:[]),...naoBaixoEn(c)];
-    r.notas=["Confirme que nenhum ingrediente tem açúcar adicionado nem foi usado para adoçar no lugar do açúcar (ex.: suco concentrado, fruta seca, mel)."]; return r}],
+    r.notas=["Condições do Anexo XX: sem açúcares adicionados; sem ingredientes que contenham açúcares adicionados; sem ingredientes usados para substituir o açúcar (ex.: suco concentrado, fruta seca, mel, xarope); e o conteúdo de açúcares não pode ter aumentado por processo como a hidrólise enzimática."]; return r}],
   ["gord_nc","Gorduras totais","ZERO GORDURAS",c=>e(ambos(c,"gord",0.5,"Gorduras totais"),...["sat","trans","col"].map(k=>({ok:!((c.b100[k]||0)>(NUT[k].ns??0)),motivo:`${NUT[k].l} acima de zero na tabela.`})))],
   ["gord_baixo","Gorduras totais","BAIXO EM GORDURAS",c=>lim("Gorduras totais",b50(c,c.pv.gord||0,c.b100.gord||0),3,"g",base(c))],
   ["sat_nc","Gorduras saturadas","ZERO GORDURAS SATURADAS",c=>{const r=ambos(c,"sat",0.1,"Gorduras saturadas"); r.notas=["Para leites, leites fermentados e queijos desnatados o limite é 0,2 g."]; return r}],
@@ -700,6 +757,19 @@ function caixaIngredientes(s){
   for(const r of runs){const k=r.t.search(/\S/); if(k<0) continue; if(!r.i) r.t=r.t.slice(0,k)+r.t.charAt(k).toLocaleUpperCase("pt-BR")+r.t.slice(k+1); break}
   return runs.map(r=>r.i?"_"+r.t+"_":r.t).join("");
 }
+// avisos que dependem do texto final (nova fórmula) ou de outros rótulos (família, cadastro do cliente)
+function avisosExtras(R,C){ if(R._semNF||R._semFam||R._semOpc) return; let T; try{T=textos(R,C)}catch(e){return}
+  const nf=novaFormulaInfo(R,C,T); C.novaFormula=nf;
+  if(nf&&nf.precisa){ C.W.push(`Composição alterada (${joinE(nf.mud)}): o rótulo leva “${nf.expr}” no painel principal por pelo menos 90 dias (RDC 727/2022, arts. 20 a 23). Verificar alteração do registro no PGA antes do uso.`);
+    if(!R.novaFormula.desde) C.W.push("Nova fórmula: informe a data de início da nova composição para contar os 90 dias."); }
+  if(R.novaFormula&&R.novaFormula.substitui==="sim"&&!R.novaFormula.anteriorId&&!Object.values(R.novaFormula.mudou||{}).some(Boolean)) C.W.push("Nova fórmula: escolha o rótulo anterior ou marque o que mudou.");
+  C.destaques=destaquesInfo(R,C); C.destaques.filter(d=>!d.ok&&(String(d.texto||"").trim()||d.tipo==="quantidade")).forEach(d=>C.W.push(`Destaque do painel “${d.texto||NUT[d.nutriente]?.l||"sem texto"}”: ${d.msgs.filter(m=>!/fiscaliza/.test(m)).join(" ")}`));
+  { const o=fold(String(R.porcao.obs||"")); const m=o.match(RX_ALEG_OBS); if(m) C.W.push(`As observações citam “${m[0]}”, que parece alegação ou destaque do painel. Cadastre em “Alegações nutricionais” ou “Destaques do painel principal” (etapa Porção e embalagem) para o sistema conferir.`); }
+  { const fi=familiaInfo(R); if(fi.base&&fi.base.mudouBase) C.W.push(`A formulação do rótulo-base “${fi.base.nome}” mudou: atualize este rótulo e reemita (etapa Formulação).`);
+    if(fi.base&&fi.base.mudouLocal) C.W.push("A formulação deste rótulo foi alterada e não bate mais com a da família (etapa Formulação).");
+    fi.variantes.filter(v=>v.desatualizado).forEach(v=>C.I.push(`Rótulo da mesma família com a formulação antiga: “${v.nome}”. Ele precisa ser atualizado e reemitido.`)); }
+  difCliente(R).forEach(d=>C.W.push(`${d.l} diferente do cadastro do cliente: “${d.rot}” no rótulo e “${d.cli}” no cadastro (etapa Produto).`));
+}
 function textos(R,C){
   const P=R.produto; const it=C.ings.filter(i=>i.nome.trim()&&!i.omitir);
   const byQ=(a,b)=>nz(b.qtd)-nz(a.qtd);
@@ -746,7 +816,7 @@ function textos(R,C){
   const frase=(lista,pre)=>{ if(!lista.length) return ""; const itens=[...new Set(lista.flatMap(i=>clean(i.ogmItem||i.ogmComp||(i.ogmTipo==="deriv"?"":i.nome)||i.nome).toUpperCase().split(/\s*,\s*|\s+E\s+/)).filter(Boolean))];
     const adj=itens.length>1?(itens.every(femin)?"TRANSGÊNICAS":"TRANSGÊNICOS"):(femin(itens[0])?"TRANSGÊNICA":"TRANSGÊNICO"); return `${pre} ${joinE(itens,", "," E ")} ${adj}`; };
   const ogm=[frase(ogmIng.filter(i=>i.ogmExpr!=="apartir"),"CONTÉM"),frase(ogmIng.filter(i=>i.ogmExpr==="apartir"),"PRODUTO PRODUZIDO A PARTIR DE")].filter(Boolean).join(". ");
-  return {ing:R.textos.ingOverride.trim()||ingTxt, ingAuto:ingTxt, alg:R.textos.algOverride.trim()||algTxt, algAuto:algTxt, lac:C.lactose, gluten, ogm, alergCont:c.concat(cd,d), alergPode:p};
+  return {ing:R.textos.ingOverride.trim()||ingTxt, ingAuto:ingTxt, alg:R.textos.algOverride.trim()||algTxt, algAuto:algTxt, lac:C.lactose, gluten, ogm, restLac:C.restLac?[C.restLac.diab,C.restLac.orient].filter(Boolean):[], alergCont:c.concat(cd,d), alergPode:p};
 }
 
 /* ===================== MEDIÇÃO DE TEXTO ===================== */
@@ -989,7 +1059,7 @@ function layParas(paras,W){const ops=[];let y=0;paras.forEach(({txt,pt,bold})=>{
 function layDecl(R,C,T){
   const S=tamanhos(R,C); const W=Math.max(30,nz(R.textos.largura)||80); const ops=[]; let y=0;
   const par=(txt,pt,bold)=>{if(!txt)return; const s=pt*PT; wrapRich(txt,s,bold,W).forEach(l=>{y+=s*1.22;l.forEach(g=>ops.push({t:"text",x:g.x,y,s:g.s,size:s,bold,italic:g.i}))}); y+=s*0.45};
-  par(T.ing,S.ingPt,false); par(T.alg,S.avisoPt,true); par(T.lac,S.avisoPt,true); par(T.gluten,S.avisoPt,true);
+  par(T.ing,S.ingPt,false); par(T.alg,S.avisoPt,true); par(T.lac,S.avisoPt,true); par(T.gluten,S.avisoPt,true); (T.restLac||[]).forEach(x=>par(x,S.avisoPt,true));
   return {w:W,h:y+0.5,ops};
 }
 
@@ -1069,7 +1139,8 @@ function novoUUID(){return crypto.randomUUID?crypto.randomUUID():"10000000-1000-
 const DBR={sb:null,lista:[],clientes:[],user:null};
 const TAB="cons_rotulos";
 async function carregarLista(){const {data,error}=await DBR.sb.from(TAB).select("id,cliente_id,nome,tipo,atualizado_em,dados").order("atualizado_em",{ascending:false});if(error)throw error;DBR.lista=data||[]}
-async function carregarClientes(){const {data,error}=await DBR.sb.from("cons_clientes").select("id,nome,ativo").order("nome");if(error)throw error;DBR.clientes=data||[]}
+async function carregarClientes(){let {data,error}=await DBR.sb.from("cons_clientes").select("id,nome,ativo,rotulagem").order("nome");
+  if(error){({data,error}=await DBR.sb.from("cons_clientes").select("id,nome,ativo").order("nome"))} if(error)throw error;DBR.clientes=data||[]}
 const nomeCliente=id=>(DBR.clientes.find(c=>c.id===id)||{}).nome||"";
 function linhaDe(R){if(R.kind==="validacao") return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto||"").trim(),tipo:"validacao",dados:R}; return {id:R.id,cliente_id:R.clienteId||null,nome:(R.produto.nome||"").trim(),tipo:R.tipo,dados:R}}
 let salvarT, gravando=null;
@@ -1179,7 +1250,7 @@ const VAL_GRUPOS=[
     ["marca","Marca e denominação fantasia","Não podem induzir o consumidor a erro. RDC 727/2022."],
     ["conteudo","Peso líquido","No painel principal, com a altura mínima dos algarismos e a unidade correta. Portaria Inmetro 249/2021."],
     ["drenado","Peso drenado","Mesma altura e destaque do peso líquido, no painel principal. Portaria Inmetro 249/2021."],
-    ["alegacao","Alegação sobre lactose","Termos e limites da norma; com lupa, na metade inferior do painel principal. RDC 135/2017; RDC 429/2020."],
+    ["alegacao","Alegação sobre lactose","Termos e limites da norma; com lupa, na metade inferior do painel principal. RDC 715/2022; RDC 429/2020."],
     ["transgenico","Transgênico: frase e símbolo “T”","Frase junto ao símbolo, no painel principal, com área mínima e cores do símbolo. Decreto 4.680/2003; Portaria MJ 2.658/2003."],
     ["lupa","Rotulagem nutricional frontal (lupa)","Necessidade, modelo, tamanho e posição na metade superior do painel principal. RDC 429/2020; IN 75/2020."]]],
   ["Lista de ingredientes e advertências",[
@@ -1208,6 +1279,8 @@ function itensDoRotulo(ref){
   add(PP,"denominacao","Denominação de venda",P.denominacao); // só a denominação: a alegação de lactose tem item próprio
   add(PP,"fantasia","Denominação fantasia",R.relatorio?.fantasia);
   add(PP,"marca","Marca",P.marca);
+  {const nf=novaFormulaInfo(R,C,T); if(nf&&nf.precisa) add(PP,"novaFormula","Nova fórmula",`${nf.expr} — caixa alta, negrito, cor contrastante, no mínimo ${nf.minMM} mm.`);}
+  {const ds=destaquesInfo(R,C).filter(d=>String(d.texto||"").trim()); if(ds.length) add(PP,"destaques","Destaques do painel principal",ds.map(d=>d.texto).join("; "));}
   {const al=alegacoesNut(R,C); if(al.length) add(PP,"alegacoesNut","Alegações nutricionais",al.map(a=>a.texto+(a.frases.length?` — com a frase “${a.frases.join("”, “")}” (no mínimo 50% do tamanho da alegação)`:"")).join("; ")+(C.lupa.precisa?". Fora da metade superior do painel principal, com letras não maiores que as da lupa.":"."));}
   if(alegLac(R)) add(PP,"alegacao","Alegação sobre lactose",C.lupa.precisa?`${alegLac(R)} — na metade inferior do painel principal (o rótulo tem lupa).`:`${alegLac(R)} — próximo à denominação de venda.`);
   {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; add(PP,"conteudo",C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e unidade com 2/3 dessa altura, no painel principal`:""}`:"");}
@@ -1217,6 +1290,7 @@ function itensDoRotulo(ref){
   add(LI,"ingredientes","Lista de ingredientes",T.ing,{rich:true,nota:"Letras com no mínimo 1 mm, no mesmo painel da tabela nutricional."});
   const av=`${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes.`;
   add(LI,"alergicos","Advertência de alérgicos",T.alg,{nota:av}); add(LI,"lactose","Advertência de lactose",T.lac,{nota:av}); add(LI,"gluten","Glúten",T.gluten,{nota:av});
+  if((T.restLac||[]).length) add(LI,"restlac","Advertências da dieta com restrição de lactose",T.restLac.join(". ")+".",{nota:"Em negrito e em destaque (RDC 715/2022, art. 8º). A denominação de venda termina com “para dietas com restrição de lactose”."});
   modelosTab(R).forEach((m,i,a)=>{const tb=layTabela(R,C,m); const red=m==="linear"||R.tabela.reduzida;
     add(TN,"tabela"+(i?"_"+m:""),`Tabela nutricional${a.length>1?` (${i+1}ª opção: ${NOME_MODELO[m].split(",")[0]})`:""}`,`Valores, porção e medida caseira como na tabela abaixo. Título ${red?8:10} pt negrito; demais informações ${red?6:8} pt. ${fontesTab(red)}, 100% preto em fundo branco.`,{vis:tb});});
   add(DI,"conservacao","Instruções de conservação",P.conservacao);
@@ -1367,7 +1441,7 @@ async function relatorioValidacao(V){
     if(y+h+12>BASE){doc.addPage();y=M} h2(artes.length>1?`Arte analisada (${i+1} de ${artes.length})`:"Arte analisada"); doc.addImage(src,"JPEG",M+(W-w)/2,y,w,h); y+=h+1;
     doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZA);doc.text(`${artes[i].nome}${dimArte(artes[i])?" · "+dimArte(artes[i]):""}`,M,y+3);y+=6}
   need(30); y+=8; doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(...CINZA);
-  doc.splitTextToSize("Legislação de referência: RDC 429/2020, IN 75/2020, RDC 727/2022 e RDC 135/2017 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003 e Portaria MJ 2.658/2003; manuais da CIDASC e do SISBI-POA. "+(sis?"A validação compara a arte recebida com a ficha do rótulo; cores, acabamento e prova de impressão são de responsabilidade da gráfica.":"A validação considera a arte e as informações recebidas; a veracidade dos dados de composição e de processo é responsabilidade da empresa."),W).forEach(l=>{doc.text(l,M,y);y+=3.6});
+  doc.splitTextToSize("Legislação de referência: RDC 429/2020, IN 75/2020, RDC 727/2022 e RDC 715/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003 e Portaria MJ 2.658/2003; manuais da CIDASC e do SISBI-POA. "+(sis?"A validação compara a arte recebida com a ficha do rótulo; cores, acabamento e prova de impressão são de responsabilidade da gráfica.":"A validação considera a arte e as informações recebidas; a veracidade dos dados de composição e de processo é responsabilidade da empresa."),W).forEach(l=>{doc.text(l,M,y);y+=3.6});
   y+=12; need(14); doc.setDrawColor(...TINTA);doc.setLineWidth(0.3);doc.line(M,y,M+70,y); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...TINTA);doc.text(V.responsavel||"Isadora Andrade",M,y+5);
   doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);doc.text("Consultoria Isadora Andrade",M,y+9.5);
   const np=doc.internal.getNumberOfPages(); for(let i=1;i<=np;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
@@ -1450,6 +1524,92 @@ async function pdfImgsObs(doc,lista,M,W,st){ // st={y,need,BASE}; desenha cada i
 function lerImagemV(file,max=1600){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const g=new Image();g.onerror=rej;g.onload=()=>{const k=Math.min(1,max/Math.max(g.width,g.height));
   const cv=document.createElement("canvas");cv.width=Math.round(g.width*k);cv.height=Math.round(g.height*k);const x=cv.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,cv.width,cv.height);x.drawImage(g,0,0,cv.width,cv.height);res(cv.toDataURL("image/jpeg",0.82))};g.src=fr.result};fr.readAsDataURL(file)})}
 
+
+/* ===================== NOVA FÓRMULA, DESTAQUES, FAMÍLIA E DADOS DO CLIENTE ===================== */
+// RDC 727/2022, arts. 20 a 24: mudança em ingredientes, tabela, alérgicos, lactose ou glúten obriga NOVA FÓRMULA / NOVA COMPOSIÇÃO / NOVA RECEITA
+const NF_EXPR=["NOVA FÓRMULA","NOVA COMPOSIÇÃO","NOVA RECEITA"];
+function resumoRotulo(dados){ try{ const R=migrar(JSON.parse(JSON.stringify(dados))); R._semNF=true; R._semFam=true; const C=calc(R), T=textos(R,C);
+  return {ing:fold(T.ing).replace(/\s+/g," ").trim(), tab:C.linhas.map(l=>`${l.k}:${l.v100}:${l.vp}`).join("|"), alg:T.alg||"", lac:T.lac||"", gl:T.gluten}; }catch(e){ return null } }
+function novaFormulaInfo(R,C,T){ const NF=R.novaFormula||{}; if(NF.substitui!=="sim") return null;
+  let mud=[], auto=false; const ant=NF.anteriorId&&DBR.lista.find(r=>r.id===NF.anteriorId);
+  if(ant){ const a=resumoRotulo(ant.dados), b={ing:fold(T.ing).replace(/\s+/g," ").trim(),tab:C.linhas.map(l=>`${l.k}:${l.v100}:${l.vp}`).join("|"),alg:T.alg||"",lac:T.lac||"",gl:T.gluten};
+    if(a){ auto=true; if(a.ing!==b.ing) mud.push("lista de ingredientes"); if(a.tab!==b.tab) mud.push("tabela nutricional"); if(a.alg!==b.alg) mud.push("advertência de alérgicos"); if(a.lac!==b.lac) mud.push("presença de lactose"); if(a.gl!==b.gl) mud.push("presença de glúten"); } }
+  else ["ing","tab","alg","lac","gl"].forEach((k,i)=>{ if(NF.mudou&&NF.mudou[k]) mud.push(["lista de ingredientes","tabela nutricional","advertência de alérgicos","presença de lactose","presença de glúten"][i]) });
+  const expr=NF_EXPR.includes(NF.expressao)?NF.expressao:"NOVA FÓRMULA";
+  let ate=""; if(NF.desde){ const d=new Date(NF.desde+"T12:00:00"); d.setDate(d.getDate()+90); ate=d.toLocaleDateString("pt-BR"); }
+  return {precisa:mud.length>0,mud,auto,ant:ant?ant.nome:"",expr,ate,minMM:C.area>0&&C.area<=100?1:2};
+}
+function novaFormulaCard(R,C,T){ R.novaFormula=R.novaFormula||{substitui:"",anteriorId:"",expressao:"NOVA FÓRMULA",desde:"",mudou:{}}; const NF=R.novaFormula, inf=novaFormulaInfo(R,C,T);
+  const outros=DBR.lista.filter(r=>!ehVal(r)&&r.id!==R.id&&(!R.clienteId||r.cliente_id===R.clienteId)).sort((a,b)=>fold(a.nome||"").localeCompare(fold(b.nome||"")));
+  return `<div class="card stack"><div><span class="eyebrow">RDC 727/2022, arts. 20 a 24</span><h2>Nova fórmula</h2></div>
+    ${sel("novaFormula.substitui","Este rótulo substitui uma versão anterior com composição diferente?",[["","Não"],["sim","Sim"]],{re:true})}
+    ${NF.substitui==="sim"?`<div class="grid2">
+      ${sel("novaFormula.anteriorId","Rótulo anterior",[["","Não está no sistema"],...outros.map(r=>[r.id,r.nome||"Sem nome"])],{re:true,hint:"Com o rótulo anterior, o sistema compara ingredientes, tabela, alérgicos, lactose e glúten."})}
+      ${sel("novaFormula.expressao","Expressão",NF_EXPR.map(x=>[x,x]),{re:true})}
+      <label class="f">Início da nova composição<input type="date" data-bind="novaFormula.desde" data-reblur="1" value="${esc(NF.desde||"")}"><span class="hint">A expressão fica no rótulo por pelo menos 90 dias a partir daí (art. 22).</span></label></div>
+      ${NF.anteriorId?"":`<div class="stack" style="gap:4px"><b class="small">O que mudou em relação ao rótulo anterior?</b><div class="row" style="gap:6px 18px">${[["ing","Lista de ingredientes"],["tab","Tabela nutricional"],["alg","Alérgicos"],["lac","Lactose"],["gl","Glúten"]].map(([k,t])=>chk("novaFormula.mudou."+k,t)).join("")}</div></div>`}
+      ${inf?(inf.precisa?`<div class="alert warn" style="flex-direction:column;align-items:stretch;gap:4px"><b>Leva “${esc(inf.expr)}”</b><span class="small">Mudou: ${esc(joinE(inf.mud))}${inf.auto?` (comparado com “${esc(inf.ant)}”)`:""}.</span>
+          <span class="small">Painel principal, caixa alta, negrito, cor contrastante com o fundo, no mínimo ${inf.minMM} mm de altura, fora de áreas de selagem ou rasgadas na abertura, por pelo menos 90 dias${inf.ate?` (até ${inf.ate})`:""}. As diferenças em relação à versão anterior ficam disponíveis no SAC, por QR code ou outro meio (art. 24).</span>
+          <span class="small"><b>Composição alterada: verificar alteração do registro no PGA antes do uso.</b></span></div>`
+        :`<div class="alert info"><span>${inf.auto?`Comparado com “${esc(inf.ant)}”: ingredientes, tabela, alérgicos, lactose e glúten iguais.`:"Nenhuma mudança marcada."} Não precisa de “NOVA FÓRMULA”.</span></div>`):""}`:""}
+  </div>`}
+// Destaques do painel principal (além das alegações nutricionais): quantidade de nutriente, ingrediente destacado, selo, outro
+const DEST_TIPOS=[["quantidade","Quantidade de nutriente (ex.: 15 g de proteína)"],["ingrediente","Ingrediente destacado"],["selo","Selo ou certificação"],["outro","Outro texto"]];
+function destaquesInfo(R,C){ return (R.destaques||[]).map((d,ix)=>{ const o={...d,ix,ok:true,msgs:[]};
+  if(d.tipo==="quantidade"){ const n=NUT[d.nutriente]; if(!n){o.ok=false;o.msgs.push("Escolha o nutriente.");return o}
+    const porP=d.base!=="100", tab=porP?C.pv[d.nutriente]:C.b100[d.nutriente], v=nz(d.valor);
+    if(String(d.valor??"").trim()===""){o.ok=false;o.msgs.push("Informe o valor destacado.")}
+    else if(Math.abs(v-tab)>Math.max(0.05*Math.abs(tab),n.u==="g"?0.1:1)){o.ok=false;o.msgs.push(`O valor destacado (${br(v,2)} ${n.u}) não bate com a tabela (${br(tab,2)} ${n.u} ${porP?"por porção":"por 100 "+C.un}).`)}
+    if(porP&&!/por[cç][aã]o/i.test(d.texto||"")) {o.ok=false;o.msgs.push(`Coloque a porção junto: “por porção de ${br(C.porcao,1)} ${C.un}”.`)}
+    o.msgs.push("A fiscalização pode tratar a quantidade de nutriente no painel como alegação de conteúdo: confira se o produto atende à alegação correspondente (ex.: fonte, alto conteúdo)."); }
+  if(d.tipo==="ingrediente") o.msgs.push("Não pode induzir a erro nem destacar componente próprio de alimentos de igual natureza (RDC 727/2022, art. 4º).");
+  return o; }) }
+function destaquesCard(R,C){ R.destaques=R.destaques||[]; const info=destaquesInfo(R,C);
+  return `<div class="card stack"><div><span class="eyebrow">Painel principal</span><h2>Destaques do painel principal</h2>
+    <p class="muted small">Tudo o que a arte destaca além da denominação: quantidade de nutriente, ingrediente, selo… Alegações como “sem adição de açúcares” ou “fonte de proteínas” vão no card de alegações nutricionais, acima.</p></div>
+    ${R.destaques.map((d,ix)=>{const p=`destaques.${ix}`; const inf=info[ix];
+      return `<div class="stack" style="gap:6px;border-top:1px solid var(--line);padding-top:8px"><div class="grid3">
+        ${sel(p+".tipo","Tipo",DEST_TIPOS,{re:true})}
+        ${inp(p+".texto","Texto na arte",{ph:d.tipo==="quantidade"?`Ex.: 15 g de proteína por porção de ${br(C.porcao,1)} ${C.un}`:"Ex.: Com pedaços de morango"})}
+        ${d.tipo==="quantidade"?`${sel(p+".nutriente","Nutriente",[["","Escolha…"],...Object.keys(NUT).filter(k=>C.linhas.some(l=>l.k===k)).map(k=>[k,NUT[k].l+" ("+NUT[k].u+")"])],{re:true})}
+          ${inp(p+".valor","Valor destacado",{n:true})}${sel(p+".base","Base",[["porcao","por porção"],["100","por 100 "+C.un]],{re:true})}`:""}</div>
+        ${inf&&inf.msgs.length?`<div class="alert ${inf.ok?"info":"warn"}" style="flex-direction:column;align-items:stretch;gap:2px">${inf.msgs.map(m=>`<span class="small">${esc(m)}</span>`).join("")}</div>`:""}
+        <div class="row"><button class="mini danger" data-destdel="${ix}">Remover</button></div></div>`}).join("")}
+    <div class="row"><button class="mini" data-act="destadd">+ Adicionar destaque</button></div></div>`}
+// palavras de alegação escritas nas observações, fora dos campos que o sistema confere
+const RX_ALEG_OBS=/\b(sem adicao|zero|0%|fonte de|alto teor|alto conteudo|rico em|rica em|light|baixo em|baixo teor|reduzido em|proteina|proteinas|fibra|fibras|integral)\b/;
+// Família de produto: vários rótulos com a mesma formulação e os mesmos valores por 100 g
+const FORM_K=["tipo","ingredientes","balanco","concentracao","lactase","alergCruzada","alergCruzEsp","glutenCruzada"];
+function formulaDe(R){ const f={}; FORM_K.forEach(k=>f[k]=R[k]); f.estado=R.produto&&R.produto.estado; f.densidade=R.produto&&R.produto.densidade; f.declarados=R.declarados||{}; return f }
+function hashTxt(t){let h=5381; for(let i=0;i<t.length;i++) h=((h<<5)+h+t.charCodeAt(i))|0; return (h>>>0).toString(36)}
+// hash estável: ingredientes normalizados (respIng), sem ids e sem campos vazios, chaves em ordem
+function estavel(v){ if(Array.isArray(v)) return "["+v.map(estavel).join(",")+"]"; if(v&&typeof v==="object") return "{"+Object.keys(v).sort().filter(k=>!["id","_semNF","_semFam","_semOpc"].includes(k)&&v[k]!==""&&v[k]!=null&&v[k]!==false&&!(typeof v[k]==="object"&&!Array.isArray(v[k])&&!Object.keys(v[k]).length)).map(k=>JSON.stringify(k)+":"+estavel(v[k])).join(",")+"}"; return JSON.stringify(v) }
+const hashForm=R=>{ const f=JSON.parse(JSON.stringify(formulaDe(R))); (f.ingredientes||[]).forEach(i=>{try{respIng(i)}catch(e){}}); return hashTxt(estavel(f)) };
+function aplicarFamilia(R,base){ const B=migrar(JSON.parse(JSON.stringify(base.dados))); B._semNF=true; B._semFam=true; const CB=calc(B);
+  FORM_K.forEach(k=>{ R[k]=JSON.parse(JSON.stringify(B[k]??(k==="ingredientes"?[]:{}))) }); R.ingredientes.forEach(i=>i.id=uid());
+  R.produto.estado=B.produto.estado; R.produto.densidade=B.produto.densidade;
+  // valores declarados: sempre por 100 g/ml, que é o que a família tem em comum (a porção muda de embalagem para embalagem)
+  R.declarados={}; Object.entries(CB.decl||{}).forEach(([k,d])=>{ R.declarados[k]={v:String(+d.v100.toFixed(4)),base:"100",motivo:d.motivo,fonte:d.fonte} });
+  R.familia={baseId:base.id,baseNome:base.nome,hashBase:hashForm(migrar(JSON.parse(JSON.stringify(base.dados)))),hashLocal:hashForm(R),em:new Date().toISOString()}; }
+function familiaInfo(R){ const F=R.familia; const out={base:null,variantes:[]};
+  if(F&&F.baseId){ const b=DBR.lista.find(r=>r.id===F.baseId); out.base={nome:b?b.nome:F.baseNome,existe:!!b,mudouBase:b?hashForm(migrar(JSON.parse(JSON.stringify(b.dados))))!==F.hashBase:false,mudouLocal:hashForm(R)!==F.hashLocal}; }
+  if(!R._semFam){ const hb=hashForm(R); DBR.lista.filter(r=>!ehVal(r)&&r.id!==R.id&&r.dados&&r.dados.familia&&r.dados.familia.baseId===R.id).forEach(r=>out.variantes.push({id:r.id,nome:r.nome,desatualizado:r.dados.familia.hashBase!==hb})); }
+  return out; }
+function familiaCard(R){ const fi=familiaInfo(R); const outros=DBR.lista.filter(r=>!ehVal(r)&&r.id!==R.id&&!(r.dados&&r.dados.familia&&r.dados.familia.baseId)&&(!R.clienteId||r.cliente_id===R.clienteId)).sort((a,b)=>fold(a.nome||"").localeCompare(fold(b.nome||"")));
+  return `<div class="card stack"><div><span class="eyebrow">Família de produto</span><h2>Mesma formulação em várias embalagens</h2>
+    <p class="muted small">Use a formulação de outro rótulo (ex.: o pote de 500 g usa a do 130 g). Ingredientes, cálculo e valores por 100 g ficam iguais; mudam só embalagem, porção e registro.</p></div>
+    ${fi.base?`<div class="alert ${fi.base.mudouBase||fi.base.mudouLocal?"warn":"info"}" style="flex-direction:column;align-items:stretch;gap:4px">
+        <span>Formulação de <b>${esc(fi.base.nome||"")}</b>${fi.base.existe?"":" (rótulo-base excluído)"}.</span>
+        ${fi.base.mudouBase?`<span><b>A formulação do rótulo-base mudou depois da cópia:</b> este rótulo precisa ser atualizado e reemitido.</span>`:""}
+        ${fi.base.mudouLocal?`<span>A formulação deste rótulo foi alterada aqui e não bate mais com a da família. Altere no rótulo-base e atualize.</span>`:""}
+        <div class="row">${fi.base.existe?`<button class="mini primary" data-act="famAtualizar">Atualizar com a formulação do rótulo-base</button>`:""}<button class="mini" data-act="famDesvincular">Desvincular</button></div></div>`
+      :`<div class="row"><select id="famBase" style="flex:1;min-width:220px"><option value="">Usar a formulação de…</option>${outros.map(r=>`<option value="${r.id}">${esc(r.nome||"Sem nome")}</option>`).join("")}</select><button class="mini" data-act="famVincular">Copiar e vincular</button></div>`}
+    ${fi.variantes.length?`<div class="stack" style="gap:2px"><b class="small">Rótulos desta família</b>${fi.variantes.map(v=>`<span class="small">${esc(v.nome||"Sem nome")}: ${v.desatualizado?`<b style="color:var(--bad)">formulação mudou, precisa ser reemitido</b>`:"em dia"}</span>`).join("")}</div>`:""}
+  </div>`}
+// Dados fixos do cliente para rótulos (cons_clientes.rotulagem): origem, contato, redes e inspeção
+const CLI_CAMPOS=[["origemD.razao","Razão social"],["origemD.classificacao","Classificação"],["origemD.endereco","Endereço"],["origemD.municipio","Município"],["origemD.uf","UF"],["origemD.cep","CEP"],["origemD.cnpj","CNPJ"],["origemD.telefone","Telefone / SAC"],["origemD.email","E-mail"],["relatorio.redes","Redes sociais e site"],["inspecao.servico","Serviço de inspeção"],["inspecao.orgao","Órgão"],["inspecao.regEstab","Nº do estabelecimento"]];
+const dadosCli=R=>{const c=R.clienteId&&DBR.clientes.find(x=>x.id===R.clienteId); return c&&c.rotulagem&&Object.keys(c.rotulagem).length?c.rotulagem:null};
+function difCliente(R){ const d=dadosCli(R); if(!d) return []; return CLI_CAMPOS.filter(([p])=>String(d[p]??"").trim()&&String(getP(R,p)??"").trim()&&fold(String(getP(R,p)).trim())!==fold(String(d[p]).trim())).map(([p,l])=>({p,l,rot:getP(R,p),cli:d[p]})) }
 /* ===================== ESTADO E NAVEGAÇÃO ===================== */
 const S={R:null,step:0,open:{},zoom:3,real:false,pronto:false,sujo:false,status:"",filtroCliente:"",aba:"rotulos"};
 const STEPS=["Produto","Formulação","Porção e embalagem","Rótulo final"];
@@ -1521,6 +1681,22 @@ const inp=(path,label,o={})=>{const v=getP(S.R,path)??"";return `<label class="f
 const sel=(path,label,opts,o={})=>{const v=getP(S.R,path);return `<label class="f">${label}<select data-bind="${path}" id="f-${path}" ${o.re?'data-rerender="1"':""}>${opts.map(([k,t])=>`<option value="${esc(k)}" ${String(v)===String(k)?"selected":""}>${esc(t)}</option>`).join("")}</select>${o.hint?`<span class="hint">${o.hint}</span>`:""}</label>`};
 const chk=(path,label,o={})=>`<label class="check"><input type="checkbox" data-bind="${path}" id="f-${path}" ${getP(S.R,path)?"checked":""} ${o.re!==false?'data-rerender="1"':""}><span>${label}${o.hint?`<br><span class="hint">${o.hint}</span>`:""}</span></label>`;
 
+// alimento para dietas com restrição de lactose (RDC 715/2022): advertências do art. 8º e denominação do art. 6º, IV
+function restLacCard(R,C){ const RL=C.restLac; R.restLac=R.restLac||{manual:false,acucares:{},fonte:""}; const P=R.produto;
+  const denOk=/para dietas com restri[çc][ãa]o de lactose[\s.]*$/i.test(String(P.denominacao||"").trim());
+  return `<div class="card stack"><div><span class="eyebrow">RDC 715/2022</span><h2>Alimento para dietas com restrição de lactose</h2>
+    <p class="muted small">Com a alegação “${esc(alegLac(R))}”, o produto é alimento para fins especiais. A rotulagem leva as advertências do art. 8º, em negrito e em destaque.</p></div>
+    <div class="alert ${denOk?"info":"warn"}"><span>${denOk?"Denominação de venda termina com “para dietas com restrição de lactose”.":`A denominação de venda deve terminar com “para dietas com restrição de lactose” (art. 6º, IV). Ex.: <b>${esc(String(P.denominacao||"Iogurte").trim())} para dietas com restrição de lactose</b>.`}</span></div>
+    <div class="stack" style="gap:4px"><b class="small">Advertências que vão no rótulo</b>
+      ${RL.diab?`<div><b>${esc(RL.diab)}</b></div>`:`<div class="small muted">Sem glicose, sacarose ou frutose identificadas: não leva “DIABÉTICOS: CONTÉM…”.</div>`}
+      <div><b>${esc(RL.orient)}</b></div></div>
+    <div class="stack" style="gap:4px"><b class="small">Açúcares encontrados pelo sistema</b>
+      ${["glicose","sacarose","frutose"].map(a=>`<div class="small">${a[0].toUpperCase()+a.slice(1)}: ${RL.auto[a].length?esc(RL.auto[a].join(", ")):"<span class=\"muted\">não encontrada</span>"}</div>`).join("")}
+      <span class="small faint">Pelo nome dos ingredientes (açúcar, mel, glicose, frutas…) e pela lactase, que forma glicose. Confira com o laudo.</span></div>
+    ${chk("restLac.manual","Informar à mão os açúcares presentes no produto final (laudo)",{re:true})}
+    ${R.restLac.manual?`<div class="row" style="gap:6px 18px">${["glicose","sacarose","frutose"].map(a=>chk("restLac.acucares."+a,a[0].toUpperCase()+a.slice(1),{re:true})).join("")}</div>
+      ${inp("restLac.fonte","Fonte",{ph:"Ex.: laudo nº 123/2026"})}`:""}
+  </div>`}
 function viewProduto(R,C){
   return `<div class="stack">
   <div class="card stack"><div class="sec-t"><h2>Identificação do produto</h2><div class="row small muted">Tipo: <b>${TIPOS[R.tipo].t}</b> <select id="trocaTipo" class="mini" style="width:auto">${Object.entries(TIPOS).map(([k,t])=>`<option value="${k}" ${k===R.tipo?"selected":""}>${t.t}</option>`).join("")}</select></div></div>
@@ -1528,11 +1704,13 @@ function viewProduto(R,C){
       ${inp("produto.nome","Nome do produto (uso interno)")}
       ${sel("clienteId","Cliente",[["","Sem cliente"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===R.clienteId).map(c=>[c.id,c.nome])],{hint:"Os rótulos ficam agrupados por cliente na lista."})}
       ${inp("produto.denominacao","Denominação de venda",{hint:"Conforme o padrão de identidade e qualidade. Vai no painel principal (RDC 727/2022, art. 9)."})}
-      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Fica próximo à denominação de venda, num campo próprio (RDC 135/2017). Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})})()}
+      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Com alegação, o produto é alimento para dietas com restrição de lactose (RDC 715/2022): termo próximo à denominação. Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})})()}
       ${inp("produto.marca","Marca")}
       ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS. Em branco = não tem."})}
       ${inp("produto.descricao","Descrição",{span:true,area:true})}
     </div></div>
+  ${C.restLac?restLacCard(R,C):""}
+  ${novaFormulaCard(R,C,textos(R,C))}
   <div class="card stack"><h2>Embalagem e estado físico</h2>
     <div class="grid3">
       ${inp("produto.conteudo","Conteúdo líquido (peso líquido)",{n:true})}
@@ -1550,6 +1728,8 @@ function viewProduto(R,C){
       ${inp("produto.campoFVL","Campo de fabricação, validade e lote: dimensão (opcional)",{ph:"Ex.: 3 × 1,5 cm",hint:"O campo sempre sai na ficha do rótulo; os dados são preenchidos no dia da produção. Informe a medida só se a empresa já tiver um tamanho definido."})}
     </div></div>
   <div class="card stack"><div><h2>Identificação de origem</h2><p class="muted small">RDC 727/2022, art. 29, e Decreto 9.013/2017 (RIISPOA), art. 443.</p></div>
+    ${R.clienteId?`<div class="row" style="gap:8px">${dadosCli(R)?`<button class="mini" data-act="cliPuxar">Puxar dados do cadastro do cliente</button>`:""}<button class="mini" data-act="cliSalvar">Salvar estes dados como padrão do cliente</button><span class="small muted">${dadosCli(R)?"Origem, contato, redes e inspeção ficam no cadastro do cliente e valem para todos os rótulos dele.":"O cliente ainda não tem dados padrão para rótulos."}</span></div>
+      ${difCliente(R).length?`<div class="alert warn"><span>Diferente do cadastro do cliente: ${difCliente(R).map(d=>`${esc(d.l)} (“${esc(d.rot)}” aqui, “${esc(d.cli)}” no cadastro)`).join("; ")}.</span></div>`:""}`:""}
     ${origemLegada(R)?`<div class="alert warn">Texto antigo: “${esc(R.produto.origem)}”. Preencha os campos abaixo; enquanto a razão social estiver em branco, o texto antigo continua sendo usado.</div>`:""}
     <div class="grid3">
       ${sel("origemD.expressao","Expressão",[["Fabricado em","Fabricado em:"],["Produzido por","Produzido por:"],["Fabricado por","Fabricado por:"],["Distribuído por","Distribuído por:"],["Indústria","Indústria:"]],{re:true})}
@@ -1688,6 +1868,7 @@ function viewFormulacao(R,C){
       <div class="sumline" id="concsum">${concSum(C)}</div></div>`;}
   const pend=pendDecl(R), temLeite=R.ingredientes.some(i=>i.alerg&&i.alerg.leite);
   return `<div class="stack">
+    ${familiaCard(R)}
     ${pend.length?`<div class="alert warn"><b>Falta responder:</b> <span>${pend.map(x=>`${esc(x.nome)} (${x.f.join(", ")})`).join("; ")}. Sem essas respostas não dá para avançar.</span></div>`:""}
     <div class="card stack"><div class="sec-t"><div><span class="eyebrow">Formulação</span><h2>Ingredientes (${R.ingredientes.length})</h2></div><span class="small muted num">Total: ${br(tot,3)} g</span></div>
       <div class="stack">${cards}</div>
@@ -1707,7 +1888,7 @@ function viewFormulacao(R,C){
 }
 function lactaseCard(R,C){const L=R.lactase;
   return `<div class="card stack"><div><span class="eyebrow">Lactase</span><h2>Hidrólise da lactose</h2>
-    <p class="muted small">A lactase quebra a lactose dos ingredientes em glicose e galactose durante o processo. O leite (e os outros ingredientes) continuam cadastrados com lactose; aqui você informa quanto de lactose <b>fica no produto final</b>. É esse valor que decide o “CONTÉM LACTOSE” e as alegações (zero lactose até 100 mg/100 ${C.un}; baixo teor até 1 g/100 ${C.un}, RDC 135/2017).</p></div>
+    <p class="muted small">A lactase quebra a lactose dos ingredientes em glicose e galactose durante o processo. O leite (e os outros ingredientes) continuam cadastrados com lactose; aqui você informa quanto de lactose <b>fica no produto final</b>. É esse valor que decide o “CONTÉM LACTOSE” e as alegações (zero lactose até 100 mg/100 ${C.un}; baixo teor até 1 g/100 ${C.un}, RDC 715/2022).</p></div>
     <div class="grid3">${sel("lactase.modo","Como informar",[["residual","Lactose que fica no produto (laudo)"],["pct","% de hidrólise da lactose"]],{re:true})}
       ${L.modo==="pct"?inp("lactase.pct","Hidrólise da lactose (%)",{n:true,hint:"Ex.: 99,5. Precisa da lactose dos ingredientes."}):inp("lactase.residualMg",`Lactose no produto final (mg por 100 ${C.un})`,{n:true,hint:"Do laudo do produto pronto."})}
       ${inp("lactase.galactoseG",`Galactose no produto final (g por 100 ${C.un})`,{n:true,hint:alegLac(R)?"Do laudo do produto pronto. Obrigatória com alegação sobre lactose: entra na tabela nutricional.":"Do laudo do produto pronto. Se ficar em branco, o sistema calcula pela lactose hidrolisada."})}
@@ -1767,7 +1948,7 @@ function viewPorcao(R,C){
     <div class="grid2">
       ${sel("produto.venda","Como o produto é embalado e vendido",[["","Embalado na ausência do consumidor (padrão)"],["pdv","Embalado no ponto de venda, a pedido do consumidor"],["estab","Preparado ou fracionado e vendido no próprio estabelecimento"]],{re:true,hint:"RDC 429/2020, art. 18, §3º: a lupa é opcional nos casos II e III e em painel principal com menos de 35 cm² (caso I)."})}
       ${C.lupa.opcional&&(C.lupa.precisa||C.lupa.dispensada.length)?chk("lupa.dispensar","Não usar a lupa (opcional neste produto)",{hint:"Motivo: "+esc(joinE(C.lupa.motivosOpc))+"."}):""}
-      ${(()=>{ const leg=R.lupa.item16==null&&R.lupa.anexo16; return `<label class="f">Enquadramento no Anexo XVI (IN 75/2020)<select data-bind="lupa.item16" id="f-lupa.item16" data-rerender="1"><option value="" ${!R.lupa.item16&&!leg?"selected":""}>Não está no Anexo XVI (regra geral)</option>${leg?`<option value="" selected disabled>Grupo não especificado (${R.lupa.anexo16==="cond"?"itens 1 a 6":"itens 7 a 18"}) — escolha o grupo</option>`:""}<optgroup label="Vedação condicional: lupa só do nutriente alterado por ingrediente opcional">${ANEXO16.slice(0,6).map((n,i)=>`<option value="${i+1}" ${String(R.lupa.item16)===String(i+1)?"selected":""}>${i+1}. ${esc(n)}</option>`).join("")}</optgroup><optgroup label="Lupa sempre vedada">${ANEXO16.slice(6).map((n,i)=>`<option value="${i+7}" ${String(R.lupa.item16)===String(i+7)?"selected":""}>${i+7}. ${esc(n)}</option>`).join("")}</optgroup></select><span class="hint">Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170).</span></label>`})()}
+      ${(()=>{ const leg=R.lupa.item16==null&&R.lupa.anexo16; return `<label class="f">Enquadramento no Anexo XVI (IN 75/2020)<select data-bind="lupa.item16" id="f-lupa.item16" data-rerender="1"><option value="" ${!R.lupa.item16&&!leg?"selected":""}>Não está no Anexo XVI (regra geral)</option>${leg?`<option value="" selected disabled>Grupo não especificado (${R.lupa.anexo16==="cond"?"itens 1 a 6":"itens 7 a 18"}) — escolha o grupo</option>`:""}<optgroup label="Vedação condicional: lupa só do nutriente alterado por ingrediente opcional">${ANEXO16.slice(0,6).map((n,i)=>`<option value="${i+1}" ${String(R.lupa.item16)===String(i+1)?"selected":""}>${i+1}. ${esc(n)}</option>`).join("")}</optgroup><optgroup label="Lupa sempre vedada">${ANEXO16.slice(6).map((n,i)=>`<option value="${i+7}" ${String(R.lupa.item16)===String(i+7)?"selected":""}>${i+7}. ${esc(n)}</option>`).join("")}</optgroup></select><span class="hint">Itens 1 a 6: a lupa é vedada, exceto para o nutriente alterado por ingrediente opcional (RDC 429/2020, art. 18, §2º). Requeijão não é queijo (Anvisa, P&R 170).${(()=>{const sg=sugerir16(R);return sg?` <b>Sugestão pelo produto: item ${sg} (${esc(ANEXO16[sg-1])}).</b>`:""})()}</span></label>`})()}
       ${C.lupa.modo16==="cond"?sel("lupa.temOpcional","O produto tem ingrediente opcional do RTIQ/PIQ?",[["","Selecionar…"],["nao","Não, só ingredientes obrigatórios"],["sim","Sim"]],{re:true,hint:"Só com ingredientes obrigatórios, a lupa fica vedada mesmo acima dos limites (Anvisa, P&R 168)."}):""}
     </div>
     ${C.lupa.modo16==="cond"&&C.lupa.temOpc==="sim"?`<div class="stack" style="gap:8px"><b style="font-size:.9rem">Qual ingrediente é o opcional?</b>
@@ -1780,6 +1961,7 @@ function viewPorcao(R,C){
   </div>
   ${declaradosCard(R,C)}
   ${alegacoesCard(R,C)}
+  ${destaquesCard(R,C)}
   <div class="card stack"><div><h2>Observações</h2><p class="muted small">Saem no fim da ficha do rótulo, antes do serviço de inspeção.</p></div>
     ${inp("porcao.obs","Observações",{area:true,span:true,ph:"Ex.: a lista de ingredientes pode ir no painel lateral, junto da tabela."})}
     ${imgsObsHTML("obsImgs",R.obsImgs)}</div></div>`;
@@ -1835,7 +2017,7 @@ function viewRotulo(R,C){
   <div class="card stack"><div class="sec-t"><h2>Textos gerados</h2><span class="small muted">Edite só se precisar ajustar a redação; o original fica guardado.</span></div>
     <label class="f">Lista de ingredientes (RDC 727/2022, arts. 11 e 12)<textarea data-bind="textos.ingOverride" id="f-textos.ingOverride" data-rerender-blur="1" placeholder="${esc(T.ingAuto)}">${esc(R.textos.ingOverride)}</textarea><span class="hint">${R.textos.ingOverride?`<button class="ghost mini" data-clear="textos.ingOverride">Voltar ao texto automático</button>`:"Em branco = texto automático (mostrado acima, em cinza). Use “Editar texto” na prévia para partir do texto automático. Trechos entre _sublinhados_ saem em itálico."}</span></label>
     <label class="f">Advertência de alérgicos (arts. 13 a 15)<textarea data-bind="textos.algOverride" id="f-textos.algOverride" data-rerender-blur="1" placeholder="${esc(T.algAuto||"Nenhum alergênico marcado: não há advertência a declarar.")}">${esc(R.textos.algOverride)}</textarea><span class="hint">${R.textos.algOverride?`<button class="ghost mini" data-clear="textos.algOverride">Voltar ao texto automático</button>`:"Em branco = texto automático."}</span></label>
-    <dl class="kv"><dt>Lactose</dt><dd>${esc(T.lac||"Não declarar (até 100 mg/100 "+C.un+")")}</dd><dt>Glúten</dt><dd>${esc(T.gluten)}</dd></dl>
+    <dl class="kv"><dt>Lactose</dt><dd>${esc(T.lac||"Não declarar (até 100 mg/100 "+C.un+")")}</dd><dt>Glúten</dt><dd>${esc(T.gluten)}</dd>${(T.restLac||[]).length?`<dt>Restrição de lactose</dt><dd><b>${T.restLac.map(esc).join("<br>")}</b></dd>`:""}</dl>
   </div>
   <div class="card stack"><div><span class="eyebrow">Exportar</span><h2>Arquivos do rótulo</h2><p class="muted small">PDFs em vetor e PNGs a 600 dpi, com as medidas reais em milímetros.</p></div>
     <div class="exports">
@@ -1919,7 +2101,7 @@ async function pdfFichaTecnica(R,C,T,tabs,lup){
   kv("Alérgicos",T.alg||"Não contém alergênicos de declaração obrigatória.",{bold:!!T.alg});
   if(T.lac) kv("Lactose",T.lac,{bold:true});
   if(C.hid) kv("Lactase",`Lactose hidrolisada pela lactase (${C.hid.enzimas.join(", ")}): ${br(C.hid.depois*1000*(C.liquido?C.dens:1),0)} mg de lactose e ${br(C.hid.gal*(C.liquido?C.dens:1),2)} g de galactose${C.hid.galLaudo!=null?" (laudo)":" (calculada)"} por 100 ${C.un} no produto final${R.lactase.fonte?` (${R.lactase.fonte})`:""}.`);
-  kv("Glúten",T.gluten,{bold:true});
+  kv("Glúten",T.gluten,{bold:true}); if((T.restLac||[]).length) kv("Advertências (dieta com restrição de lactose)",T.restLac.join(". "),{bold:true});
   if(T.ogm){ const hT=Math.max(simboloT(C).h*10,4.2)+2; need(hT); doc.setFont("helvetica","bold");doc.setFontSize(9.5);doc.setTextColor(...CINZ);doc.text("Transgênico",M,y+3.4); y+=pdfTFrase(doc,C,T,M+LW,y,W-LW)+2; }
   // tabela
   const tab=tabs[0]; if(tab){ sec("Informação nutricional",tab.h); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+4; }
@@ -1945,8 +2127,10 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   const para=(t,{size=9.5,bold=false,cor=TINTA}={})=>{if(!t)return;doc.setFont("helvetica",bold?"bold":"normal");doc.setFontSize(size);doc.setTextColor(...cor);doc.splitTextToSize(String(t),W).forEach(l=>{need(size*0.45);doc.text(l,M,y+size*0.36);y+=size*0.45});y+=2};
   const kv=(k,v)=>{doc.setFontSize(9);need(5);doc.setFont("helvetica","bold");doc.setTextColor(...CINZA);doc.text(k,M,y+3.2);doc.setFont("helvetica","normal");doc.setTextColor(...TINTA);const ls=doc.splitTextToSize(String(v||"—"),W-45);ls.forEach((l,i)=>{if(i)need(4.2);doc.text(l,M+45,y+3.2);y+=4.2});y+=1};
   h2("Painel principal"); if(!mesmoNome(P)) kv("Denominação de venda",P.denominacao); if((R.relatorio?.fantasia||"").trim()) kv("Denominação fantasia",R.relatorio.fantasia); kv("Marca",P.marca);
+  if(C.novaFormula&&C.novaFormula.precisa) kv("Nova fórmula",`${C.novaFormula.expr} — no painel principal, em caixa alta, negrito e cor contrastante com o fundo, com no mínimo ${C.novaFormula.minMM} mm de altura, por pelo menos 90 dias${C.novaFormula.ate?` (até ${C.novaFormula.ate})`:""} (RDC 727/2022, arts. 20 a 23). Mudou: ${joinE(C.novaFormula.mud)}. As diferenças ficam disponíveis no SAC, QR code ou outro meio (art. 24).`);
+  {const ds=(C.destaques||[]).filter(d=>String(d.texto||"").trim()); if(ds.length) kv("Destaques",ds.map(d=>d.texto).join("; "));}
   {const al=alegacoesNut(R,C); if(al.length) kv("Alegações nutricionais",al.map(a=>a.texto+(a.frases.length?` (com a frase: ${a.frases.join("; ")})`:"")).join("; ")+`. Frases complementares com no mínimo 50% do tamanho da alegação, em cor contrastante.${C.lupa.precisa?" Com lupa, as alegações ficam fora da metade superior do painel principal e com letras não maiores que as da lupa (RDC 429/2020, art. 30).":""}`);}
-  if(alegLac(R)) kv("Alegação",C.lupa.precisa?`${alegLac(R)} — a alegação deve ficar na metade inferior do painel principal, pois este rótulo possui lupa de ${joinE(C.lupa.nutrientes)} (RDC 429/2020, art. 30).`:`${alegLac(R)} — próximo à denominação de venda (RDC 135/2017).`);
+  if(alegLac(R)) kv("Alegação",C.lupa.precisa?`${alegLac(R)} — a alegação deve ficar na metade inferior do painel principal, pois este rótulo possui lupa de ${joinE(C.lupa.nutrientes)} (RDC 429/2020, art. 30).`:`${alegLac(R)} — próximo à denominação de venda (RDC 715/2022).`);
   {const c=C.contPeso, h=!(c>0)?"":c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"; kv(C.liquido?"Volume líquido":"Peso líquido",P.conteudo?`${P.conteudo} ${P.unidade}${h?` — algarismos com altura mínima de ${h} e símbolo da unidade com 2/3 dessa altura (Portaria Inmetro 249/2021)`:""}`:"");}
   if(C.temDren) kv("Peso drenado",`${P.drenado} ${P.unidade} — mesma altura e destaque do peso líquido, no painel principal (Portaria Inmetro 249/2021).`);
   if(T.ogm){ const hT=Math.max(simboloT(C).h*10,4.2)+6; need(hT+12); doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(...CINZA);doc.text("Transgênico",M,y+3.2); y+=pdfTFrase(doc,C,T,M+45,y,W-45)+2;
@@ -1956,6 +2140,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
     para(`A rotulagem nutricional frontal fica no painel principal, na metade superior. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
+  if(C.restLac){ (T.restLac||[]).forEach(x=>para(x,{bold:true})); para(`Alimento para dietas com restrição de lactose: ${T.restLac.length>1?"as advertências acima vão":"a advertência acima vai"} em negrito e em destaque (RDC 715/2022, art. 8º). A denominação de venda termina com “para dietas com restrição de lactose” (art. 6º, IV).${C.restLac.manual&&C.restLac.fonte?` Açúcares presentes conforme ${C.restLac.fonte}.`:""}`,{size:8,cor:CINZA}); }
   para(`A lista de ingredientes deve estar no mesmo painel da tabela nutricional. Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes. Referências: RDC 727/2022 e Lei 10.674/2003.`,{size:8,cor:CINZA});
   tabs.forEach((tab,i)=>{need(tab.h+16); h2(`Tabela nutricional (${i+1}ª opção: ${NOME_MODELO[tab.modelo].split(",")[0]})`); need(tab.h+4); pdfDraw(doc,tab,M,y); y+=tab.h+2;
     {const red=tab.modelo==="linear"||R.tabela.reduzida; para(`Fonte: título "INFORMAÇÃO NUTRICIONAL" ${red?8:10} pt negrito; demais informações ${red?6:8} pt${red?"":"; rodapé 6 pt"} (Anexo XII, IN 75/2020). ${fontesTab(red)}, 100% preto em fundo branco.`,{size:8,cor:CINZA});} y+=2;});
@@ -2001,7 +2186,7 @@ async function excel(R,C,T,tabs,lup,dec){ const tab=tabs[0];
   if(logo){const id=wb.addImage({base64:logo.b64,extension:"jpeg"}); s1.addImage(id,{tl:{col:1.8,row:1.3},ext:{width:90,height:90}})}
   secao(s1.addRow(["PAINEL PRINCIPAL"]));
   [["Denominação de venda",P.denominacao],...(alegLac(R)?[["Alegação de lactose",`${alegLac(R)} (próximo à denominação de venda; ${br(C.b100.lac*1000,0)} mg de lactose/100 ${C.un})`]]:[]),["Marca",P.marca],["Conteúdo líquido",P.conteudo?`${P.conteudo} ${P.unidade}`:""],...(C.temDren?[["Peso drenado",`${P.drenado} ${P.unidade}`]]:[]),["Descrição",P.descricao],["Identificação de origem",origemTexto(R)],["Serviço de inspeção",R.inspecao?.servico&&R.inspecao.servico!=="nenhum"?(R.inspecao.servico==="SIE-SC"?"SIE/SC":R.inspecao.servico):""],...(temCarimboModelo3(R.inspecao?.servico)?[["Diâmetro do carimbo",carimboSIF(R,C).d]]:[]),...(podeSisbi(R.inspecao?.servico)&&R.inspecao.sisbi?[["SISBI-POA","Aderido: carimbo do serviço de inspeção + logotipo do SISBI"]]:[]),["Frase de registro",fraseRegistro(R)],["Conservação",P.conservacao],["Validade",P.validade],["Validade após aberto",P.validadeAberto]].forEach(([k,v])=>add(k,v||""));
-  s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); if(T.ogm) add("Transgênico",T.ogm,{b:true});
+  s1.addRow([]); secao(s1.addRow(["INGREDIENTES E ADVERTÊNCIAS"])); {const r=s1.addRow(["Lista de ingredientes",""]);r.getCell(1).font=A(10,true);r.getCell(1).alignment={vertical:"top"};r.getCell(2).value={richText:parseRich(T.ing).map(x=>({text:x.t,font:{name:"Arial",size:10,italic:x.i}}))};r.getCell(2).alignment={wrapText:true,vertical:"top"}} add("Alérgicos",T.alg||"Não há advertência",{b:!!T.alg}); add("Lactose",T.lac||"Não declarar",{b:!!T.lac}); add("Glúten",T.gluten,{b:true}); (T.restLac||[]).forEach(x=>add("Dieta com restrição de lactose",x,{b:true})); if(T.ogm) add("Transgênico",T.ogm,{b:true});
   s1.addRow([]); secao(s1.addRow(["TABELA E LUPA"])); add("Lupa",(C.lupa.precisa?`ALTO EM ${C.lupa.nutrientes.join(", ")}${lup?` — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm, ${br(lup.M.pt,1)} pt`:""}`:"Não precisa")+(C.lupa.vedados.length?` · vedada para ${joinE(C.lupa.vedados)} (Anexo XVI)`:""));
   tabs.forEach((tb,i)=>add(`Tabela nutricional${tabs.length>1?` (${i+1}ª opção)`:""}`,`${NOME_MODELO[tb.modelo].split(",")[0]} · ${tb.modelo==="linear"?"título 8 pt negrito; demais 6 pt":`título ${R.tabela.reduzida?8:10} pt negrito; porções, colunas e nutrientes ${R.tabela.reduzida?6:8} pt; valores 8 pt; rodapé 6 pt`}`));
   const Sz=tamanhos(R,C); add("Tamanhos de fonte",`Ingredientes: letras com no mínimo 1 mm. ${T.lac?"Alérgicos, lactose e glúten":"Alérgicos e glúten"}: ${Sz.minAvisoMM} mm, negrito, caixa alta, logo após a lista de ingredientes (RDC 727/2022 e Lei 10.674/2003).`);
@@ -2202,6 +2387,7 @@ PESO DRENADO: ${P.drenado} ${P.unidade}`:""):"",[{t:"A informação deve estar l
   if(T.lac){bloco("Advertência sobre lactose",T.lac,textoAviso); espaco();}
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
   bloco("Declaração de glúten:",T.gluten,"A declaração deve estar em caixa alta e negrito, de forma visível e legível. Essa declaração não pode estar encoberta e nem em local de selagem ou que seja prejudicada pela abertura da embalagem. Caso optem por colocá-la abaixo da lista de ingredientes, manter após a declaração de alergênicos e lactose."); espaco();
+  if((T.restLac||[]).length){bloco("Advertências para dietas com restrição de lactose",T.restLac.join("\n"),"Em negrito e em destaque (RDC 715/2022, art. 8º). A denominação de venda deve terminar com “para dietas com restrição de lactose” (art. 6º, IV)."); espaco();}
   if((P.conservacao||"").trim()){bullet("Conservação"); valor({t:P.conservacao.toUpperCase(),f:"PoppinsLight"}); espaco();}
   if(T.ogm){bloco("Declaração de transgênicos",T.ogm,"A expressão deve estar no painel principal, junto ao símbolo “T”. "+textoSimboloT(C)+" A espécie doadora do gene, em itálico, vai na lista de ingredientes logo após o ingrediente transgênico."); espaco();}
   cabecalho("Dizeres de Rotulagem","DEMAIS PAINÉIS");
@@ -2384,6 +2570,16 @@ document.addEventListener("click",e=>{
   if(d.vst){const [p,k]=d.vst.split("|");const o=getP(S.R,p);o.st=o.st===k?"":k;salvar();const y=window.scrollY;render();window.scrollTo(0,y);if(k==="nc"&&o.st==="nc"){const t=document.querySelector(`textarea[data-bind="${p}.obs"]`);t&&t.focus()}return}
   if(d.act==="vadd"){S.R.extras.push({titulo:"",st:"",obs:""});salvar();render();setTimeout(()=>{const el=document.querySelector(`input[data-bind="extras.${S.R.extras.length-1}.titulo"]`);el&&el.focus()},30);return}
   if(d.vdel!=null){if(b.dataset.armed){S.R.extras.splice(+d.vdel,1);salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
+  if(d.act==="destadd"){S.R.destaques=S.R.destaques||[];S.R.destaques.push({tipo:"quantidade",texto:"",nutriente:"",valor:"",base:"porcao"});salvar();render();return}
+  if(d.destdel!=null){S.R.destaques.splice(+d.destdel,1);salvar();render();return}
+  if(d.act==="famVincular"){const id=$("#famBase").value;const b=DBR.lista.find(r=>r.id===id);if(!b){toast("Escolha o rótulo.");return}aplicarFamilia(S.R,b);salvar();render();toast("Formulação copiada e vinculada.");return}
+  if(d.act==="famAtualizar"){const b=DBR.lista.find(r=>r.id===S.R.familia.baseId);if(!b)return;aplicarFamilia(S.R,b);salvar();render();toast("Formulação atualizada com a do rótulo-base.");return}
+  if(d.act==="famDesvincular"){delete S.R.familia;salvar();render();return}
+  if(d.act==="cliPuxar"){const dd=dadosCli(S.R);if(!dd)return;CLI_CAMPOS.forEach(([p])=>{if(String(dd[p]??"").trim())setP(S.R,p,dd[p])});salvar();render();toast("Dados do cliente aplicados.");return}
+  if(d.act==="cliSalvar"){(async()=>{const c=DBR.clientes.find(x=>x.id===S.R.clienteId);if(!c)return;const dd={};CLI_CAMPOS.forEach(([p])=>{const v=getP(S.R,p);if(String(v??"").trim())dd[p]=v});
+    const {error}=await DBR.sb.from("cons_clientes").update({rotulagem:dd}).eq("id",c.id);
+    if(error){toast(/rotulagem/.test(error.message||"")?"Falta criar o campo de dados de rótulo no cadastro do cliente (SQL 10).":"Não foi possível salvar: "+error.message);return}
+    c.rotulagem=dd;render();toast("Dados salvos no cadastro do cliente.")})();return}
   if(d.obsimgadd){const inpF=document.createElement("input");inpF.type="file";inpF.accept="image/*,application/pdf,.pdf";inpF.multiple=true;inpF.onchange=()=>{if(inpF.files.length) anexarImgsObs(d.obsimgadd,[...inpF.files])};inpF.click();return}
   if(d.obsimgdel){const [p,i]=d.obsimgdel.split("|");const L=getP(S.R,p)||[];L.splice(+i,1);salvar();render();return}
   if(d.act==="vimgadd"){$("#vimgfile").click();return}
