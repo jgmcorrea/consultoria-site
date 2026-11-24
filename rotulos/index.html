@@ -1931,6 +1931,22 @@ function balSum(C){const X=C.extra; if(!X.tanqueN) return "";
   return `${conf}<div class="tbl-wrap" style="margin-top:6px"><table class="calc"><thead><tr><th>Nutriente</th><th>Entrou no tanque</th><th>Saiu: ${sai}</th><th>Ficou: ${fica}</th><th>${fica} por 100 g</th></tr></thead><tbody>
     <tr><td>Massa (g)</td><td>${f(X.massaTanque)}</td><td>− ${f(X.massaSub)}</td><td><b>${f(X.massaBase)}</b></td><td>100</td></tr>${ks.map(linha).join("")}</tbody></table></div>${depois}`}
 function concSum(C){const X=C.extra;return `<span>Entrada: <b>${br(X.massaEntrada,1)} g</b></span><span>Água evaporada: <b>${br(X.evaporado,1)} g</b></span><span>Fator de concentração: <b>${br(X.fator,3)}</b></span>`}
+const pendAbertas=C=>C.E.length+C.W.length+(C.CONF||[]).filter(c=>!c.fonte.trim()).length;
+// relatório interno: pendências, avisos confirmados (com a fonte) e notas internas
+async function pdfPendencias(R,C){ const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:"mm",format:"a4"}); const M=15,W=180,BASE=297-16; let y=M;
+  const need=h=>{if(y+h>BASE){doc.addPage();y=M}};
+  const para=(t,o={})=>{doc.setFont("helvetica",o.bold?"bold":"normal");doc.setFontSize(o.size||9.5);doc.setTextColor(...(o.cor||[30,36,33]));doc.splitTextToSize(String(t),W-(o.ind||0)).forEach(l=>{need(4.6);doc.text(l,M+(o.ind||0),y+3.4);y+=4.6});y+=1};
+  const h2=t=>{need(12);y+=3;doc.setFont("helvetica","bold");doc.setFontSize(11);doc.setTextColor(...LARANJA);doc.text(t.toUpperCase(),M,y+4);doc.setDrawColor(...LINHA);doc.line(M,y+6,M+W,y+6);y+=9};
+  doc.setFont("helvetica","bold");doc.setFontSize(9);doc.setTextColor(179,38,30);doc.text("USO INTERNO — NÃO ENVIAR AO CLIENTE",M,y+3);y+=8;
+  doc.setFontSize(16);doc.setTextColor(30,36,33);doc.text("Relatório de pendências",M,y+5);y+=9;
+  para(`${R.produto.nome||R.produto.denominacao||"Rótulo"}${R.clienteId?" · "+nomeCliente(R.clienteId):""} · emitido em ${new Date().toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"})}`,{cor:[110,120,114]});
+  const sec=(t,l,pref)=>{ if(!l.length) return; h2(`${t} (${l.length})`); l.forEach(x=>para("• "+(pref||"")+x,{ind:0})) };
+  if(!C.E.length&&!C.W.length) para("Nenhuma pendência em aberto.",{bold:true});
+  sec("Falta",C.E); sec("Atenção",C.W); sec("Informações",C.I);
+  if((C.CONF||[]).length){ h2(`Avisos confirmados pela ficha técnica/laudo (${C.CONF.length})`); C.CONF.forEach(c=>{ const reg=(R.confirmados||{})[c.k]||{}; para("• "+c.msg); para(`Fonte: ${c.fonte.trim()||"NÃO INFORMADA"}${reg.em?` · confirmado em ${new Date(reg.em).toLocaleDateString("pt-BR")}`:""}`,{ind:4,size:8.5,cor:c.fonte.trim()?[27,106,80]:[179,38,30]}); }); }
+  if(String(R.porcao.notasInternas||"").trim()){ h2("Notas internas"); String(R.porcao.notasInternas).split(/\n+/).filter(x=>x.trim()).forEach(x=>para(x)); }
+  const n=doc.internal.getNumberOfPages(); for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(110,120,114);doc.text("Uso interno da Consultoria Isadora Andrade",M,297-8);doc.text(`Página ${i} de ${n}`,M+W,297-8,{align:"right"})}
+  return doc.output("blob"); }
 function alertsHTML(C){return `<div class="alerts">${C.E.map(e=>`<div class="alert err"><b>Falta:</b> <span>${esc(e)}</span></div>`).join("")}${C.W.map(e=>`<div class="alert warn" style="flex-wrap:wrap"><b>Atenção:</b> <span>${esc(e)}</span>${C.P_AV&&C.P_AV[e]?`<button class="mini" data-confirmar="${esc(C.P_AV[e])}">Confirmado pela ficha técnica/laudo</button>`:""}</div>`).join("")}
   ${(C.CONF||[]).length?`<details class="small" ${C.CONF.some(c=>!c.fonte.trim())?"open":""}><summary>Avisos confirmados pela ficha técnica/laudo (${C.CONF.length})</summary><div class="stack" style="gap:6px;margin-top:6px">${C.CONF.map(c=>`<div class="alert info" style="flex-direction:column;align-items:stretch;gap:4px"><span>${esc(c.msg)}</span>
     <div class="row" style="gap:8px"><input type="text" data-bind="confirmados.${esc(c.k)}.fonte" value="${esc(c.fonte)}" placeholder="Fonte (ex.: ficha técnica do fornecedor, laudo nº…)" style="flex:1;min-width:220px"><button class="mini" data-desconfirmar="${esc(c.k)}">Desfazer</button></div>${c.fonte.trim()?"":`<span class="small" style="color:var(--bad)">Informe a fonte.</span>`}</div>`).join("")}</div></details>`:""}${C.I.map(e=>`<div class="alert info"><span>${esc(e)}</span></div>`).join("")}</div>`}
@@ -1984,8 +2000,9 @@ function viewPorcao(R,C){
   ${alegacoesCard(R,C)}
   ${destaquesCard(R,C)}
   <div class="card stack"><div><h2>Observações</h2><p class="muted small">Saem no fim da ficha do rótulo, antes do serviço de inspeção.</p></div>
-    ${inp("porcao.obs","Observações",{area:true,span:true,ph:"Ex.: a lista de ingredientes pode ir no painel lateral, junto da tabela."})}
-    ${imgsObsHTML("obsImgs",R.obsImgs)}</div></div>`;
+    ${inp("porcao.obs","Observações para o cliente e a gráfica (saem na ficha)",{area:true,span:true,ph:"Ex.: a lista de ingredientes pode ir no painel lateral, junto da tabela."})}
+    ${imgsObsHTML("obsImgs",R.obsImgs)}
+    ${inp("porcao.notasInternas","Notas internas (não saem na ficha)",{area:true,span:true,ph:"Anotações suas: saem só no Relatório de pendências (uso interno)."})}</div></div>`;
 }
 function declaradosCard(R,C){ const un=C.un, D=R.declarados||{};
   const naTab=C.linhas.filter(l=>l.k!=="energia").map(l=>l.k); const ks=[...naTab,...Object.keys(D).filter(k=>NUT[k]&&!naTab.includes(k))];
@@ -2011,7 +2028,7 @@ function viewRotulo(R,C){
   const conteudoTxt=P.conteudo?`${P.conteudo} ${P.unidade}`:"—";
   const altCont=(()=>{const c=C.contPeso;if(!(c>0))return"";return c<=50?"2 mm":c<=200?"3 mm":c<=1000?"4 mm":"6 mm"})();
   return `<div class="stack">
-  ${C.E.length||C.W.length||C.I.length?`<div class="card stack"><h2>Pendências e avisos</h2>${alertsHTML(C)}</div>`:`<div class="alert info"><b>Pronto.</b> <span>Nenhuma pendência encontrada nos dados informados.</span></div>`}
+  ${C.E.length||C.W.length||C.I.length?`<div class="card stack" id="pendCard"><h2>Pendências e avisos</h2>${alertsHTML(C)}</div>`:`<div class="alert info"><b>Pronto.</b> <span>Nenhuma pendência encontrada nos dados informados.</span></div>`}
   <div class="row" style="justify-content:space-between"><h2>Prévia do rótulo</h2><div class="seg"><button class="${!S.real?"on":""}" data-zoom="0">Ampliado</button><button class="${S.real?"on":""}" data-zoom="1">Tamanho real</button></div></div>
   <div class="two">
     <div class="stack">
@@ -2046,7 +2063,11 @@ function viewRotulo(R,C){
       <button data-exp="pdf"><span class="fmt">PDF</span><b>Ficha do rótulo</b><small>Todos os textos, tabela e lupa em tamanho real</small></button>
       <button data-exp="ft"><span class="fmt">PDF</span><b>Ficha técnica</b><small>Para a empresa e os clientes dela, sem a marca da consultoria</small></button>
       <button data-exp="json"><span class="fmt">JSON</span><b>Backup do rótulo</b><small>Para reabrir ou mover para outro computador</small></button>
+      <button data-exp="pend"><span class="fmt">PDF</span><b>Relatório de pendências (uso interno)</b><small>Pendências, avisos confirmados com a fonte e notas internas</small></button>
     </div>
+    ${S.expConf?`<div class="alert warn" id="expConf" style="flex-direction:column;align-items:stretch;gap:8px"><b>Este rótulo tem ${pendAbertas(C)} ${pendAbertas(C)===1?"pendência":"pendências"} em aberto. Exportar mesmo assim?</b>
+      <span class="small">O arquivo sai sem as pendências: elas são de uso interno e ficam só nesta tela.</span>
+      <div class="row"><button class="mini" data-act="verPend">Ver pendências</button><button class="mini primary" data-exp="${S.expConf}" data-expok="1">Exportar</button><button class="mini ghost" data-act="expCancel">Cancelar</button></div></div>`:""}
     <div class="grid3">${inp("fichaTec.rev","Ficha técnica — nº da revisão",{n:true,ph:"001",hint:"Sai como REV 001."})}<label class="f">Data da revisão<input type="date" data-bind="fichaTec.data" id="f-fichaTec.data" value="${esc(R.fichaTec?.data||"")}"><span class="hint">Em branco = data do dia.</span></label></div></div>
   </div>`;
 }
@@ -2056,6 +2077,7 @@ function nomeArq(ext,suf=""){return `${slug(S.R.produto.nome)}${suf?"-"+suf:""}.
 async function exportar(tipo){
   const R=S.R,C=calc(R),T=textos(R,C),lup=layLupa(R,C),dec=layDecl(R,C,T); const [tipoBase,modTab]=tipo.split(":"); tipo=tipoBase; const tab=layTabela(R,C,modTab); const tabs=modelosTab(R).map(m=>layTabela(R,C,m));
   try{
+    if(tipo==="pend"){ if(!window.jspdf) return toast("A biblioteca de PDF não carregou. Recarregue a página."); return saveFile(nomeArq("pdf","pendencias-uso-interno"),await pdfPendencias(R,C)); }
     if(tipo==="json") return saveFile(nomeArq("json"),new Blob([JSON.stringify(R,null,2)],{type:"application/json"}));
     if(tipo==="pngTab") return saveFile(nomeArq("png","tabela-"+tab.modelo),(await pngOf(tab)).blob);
     if(tipo==="rel"){ if(!window.jspdf) return toast("A biblioteca de PDF não carregou. Recarregue a página."); toast("Gerando o relatório…"); return saveFile(`dizeres-de-rotulagem-${slug(R.relatorio?.nome||R.produto.nome)}-v${R.relatorio?.versao||1}.pdf`,await relatorioPDF(R,C,T)); }
@@ -2178,8 +2200,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
     else kv("Carimbo",`Modelo, dimensões e dizeres conforme o regulamento do ${I.servico==="SIE"?"serviço de inspeção estadual":"serviço de inspeção municipal"}${I.orgao?` (${I.orgao})`:""}.`);
     if(podeSisbi(I.servico)&&I.sisbi) kv("SISBI-POA",TXT_SISBI);
   }}
-  {const tabLaudo=OBRIG.every(k=>C.decl[k]); const compRx=/sem composição nutricional|Informe a composição do|informe a lactose \(g\/100 g\)|Informe a galactose \(g\/100 g\)|ingrediente opcional sem composição|do calculado \(|Para confirmar a alegação/i;
-   const pend=C.E.concat((C.CONF||[]).filter(c=>!c.fonte.trim()).map(c=>`Aviso confirmado sem fonte: ${c.msg}`)).concat(C.W.filter(t=>!/^“CONTÉM LACTOSE” foi incluído/.test(t)&&!(tabLaudo&&compRx.test(t)))); if(pend.length){h2("Pendências"); pend.forEach(t=>para("• "+t,{size:8.5}))}} // teor de lactose normalmente não é informado: não vai para a ficha
+  // pendências e avisos são de uso interno: ficam só na tela e no "Relatório de pendências (uso interno)"
   para("Referências: RDC 429/2020, IN 75/2020, RDC 727/2022 (ANVISA); Decreto 9.013/2017 (RIISPOA); Portaria Inmetro 249/2021; Lei 10.674/2003; Decreto 4.680/2003.",{size:7.5,cor:CINZA});
   const emitido=new Date().toLocaleDateString("pt-BR"), n=doc.internal.getNumberOfPages();
   for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(...CINZA);
@@ -2642,7 +2663,10 @@ document.addEventListener("click",e=>{
     if(!S.R.textos.ingOverride.trim()){const R=S.R,C=calc(R); S.R.textos.ingOverride=textos(R,C).ingAuto; salvar(); render();}
     setTimeout(()=>{const el=document.getElementById("f-textos.ingOverride"); if(el){el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus();}},30); return}
   if(d.clear){setP(S.R,d.clear,"");salvar();render();return}
-  if(d.exp){exportar(d.exp);return}
+  if(d.exp){ if((d.exp==="pdf"||d.exp==="ft")&&!d.expok){ const n=pendAbertas(calc(S.R)); if(n){ S.expConf=d.exp; render(); setTimeout(()=>{const x=document.getElementById("expConf");x&&x.scrollIntoView({block:"center"})},30); return } }
+    S.expConf=null; exportar(d.exp); if(d.expok) render(); return}
+  if(d.act==="expCancel"){S.expConf=null;render();return}
+  if(d.act==="verPend"){S.expConf=null;render();setTimeout(()=>{const x=document.getElementById("pendCard");x&&x.scrollIntoView({block:"start",behavior:"smooth"})},30);return}
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeAC()});
 iniciar();
