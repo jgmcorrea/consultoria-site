@@ -776,7 +776,9 @@ function avisosExtras(R,C){ if(R._semNF||R._semFam||R._semOpc) return; let T; tr
     if(!R.novaFormula.desde) C.W.push("Nova fórmula: informe a data de início da nova composição para contar os 90 dias."); }
   if(R.novaFormula&&R.novaFormula.substitui==="sim"&&!R.novaFormula.anteriorId&&!Object.values(R.novaFormula.mudou||{}).some(Boolean)) C.W.push("Nova fórmula: escolha o rótulo anterior ou marque o que mudou.");
   C.destaques=destaquesInfo(R,C); C.destaques.filter(d=>!d.ok&&(String(d.texto||"").trim()||d.tipo==="quantidade")).forEach(d=>C.W.push(`Destaque do painel “${d.texto||NUT[d.nutriente]?.l||"sem texto"}”: ${d.msgs.filter(m=>!/fiscaliza/.test(m)).join(" ")}`));
-  { const o=fold(String(R.porcao.obs||"")); const ja=fold([...alegacoesNut(R,C).map(a=>a.texto),...(R.destaques||[]).map(d=>d.texto||""),alegLac(R)].join(" | "));
+  { // frases complementares obrigatórias citadas nas observações não contam como alegação (ex.: "…baixo ou reduzido em valor energético")
+    const FRASES_OBRIG=["ESTE NÃO É UM ALIMENTO BAIXO OU REDUZIDO EM VALOR ENERGÉTICO","ESTE NÃO É UM ALIMENTO BAIXO OU REDUZIDO EM GORDURAS SATURADAS","CONTÉM AÇÚCARES PRÓPRIOS DOS INGREDIENTES","CONTÉM SÓDIO PRÓPRIO DOS INGREDIENTES","FORNECE QUANTIDADES NÃO SIGNIFICATIVAS DE AÇÚCARES","CONSUMIR PREFERENCIALMENTE SOB ORIENTAÇÃO DE NUTRICIONISTA OU MÉDICO",...alegacoesNut(R,C).flatMap(a=>a.frases),...(C.restLac?[C.restLac.diab]:[])].filter(Boolean).map(f=>fold(f).replace(/[^a-z0-9% ]+/g," ").replace(/\s+/g," ").trim());
+    let o=" "+fold(String(R.porcao.obs||"")).replace(/[^a-z0-9% ]+/g," ").replace(/\s+/g," ")+" "; FRASES_OBRIG.forEach(f=>{o=o.split(" "+f+" ").join("  ")}); const ja=fold([...alegacoesNut(R,C).map(a=>a.texto),...(R.destaques||[]).map(d=>d.texto||""),alegLac(R)].join(" | "));
     const raiz=w=>w.replace(/s$/,""); const soltos=[...new Set((o.match(new RegExp(RX_ALEG_OBS.source,"g"))||[]).filter(w=>!ja.includes(raiz(w))))];
     if(soltos.length) C.W.push(`As observações citam ${soltos.map(w=>`“${w}”`).join(", ")}, que parece${soltos.length>1?"m":""} alegação ou destaque do painel. Cadastre em “Alegações nutricionais” ou “Destaques do painel principal” (etapa Porção e embalagem) para o sistema conferir.`); }
   { const fi=familiaInfo(R); if(fi.base&&fi.base.mudouBase) C.W.push(`A formulação do rótulo-base “${fi.base.nome}” mudou: atualize este rótulo e reemita (etapa Formulação).`);
@@ -1593,7 +1595,7 @@ function destaquesCard(R,C){ R.destaques=R.destaques||[]; const info=destaquesIn
         <div class="row"><button class="mini danger" data-destdel="${ix}">Remover</button></div></div>`}).join("")}
     <div class="row"><button class="mini" data-act="destadd">+ Adicionar destaque</button></div></div>`}
 // palavras de alegação escritas nas observações, fora dos campos que o sistema confere
-const RX_ALEG_OBS=/\b(sem adicao|zero|0%|fonte de|alto teor|alto conteudo|rico em|rica em|light|baixo em|baixo teor|reduzido em|proteina|proteinas|fibra|fibras|integral)\b/;
+const RX_ALEG_OBS=/\b(sem adicao|zero|0%|fonte de|alto teor|alto conteudo|rico em|rica em|light|baixo em|baixa em|baixo teor|reduzido em|reduzida em|proteina|proteinas|fibra|fibras|integral)\b/;
 // Família de produto: vários rótulos com a mesma formulação e os mesmos valores por 100 g
 const FORM_K=["tipo","ingredientes","balanco","concentracao","lactase","alergCruzada","alergCruzEsp","glutenCruzada"];
 function formulaDe(R){ const f={}; FORM_K.forEach(k=>f[k]=R[k]); f.estado=R.produto&&R.produto.estado; f.densidade=R.produto&&R.produto.densidade; f.declarados=R.declarados||{}; return f }
