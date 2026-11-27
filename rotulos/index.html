@@ -246,12 +246,12 @@ function rtiqInfo(R,b100g){ const RT=R.rtiq||{}; if(!RT.perfil) return null; con
   const lim=RT.perfil==="personalizado"?Object.fromEntries(RTIQ_CAMPOS.map(([k])=>[k,String(RT.lim?.[k]??"").trim()===""?null:nz(RT.lim[k])])):pf;
   const laudoCinz=String(RT.cinzas??"").trim()!=="", cinz=laudoCinz?nz(RT.cinzas):(b100g.sodio||0)*2.542/1000;
   const umid=100-((b100g.carb||0)+(b100g.prot||0)+(b100g.gord||0)+(b100g.fibra||0)+cinz);
-  const nome=pf.nome.toLowerCase(), avisos=[], f=v=>br(v,1), PADR=pf.norma?`do padrão do ${nome} (${pf.norma})`:"do padrão informado";
-  if(lim.umidMax!=null&&umid>lim.umidMax) avisos.push(`Umidade estimada de ${f(umid)} g/100 g, acima do máximo de ${f(lim.umidMax)} g/100 g ${PADR}. Confira a massa final informada ou a formulação.`);
-  if(lim.gordMin!=null&&(b100g.gord||0)<lim.gordMin) avisos.push(`Gordura de ${f(b100g.gord||0)} g/100 g, abaixo do mínimo de ${f(lim.gordMin)} g/100 g ${PADR}.`);
-  if(lim.gordMax!=null&&(b100g.gord||0)>lim.gordMax) avisos.push(`Gordura de ${f(b100g.gord||0)} g/100 g, acima do máximo de ${f(lim.gordMax)} g/100 g ${PADR}${pf.gordMaxNota?` (${pf.gordMaxNota})`:""}.`);
-  if(lim.protMin!=null&&(b100g.prot||0)<lim.protMin) avisos.push(`Proteína de ${f(b100g.prot||0)} g/100 g, abaixo do mínimo de ${f(lim.protMin)} g/100 g${pf.protNota?` de ${pf.protNota}`:""} ${PADR}.`);
-  if(lim.cinzMax!=null&&cinz>lim.cinzMax) avisos.push(`Cinzas ${laudoCinz?"":"estimadas "}de ${f(cinz)} g/100 g, acima do máximo de ${f(lim.cinzMax)} g/100 g ${PADR}.`);
+  const nome=pf.nome.toLowerCase(), avisos=[], fv=v=>brFix(v,2), fl=v=>brFix(v,1), PADR=pf.norma?`do padrão do ${nome} (${pf.norma})`:"do padrão informado";
+  if(lim.umidMax!=null&&umid>lim.umidMax) avisos.push(`Umidade estimada de ${fv(umid)} g/100 g, acima do máximo de ${fl(lim.umidMax)} g/100 g ${PADR}. Confira a massa final informada ou a formulação.`);
+  if(lim.gordMin!=null&&(b100g.gord||0)<lim.gordMin) avisos.push(`Gordura de ${fv(b100g.gord||0)} g/100 g, abaixo do mínimo de ${fl(lim.gordMin)} g/100 g ${PADR}.`);
+  if(lim.gordMax!=null&&(b100g.gord||0)>lim.gordMax) avisos.push(`Gordura de ${fv(b100g.gord||0)} g/100 g, acima do máximo de ${fl(lim.gordMax)} g/100 g ${PADR}${pf.gordMaxNota?` (${pf.gordMaxNota})`:""}.`);
+  if(lim.protMin!=null&&(b100g.prot||0)<lim.protMin) avisos.push(`Proteína de ${fv(b100g.prot||0)} g/100 g, abaixo do mínimo de ${fl(lim.protMin)} g/100 g${pf.protNota?` de ${pf.protNota}`:""} ${PADR}.`);
+  if(lim.cinzMax!=null&&cinz>lim.cinzMax) avisos.push(`Cinzas ${laudoCinz?"":"estimadas "}de ${fv(cinz)} g/100 g, acima do máximo de ${fl(lim.cinzMax)} g/100 g ${PADR}.`);
   return {pf,lim,umid,cinz,laudoCinz,avisos};
 }
 // Portaria Inmetro 249/2021, Tabela II: altura mínima dos algarismos do conteúdo líquido
@@ -2036,14 +2036,14 @@ function viewPorcao(R,C){
     ${imgsObsHTML("obsImgs",R.obsImgs)}
     ${inp("porcao.notasInternas","Notas internas (não saem na ficha)",{area:true,span:true,ph:"Anotações suas: saem só no Relatório de pendências (uso interno)."})}</div></div>`;
 }
-function rtiqCard(R,C){ R.rtiq=R.rtiq||{perfil:"",cinzas:"",lim:{}}; const sg=sugerirRtiq(R); const b100g={}; KEYS.forEach(k=>b100g[k]=C.b100[k]/(C.liquido?C.dens:1)); const ri=rtiqInfo(R,b100g);
+function rtiqCard(R,C){ R.rtiq=R.rtiq||{perfil:"",cinzas:"",lim:{}}; const sg=sugerirRtiq(R); const b100g={}; KEYS.forEach(k=>b100g[k]=(C.calc100||C.b100)[k]/(C.liquido?C.dens:1)); const ri=rtiqInfo(R,b100g);
   return `<div class="card stack"><div><span class="eyebrow">Padrão de identidade (RTIQ)</span><h2>Conferência com o padrão do produto</h2>
-    <p class="muted small">Confere a composição final (por 100 g, com os valores declarados) com os limites do regulamento técnico. A umidade é estimada: 100 − (carboidratos + proteínas + gorduras + fibras + cinzas).</p></div>
+    <p class="muted small">Confere a composição final (por 100 g, com os valores calculados, sem arredondar) com os limites do regulamento técnico. A umidade é estimada: 100 − (carboidratos + proteínas + gorduras + fibras + cinzas).</p></div>
     <div class="grid3">${sel("rtiq.perfil","Padrão",[["","Não conferir"],...Object.entries(RTIQ_PERFIS).map(([k,p])=>[k,p.nome+(p.norma?` (${p.norma})`:"")])],{re:true,hint:sg&&!R.rtiq.perfil?`Sugestão pela denominação: ${RTIQ_PERFIS[sg].nome}.`:""})}
       ${R.rtiq.perfil?inp("rtiq.cinzas","Cinzas do laudo (g/100 g)",{n:true,blur:true,hint:"Em branco, o sistema estima pelas cinzas do sal (sódio × 2,54); minerais do leite ficam de fora, então a umidade estimada sai um pouco alta."}):""}</div>
     ${R.rtiq.perfil==="personalizado"?`<div class="grid3">${RTIQ_CAMPOS.map(([k,l])=>inp("rtiq.lim."+k,l+" (g/100 g)",{n:true,blur:true})).join("")}</div>`:""}
-    ${ri?`<div class="row" style="gap:6px 16px"><span class="small">Umidade estimada: <b>${br(ri.umid,1)} g</b></span><span class="small">Cinzas ${ri.laudoCinz?"(laudo)":"(estimadas)"}: <b>${br(ri.cinz,2)} g</b></span><span class="small">Gordura: <b>${br(b100g.gord,1)} g</b></span><span class="small">Proteína: <b>${br(b100g.prot,1)} g</b></span><span class="small muted">por 100 g</span></div>
-      <div class="small muted">Limites: ${RTIQ_CAMPOS.filter(([k])=>ri.lim[k]!=null).map(([k,l])=>`${l.toLowerCase()} ${br(ri.lim[k],1)} g`).join(" · ")||"nenhum informado"}.</div>
+    ${ri?`<div class="row" style="gap:6px 16px"><span class="small">Umidade estimada: <b>${brFix(ri.umid,2)} g</b></span><span class="small">Cinzas ${ri.laudoCinz?"(laudo)":"(estimadas)"}: <b>${brFix(ri.cinz,2)} g</b></span><span class="small">Gordura: <b>${brFix(b100g.gord,2)} g</b></span><span class="small">Proteína: <b>${brFix(b100g.prot,2)} g</b></span><span class="small muted">por 100 g</span></div>
+      <div class="small muted">Limites: ${RTIQ_CAMPOS.filter(([k])=>ri.lim[k]!=null).map(([k,l])=>`${l.toLowerCase()} ${brFix(ri.lim[k],1)} g`).join(" · ")||"nenhum informado"}.</div>
       ${ri.avisos.length?ri.avisos.map(a=>`<div class="alert warn"><span>${esc(a)}</span></div>`).join(""):`<div class="alert info"><span>Dentro do padrão nos itens conferidos.</span></div>`}`:""}
   </div>`}
 function declaradosCard(R,C){ const un=C.un, D=R.declarados||{};
