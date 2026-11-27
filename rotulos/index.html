@@ -239,24 +239,58 @@ const RTIQ_PERFIS={
   iog_integral:{nome:"Iogurte integral",norma:"IN MAPA 46/2007",rx:/iogurte(?!.*(desnatado|parcialmente))/,gordMin:3,protMin:2.9,protNota:"proteína láctea"},
   iog_parcial:{nome:"Iogurte parcialmente desnatado",norma:"IN MAPA 46/2007",rx:/iogurte.*parcialmente desnatado/,gordMin:0.6,gordMax:2.9,protMin:2.9,protNota:"proteína láctea"},
   iog_desnatado:{nome:"Iogurte desnatado",norma:"IN MAPA 46/2007",rx:/iogurte.*desnatado/,gordMax:0.5,protMin:2.9,protNota:"proteína láctea"},
+  queijo_fundido:{nome:"Queijo processado ou fundido",norma:"Portaria MAPA 356/1997",rx:/queijo (processado|fundido)(?!.*u\.?h\.?t)/,umidMax:70,gesMin:35,opcNaoLacMax:30,amidoMax:3,variedade:true,classif:true,queijo:true},
+  queijo_fundido_uht:{nome:"Queijo processado ou fundido UHT",norma:"Portaria MAPA 356/1997",rx:/queijo (processado|fundido).*u\.?h\.?t/,umidMax:70,gesMin:35,opcNaoLacMax:30,amidoMax:3,variedade:true,classif:true,queijo:true},
+  requeijao:{nome:"Requeijão",norma:"Portaria MAPA 359/1997",rx:/requeijao(?!.*(cremoso|de manteiga))/,gesMin:45,gesMax:54.9,umidMax:60,requeijao:true},
+  requeijao_cremoso:{nome:"Requeijão cremoso",norma:"Portaria MAPA 359/1997",rx:/requeijao cremoso/,gesMin:55,umidMax:65,requeijao:true},
+  requeijao_manteiga:{nome:"Requeijão de manteiga",norma:"Portaria MAPA 359/1997",rx:/requeijao de manteiga/,gesMin:25,gesMax:59.9,umidMax:58,requeijao:true},
+  parmesao:{nome:"Queijo parmesão",norma:"Portaria MAPA 353/1997",rx:/parmesao/,gesMin:32,queijo:true,classif:true},
+  queijo_geral:{nome:"Queijo sem padrão próprio (classificação geral)",norma:"Portaria MAPA 146/1996",rx:/^$/,classifGeral:true,queijo:true,classif:true},
   personalizado:{nome:"Personalizado",norma:""}};
-const RTIQ_CAMPOS=[["umidMax","Umidade máx."],["gordMin","Gordura mín."],["gordMax","Gordura máx."],["protMin","Proteína mín."],["cinzMax","Cinzas máx."]];
-function sugerirRtiq(R){const d=fold(R.produto.denominacao||"")+" | "+fold(R.produto.nome||""); return ["doce_leite_creme","doce_leite","iog_parcial","iog_desnatado","iog_integral"].find(k=>RTIQ_PERFIS[k].rx.test(d))||""}
-function rtiqInfo(R,b100g){ const RT=R.rtiq||{}; if(!RT.perfil) return null; const pf=RTIQ_PERFIS[RT.perfil]; if(!pf) return null;
+const RTIQ_CAMPOS=[["umidMax","Umidade máx."],["gordMin","Gordura mín."],["gordMax","Gordura máx."],["protMin","Proteína mín."],["cinzMax","Cinzas máx."],["gesMin","GES mín."],["gesMax","GES máx."],["opcNaoLacMax","Opcionais não lácteos máx. (%)"],["amidoMax","Amido máx. (%)"]];
+const VARIEDADES=["mussarela","muçarela","mozzarella","prato","parmesao","provolone","gorgonzola","queijo azul","gouda","cheddar","emmental","gruyere","minas","coalho","brie","camembert","reino","estepe","cottage","ricota","edam","tilsit","pecorino","grana"];
+function sugerirRtiq(R){const d=fold(R.produto.denominacao||"")+" | "+fold(R.produto.nome||""); return ["doce_leite_creme","doce_leite","iog_parcial","iog_desnatado","iog_integral","queijo_fundido_uht","queijo_fundido","requeijao_cremoso","requeijao_manteiga","requeijao","parmesao"].find(k=>RTIQ_PERFIS[k].rx.test(d))||""}
+// classificação geral dos queijos (Portaria 146/1996): umidade e gordura no extrato seco
+const classUmid=u=>u<36?"baixa umidade (queijo de massa dura)":u<46?"média umidade (massa semidura)":u<55?"alta umidade (massa branda ou macia)":"muito alta umidade (massa branda ou mole)";
+const classGES=g=>g>=60?"extragordo ou duplo creme":g>=45?"gordo":g>=25?"semigordo":g>=10?"magro":"desnatado";
+const truncBaixo=v=>brFix(Math.floor(v*100+1e-9)/100,2), truncCima=v=>brFix(Math.ceil(v*100-1e-9)/100,2);
+function rtiqInfo(R,b100g,ctx={}){ const RT=R.rtiq||{}; if(!RT.perfil) return null; const pf=RTIQ_PERFIS[RT.perfil]; if(!pf) return null;
   const lim=RT.perfil==="personalizado"?Object.fromEntries(RTIQ_CAMPOS.map(([k])=>[k,String(RT.lim?.[k]??"").trim()===""?null:nz(RT.lim[k])])):pf;
-  const laudoCinz=String(RT.cinzas??"").trim()!=="", cinz=laudoCinz?nz(RT.cinzas):(b100g.sodio||0)*2.542/1000;
-  const umid=100-((b100g.carb||0)+(b100g.prot||0)+(b100g.gord||0)+(b100g.fibra||0)+cinz);
-  const nome=pf.nome.toLowerCase(), avisos=[], fv=v=>brFix(v,2), fl=v=>brFix(v,1), PADR=pf.norma?`do padrão do ${nome} (${pf.norma})`:"do padrão informado";
-  if(lim.umidMax!=null&&umid>lim.umidMax) avisos.push(`Umidade estimada de ${fv(umid)} g/100 g, acima do máximo de ${fl(lim.umidMax)} g/100 g ${PADR}. Confira a massa final informada ou a formulação.`);
-  if(lim.gordMin!=null&&(b100g.gord||0)<lim.gordMin) avisos.push(`Gordura de ${fv(b100g.gord||0)} g/100 g, abaixo do mínimo de ${fl(lim.gordMin)} g/100 g ${PADR}.`);
-  if(lim.gordMax!=null&&(b100g.gord||0)>lim.gordMax) avisos.push(`Gordura de ${fv(b100g.gord||0)} g/100 g, acima do máximo de ${fl(lim.gordMax)} g/100 g ${PADR}${pf.gordMaxNota?` (${pf.gordMaxNota})`:""}.`);
-  if(lim.protMin!=null&&(b100g.prot||0)<lim.protMin) avisos.push(`Proteína de ${fv(b100g.prot||0)} g/100 g, abaixo do mínimo de ${fl(lim.protMin)} g/100 g${pf.protNota?` de ${pf.protNota}`:""} ${PADR}.`);
-  if(lim.cinzMax!=null&&cinz>lim.cinzMax) avisos.push(`Cinzas ${laudoCinz?"":"estimadas "}de ${fv(cinz)} g/100 g, acima do máximo de ${fl(lim.cinzMax)} g/100 g ${PADR}.`);
-  return {pf,lim,umid,cinz,laudoCinz,avisos};
+  const temL=k=>String(RT[k]??"").trim()!=="";
+  const laudoCinz=temL("cinzas"), cinz=laudoCinz?nz(RT.cinzas):(b100g.sodio||0)*2.542/1000;
+  const laudoGord=temL("gordLaudo"), gord=laudoGord?nz(RT.gordLaudo):(b100g.gord||0);
+  const laudoUmid=temL("umidLaudo"), umid=laudoUmid?nz(RT.umidLaudo):100-((b100g.carb||0)+(b100g.prot||0)+gord+(b100g.fibra||0)+cinz);
+  const ges=umid<100?gord/(100-umid)*100:0;
+  const nome=pf.nome.charAt(0).toLowerCase()+pf.nome.slice(1), avisos=[], infos=[], fl=v=>brFix(v,1), PADR=pf.norma?`do padrão do ${nome} (${pf.norma})`:"do padrão informado";
+  // abaixo do mínimo: valor truncado para baixo; acima do máximo: para cima (a mensagem nunca mostra o mesmo número do limite)
+  const sp=u=>u.startsWith("%")?u:" "+u;
+  const abaixo=(rot,v,min,u,nota="")=>{ if(min!=null&&v<min-1e-9) avisos.push(`${rot} de ${truncBaixo(v)}${sp(u)}, abaixo do mínimo de ${fl(min)}${sp(u)}${nota} ${PADR}.`) };
+  const acima=(rot,v,max,u,nota="",fim="")=>{ if(max!=null&&v>max+1e-9) avisos.push(`${rot} de ${truncCima(v)}${sp(u)}, acima do máximo de ${fl(max)}${sp(u)}${nota} ${PADR}.${fim}`) };
+  const rotU=laudoUmid?"Umidade (laudo)":"Umidade estimada", rotG=laudoGord?"Gordura (laudo)":"Gordura";
+  acima(rotU,umid,lim.umidMax,"g/100 g","",laudoUmid?"":" Confira a massa final informada ou a formulação.");
+  abaixo(rotG,gord,lim.gordMin,"g/100 g"); acima(rotG,gord,lim.gordMax,"g/100 g",pf.gordMaxNota?` (${pf.gordMaxNota})`:"");
+  abaixo("Proteína",b100g.prot||0,lim.protMin,"g/100 g",pf.protNota?` de ${pf.protNota}`:"");
+  acima(laudoCinz?"Cinzas (laudo)":"Cinzas estimadas",cinz,lim.cinzMax,"g/100 g");
+  abaixo("Gordura no extrato seco",ges,lim.gesMin,"%"); acima("Gordura no extrato seco",ges,lim.gesMax,"%");
+  // limites de formulação (sobre a massa do produto final)
+  const ings=(ctx.ings||R.ingredientes).filter(i=>i.nome&&i.nome.trim()&&!i.omitir&&nz(i.qtd)>0), mf=ctx.massaFinal||ings.reduce((a,i)=>a+nz(i.qtd),0);
+  const nm=i=>fold(i.nome), lacteo=i=>RX_LACTEO.test(nm(i))&&!RX_NAO_LACTEO.test(nm(i));
+  let pctOpc=null, pctAmido=null, varInfo=null;
+  if(lim.opcNaoLacMax!=null&&mf>0){ const opc=ings.filter(i=>i.opcional&&!lacteo(i)&&!/\bagua\b/.test(nm(i))); pctOpc=opc.reduce((a,i)=>a+nz(i.qtd),0)/mf*100; acima("Ingredientes opcionais não lácteos (sem a água)",pctOpc,lim.opcNaoLacMax,"%"," do produto final"); }
+  if(lim.amidoMax!=null&&mf>0){ pctAmido=ings.filter(i=>/\bamido\b/.test(nm(i))).reduce((a,i)=>a+nz(i.qtd),0)/mf*100; acima("Amido",pctAmido,lim.amidoMax,"%"," do produto final"); }
+  if(pf.variedade){ const den=fold(R.produto.denominacao||""); const v=VARIEDADES.find(x=>den.includes(fold(x)));
+    if(v){ const queijos=ings.filter(i=>/\bqueijo|\bqueijos/.test(nm(i))||VARIEDADES.some(x=>nm(i).includes(fold(x))));
+      const tot=queijos.reduce((a,i)=>a+nz(i.qtd),0), daV=queijos.filter(i=>nm(i).includes(fold(v))).reduce((a,i)=>a+nz(i.qtd),0);
+      varInfo={v,pct:tot>0?daV/tot*100:0,tot};
+      if(tot>0&&varInfo.pct<75-1e-9) avisos.push(`A denominação cita “${v}”, mas ele é ${truncBaixo(varInfo.pct)}% da mistura de queijos (mínimo 75% para citar a variedade, ${pf.norma}).`); } }
+  if(pf.classifGeral) infos.push(`Classificação (Portaria 146/1996): ${classUmid(umid)}, ${classGES(ges)} (umidade ${brFix(umid,2)} g/100 g${laudoUmid?" do laudo":" estimada"}; GES ${brFix(ges,2)}%).`);
+  return {pf,lim,umid,cinz,gord,ges,laudoCinz,laudoGord,laudoUmid,pctOpc,pctAmido,varInfo,avisos,infos};
 }
 // Portaria Inmetro 249/2021, Tabela II: altura mínima dos algarismos do conteúdo líquido
 function faixaPeso(c,liq){ if(!(c>0)) return null; const u=liq?"ml":"g", uk=liq?"L":"kg";
   return c<=50?{h:"2 mm",faixa:`até 50 ${u}`}:c<=200?{h:"3 mm",faixa:`acima de 50 até 200 ${u}`}:c<=1000?{h:"4 mm",faixa:`acima de 200 até 1.000 ${u}`}:{h:"6 mm",faixa:`acima de 1 ${uk}`}; }
+// (a) especialmente processado (RDC 715/2022) × (b) sem lactose pelo processo convencional (alegação comum, RDC 429 / IN 75)
+const lacNatural=R=>!!alegLac(R)&&(R.relatorio||{}).motivoLactose==="natural";
 const alegLac = R=>String(R.relatorio?.alegacaoLactose||"").trim().toUpperCase();
 // classificação dos estabelecimentos — Decreto 9.013/2017 (RIISPOA), arts. 17 a 23
 const CLASSIF_EST = [
@@ -452,7 +486,7 @@ function somar(list){
 }
 function calc(R){
   const E=[],W=[],I=[];
-  const P=R.produto; const P_AV={}, CONF=[];
+  const P=R.produto; const P_AV={}, CONF=[], LAC_AV={};
   const aviso=lista=>lista.forEach(({k,msg})=>{ const c=(R.confirmados||{})[k]; if(c) CONF.push({k,msg,fonte:c.fonte||""}); else { W.push(msg); P_AV[msg]=k; } });
   R.ingredientes.forEach(respIng);
   const ings=R.ingredientes.filter(i=>i.nome.trim()||nz(i.qtd));
@@ -466,7 +500,7 @@ function calc(R){
     const temComp=KEYS.some(k=>i.comp[k]!==""&&i.comp[k]!=null);
     if(!temComp && !(i.acucarAdic)) W.push(`“${i.nome||"Ingrediente"}” está sem composição nutricional; entra no cálculo como zero.`);
     // lactose obrigatória quando o ingrediente é fonte de lactose (sem ela a lactose do produto, a glicose da lactase e as advertências saem erradas)
-    if(i.lactose&&!i.lactase&&(i.comp.lac===""||i.comp.lac==null)&&!alegLac(R)&&!R.ingredientes.some(x=>x.lactase)) W.push(`“${i.nome}” está marcado como fonte de lactose: informe a lactose (g/100 g) na composição.`);
+    if(i.lactose&&!i.lactase&&(i.comp.lac===""||i.comp.lac==null)&&!alegLac(R)&&!R.ingredientes.some(x=>x.lactase)&&!i.lacSemTeor){ const m=`“${i.nome}” está marcado como fonte de lactose, sem o teor de lactose (g/100 g). O rótulo leva “CONTÉM LACTOSE”.`; W.push(m); LAC_AV[m]=i.id; }
     // faixas de plausibilidade (erro de unidade ou de digitação)
     if(temComp) aviso(plausib(i.id,i.nome,i.comp));
     if(i.ogm&&!i.gene.trim()) W.push(`Informe a espécie doadora do gene de “${i.nome}” (Decreto 4.680/2003).`);
@@ -528,7 +562,7 @@ function calc(R){
       hid={antes,depois,H,gal:per100g.gal,galCalc,galLaudo,glic:H*0.5263,agua:H*0.0526,modo:L.modo,enzimas:enzLac.map(i=>i.nome),semFonte:fontesSem.length>0};
     }
   }
-  { const ri=rtiqInfo(R,per100g); if(ri) ri.avisos.forEach(a=>W.push(a)); }
+  { const ri=rtiqInfo(R,per100g,{ings,massaFinal}); if(ri){ ri.avisos.forEach(a=>W.push(a)); ri.infos.forEach(a=>I.push(a)); } }
   // balanço de açúcares: açúcares totais ≥ lactose + galactose (+ glicose formada pela lactase)
   { const glic=hid?hid.glic:0, soma=(per100g.lac||0)+(per100g.gal||0)+glic;
     if((per100g.lac>0||per100g.gal>0||glic>0)&&per100g.acTot+0.2<soma) W.push(`Açúcares totais (${br(per100g.acTot,2)} g/100 g) menores que lactose + galactose${hid?" + glicose formada pela lactase":""} (${br(soma,2)} g/100 g). Confira os açúcares totais dos ingredientes ou o laudo.`);
@@ -621,6 +655,9 @@ function calc(R){
   if(R.lupa.item16!==undefined&&R.lupa.item16!==null){const n=+R.lupa.item16; R.lupa.anexo16=n?(n<=6?"cond":"total"):"";}
   const modo16=R.lupa.anexo16;
   { const sg=sugerir16(R); if(sg&&!R.lupa.item16&&!R.lupa.anexo16) W.push(`O produto parece se enquadrar no Anexo XVI da IN 75/2020, item ${sg} (${ANEXO16[sg-1]}), mas está marcado como “Não está no Anexo XVI”. Confira o enquadramento (etapa Porção e embalagem).`); }
+  { const pf=RTIQ_PERFIS[(R.rtiq||{}).perfil]||{};
+    if(pf.queijo&&modo16==="cond") R.lupa.temOpcional=R.ingredientes.some(i=>i.opcional&&i.nome&&i.nome.trim()&&!/\bagua\b/.test(fold(i.nome)))?"sim":"nao"; // a classificação do RTIQ responde a pergunta
+    if((pf.requeijao||/requeijao/.test(fold(R.produto.denominacao||"")))&&+R.lupa.item16===6) W.push("Requeijão não é queijo para o Anexo XVI (Anvisa, P&R 170): não use a vedação do item 6 (Queijos)."); }
   if(R.lupa.temOpcional===undefined) R.lupa.temOpcional=R.ingredientes.some(i=>i.opcional)?"sim":"";
   const temOpc=R.lupa.temOpcional;
   const opc=(modo16==="cond"&&temOpc==="sim")?ings.filter(i=>i.opcional):[];
@@ -644,9 +681,13 @@ function calc(R){
   if(modo16==="total"){ aplicar=[]; vedados=acima; }
   else if(modo16==="cond"){ aplicar=acima.filter(([k])=>alt[k]); vedados=acima.filter(([k])=>!alt[k]); }
   const lupaN=aplicar.map(x=>x[1]);
+  // opcionais que contribuem para cada nutriente liberado (água e aditivos sem valor nutricional não contribuem)
+  // (lista os opcionais que respondem por pelo menos 5% da contribuição dos opcionais para aquele nutriente)
+  const liberadaPor=modo16==="cond"?aplicar.map(([k,n])=>{ const cs=opc.map(i=>{const c=compOf(i); return {nome:i.nome,v:(k==="acAdd"&&i.acucarAdic&&!(c.acAdd>0)?(c.acTot||c.carb):c[k])*nz(i.qtd)}}).filter(x=>x.v>0); const mx=Math.max(0,...cs.map(x=>x.v));
+    return {n,opc:cs.filter(x=>x.v>=0.05*mx).sort((a,b)=>b.v-a.v).map(x=>x.nome)} }):[];
   const area=nz(R.painel.largura)*nz(R.painel.altura);
   const motivosOpc=[]; if(area>0&&area<35) motivosOpc.push("painel principal com menos de 35 cm² (inciso I)"); if(R.produto.venda==="pdv") motivosOpc.push("embalado no ponto de venda a pedido do consumidor (inciso II)"); if(R.produto.venda==="estab") motivosOpc.push("preparado ou fracionado e vendido no próprio estabelecimento (inciso III)");
-  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:motivosOpc.length>0,motivosOpc,dispensada:[],modo16,temOpc,alt,contrib,semV,comV,opc:opc.map(i=>i.nome).filter(Boolean)};
+  const lupa={lim,nutrientes:lupaN,vedados:vedados.map(x=>x[1]),precisa:lupaN.length>0,area,opcional:motivosOpc.length>0,motivosOpc,dispensada:[],modo16,temOpc,alt,contrib,semV,comV,opc:opc.map(i=>i.nome).filter(Boolean),liberadaPor};
   if(modo16==="cond"&&!temOpc) W.push("Lupa: responda se o produto tem ingrediente opcional do RTIQ/PIQ (etapa Porção e embalagem).");
   if(modo16==="cond"&&temOpc==="sim"&&!opc.length) W.push("Lupa: selecione qual ingrediente é o opcional do RTIQ/PIQ (etapa Porção e embalagem).");
   if(lupa.opcional&&lupa.precisa){ if(R.lupa.dispensar){ lupa.dispensada=lupa.nutrientes; lupa.nutrientes=[]; lupa.precisa=false; I.push(`Lupa não aplicada. Ela é opcional neste caso — ${joinE(motivosOpc)} (RDC 429/2020, art. 18, §3º).`); }
@@ -658,7 +699,7 @@ function calc(R){
   const fontesLac=ings.filter(i=>i.lactose&&!i.lactase); const semValorLac=lacFinalConhecida?[]:fontesLac.filter(i=>i.comp.lac===""||i.comp.lac==null);
   let lactose="";
   if(b100.lac>0.1+1e-9) lactose="CONTÉM LACTOSE";
-  else if(semValorLac.length){lactose="CONTÉM LACTOSE"; W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
+  else if(semValorLac.length){lactose="CONTÉM LACTOSE"; if(aLac) W.push(`“CONTÉM LACTOSE” foi incluído porque ${joinE(semValorLac.map(i=>`“${i.nome}”`))} ${semValorLac.length>1?"são fontes":"é fonte"} de lactose sem teor informado. Informe a lactose (g/100 g) para o sistema confirmar se passa de 100 mg/100 ${un} (RDC 727/2022, art. 18).`)}
   if(claimLac){ const semGal=ings.filter(i=>i.lactose&&!i.lactase&&(i.comp.gal===""||i.comp.gal==null));
     if(semGal.length&&!(hid&&(hid.H>0||hid.galLaudo!=null))) W.push(`Com alegação sobre lactose, a tabela declara lactose e galactose (RDC 429/2020, art. 5º, §4º). Informe a galactose (g/100 g) de ${semGal.map(i=>`“${i.nome}”`).join(", ")}; sem ela, a galactose sai como 0.`); }
   if(b100.lac+b100.gal>b100.acTot+0.05) W.push("Lactose + galactose passam dos açúcares totais. Lactose e galactose são açúcares: confira os açúcares totais dos ingredientes.");
@@ -668,10 +709,18 @@ function calc(R){
     else if(lim===1 && b100.lac<=0.1+1e-9) I.push(`Com ${br(mg,0)} mg de lactose por 100 ${un}, o produto também atende “ZERO LACTOSE” (até 100 mg/100 ${un}).`);
     if(semValorLac.length) W.push(`Para confirmar a alegação “${aLac}”, informe a lactose (g/100 g) de ${joinE(semValorLac.map(i=>`“${i.nome}”`))}.`);
     if(lactose) E.push(`“${aLac}” não pode aparecer junto com “CONTÉM LACTOSE”.`);
-    if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`); }
+    if(lupa.precisa) I.push(`Com lupa: a alegação “${aLac}” fica fora da metade superior do painel principal (RDC 429/2020, art. 30).`);
+    const motivo=(R.relatorio||{}).motivoLactose||"";
+    if(!motivo) W.push(`Alegação “${aLac}”: informe o motivo (produto especialmente processado para retirar a lactose ou sem lactose pelo processo convencional), na etapa Produto.`);
+    if(motivo==="natural"){ if(!["SEM LACTOSE","NÃO CONTÉM LACTOSE"].includes(aLac)) E.push(`Produto sem lactose pelo processo convencional: use “SEM LACTOSE” ou “NÃO CONTÉM LACTOSE” (no lugar de “${aLac}”).`);
+      const RLd=R.relatorio||{}; const temLaudo=String(RLd.laudoLactoseMg??"").trim()!=="";
+      if(!temLaudo) W.push("Sem lactose pelo processo convencional: a alegação exige laudo do produto final com até 100 mg de lactose por 100 g. Informe o resultado e a fonte (etapa Produto).");
+      else if(nz(RLd.laudoLactoseMg)>100+1e-9) E.push(`O laudo informa ${br(nz(RLd.laudoLactoseMg),0)} mg de lactose por 100 g: acima de 100 mg, não cabe “${aLac}”.`);
+      if(temLaudo&&!String(RLd.laudoLactoseFonte||"").trim()) W.push("Informe a fonte do laudo de lactose (nº do laudo, laboratório).");
+      I.push("Conforme as Perguntas e Respostas da Anvisa sobre lactose (P9 e P12), laticínios naturalmente com pouca lactose, como queijos de longa maturação, não se enquadram como alimento para dietas com restrição de lactose."); } }
   // alimento para dietas com restrição de lactose (RDC 715/2022): denominação com a finalidade e advertências do art. 8º
   let restLac=null;
-  if(aLac){ const RL=R.restLac||{}; const auto=acucaresPresentes(ings,hid);
+  if(aLac&&!lacNatural(R)){ const RL=R.restLac||{}; const auto=acucaresPresentes(ings,hid);
     // galactose e lactose entram pela tabela (com alegação, as duas são declaradas): presentes quando o valor declarado não é zero
     const naTab=k=>{const l=linhas.find(x=>x.k===k); return !!(l&&l.v100!=="0")};
     if(naTab("gal")) auto.galactose.push("tabela nutricional"); if(naTab("lac")) auto.lactose.push("tabela nutricional");
@@ -688,7 +737,7 @@ function calc(R){
   if(lupa.vedados.length) I.push(`Lupa vedada para ${joinE(lupa.vedados)} (Anexo XVI, IN 75/2020${modo16==="cond"?"; RDC 429/2020, art. 18, §2º: só entram os nutrientes alterados por ingredientes opcionais":""}).`);
   if(lupa.precisa&&!(area>0)) W.push("Informe as medidas do painel principal para dimensionar a lupa (Anexo XVIII, IN 75/2020).");
   if(Object.values(R.alegacoes||{}).some(Boolean)) alegacoesNut(R,{pv,b100,eP,e100,porcao,un,lupa,linhas}).forEach(a=>{ if(!a.ok) W.push(`Alegação “${a.texto}” não atende ao Anexo XX da IN 75/2020: ${a.motivo}`) });
-  const Cret={E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,nsSimpl,NS,lupa,lactose,restLac,extra,claimLac,area,hid,calc100,calcP,decl,P_AV,CONF};
+  const Cret={E,W,I,ings,massaFinal,tot,N,per100g,b100,pv,e100,eP,un,liquido,dens,cont,contPeso,drenado,temDren,ref,individual,porcao,porcoesTxt,porcTxt,medida,linhas,nsSimpl,NS,lupa,lactose,restLac,extra,claimLac,area,hid,calc100,calcP,decl,P_AV,CONF,LAC_AV};
   avisosExtras(R,Cret); return Cret;
 }
 // alegações nutricionais (RDC 429/2020, arts. 24 a 30; termos do Anexo XIX e critérios do Anexo XX da IN 75/2020). Comparativas (reduzido/aumentado) não entram: dependem de alimento de referência.
@@ -1754,7 +1803,9 @@ function viewProduto(R,C){
       ${inp("produto.nome","Nome do produto (uso interno)")}
       ${sel("clienteId","Cliente",[["","Sem cliente"],...DBR.clientes.filter(c=>c.ativo!==false||c.id===R.clienteId).map(c=>[c.id,c.nome])],{hint:"Os rótulos ficam agrupados por cliente na lista."})}
       ${inp("produto.denominacao","Denominação de venda",{hint:"Conforme o padrão de identidade e qualidade. Vai no painel principal (RDC 727/2022, art. 9)."})}
-      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Com alegação, o produto é alimento para dietas com restrição de lactose (RDC 715/2022): termo próximo à denominação. Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})})()}
+      ${(()=>{const v=alegLac(R); const ops=ALEG_LAC.map(a=>[a[0],a[1]+(a[2]==null?"":a[2]<1?" (até 100 mg/100 g)":" (até 1 g/100 g)")]); if(v&&!ops.some(o=>o[0]===v)) ops.push([v,v]); if(R.relatorio&&R.relatorio.alegacaoLactose!==v) R.relatorio.alegacaoLactose=v; return sel("relatorio.alegacaoLactose","Alegação sobre lactose",ops,{re:true,hint:"Termo próximo à denominação. Com alegação, a tabela inclui lactose e galactose (RDC 429/2020, art. 5º, §4º)."})
+        +(v?sel("relatorio.motivoLactose","Por que o produto tem pouca ou nenhuma lactose?",[["","Selecionar…"],["especial","Foi especialmente processado para retirar ou reduzir a lactose (ex.: lactase)"],["natural","Não tem lactose pelo processo convencional (ex.: queijo maturado, fundido feito com ele)"]],{re:true,hint:(R.relatorio||{}).motivoLactose==="natural"?"Alegação nutricional comum (RDC 429/2020 e IN 75/2020): “SEM LACTOSE” ou “NÃO CONTÉM LACTOSE”, lactose na tabela e laudo do produto final com até 100 mg/100 g. Não leva a denominação nem as advertências da RDC 715/2022.":"Alimento para dietas com restrição de lactose (RDC 715/2022): denominação com “para dietas com restrição de lactose” e advertências do art. 8º."}):"")
+        +(v&&(R.relatorio||{}).motivoLactose==="natural"?inp("relatorio.laudoLactoseMg","Lactose no laudo do produto final (mg/100 g)",{n:true,blur:true})+inp("relatorio.laudoLactoseFonte","Fonte do laudo",{ph:"Ex.: laudo nº 123/2026, laboratório X"}):"")})()}
       ${inp("produto.marca","Marca")}
       ${inp("relatorio.fantasia","Denominação consagrada, de fantasia ou marca registrada",{hint:"Ex.: CREME DE BRIE COM TRUFAS NEGRAS. Em branco = não tem."})}
       ${inp("produto.descricao","Descrição",{span:true,area:true})}
@@ -1978,7 +2029,7 @@ async function pdfPendencias(R,C){ const {jsPDF}=window.jspdf; const doc=new jsP
   if(String(R.porcao.notasInternas||"").trim()){ h2("Notas internas"); String(R.porcao.notasInternas).split(/\n+/).filter(x=>x.trim()).forEach(x=>para(x)); }
   const n=doc.internal.getNumberOfPages(); for(let i=1;i<=n;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(8);doc.setTextColor(110,120,114);doc.text("Uso interno da Consultoria Isadora Andrade",M,297-8);doc.text(`Página ${i} de ${n}`,M+W,297-8,{align:"right"})}
   return doc.output("blob"); }
-function alertsHTML(C){return `<div class="alerts">${C.E.map(e=>`<div class="alert err"><b>Falta:</b> <span>${esc(e)}</span></div>`).join("")}${C.W.map(e=>`<div class="alert warn" style="flex-wrap:wrap"><b>Atenção:</b> <span>${esc(e)}</span>${C.P_AV&&C.P_AV[e]?`<button class="mini" data-confirmar="${esc(C.P_AV[e])}">Confirmado pela ficha técnica/laudo</button>`:""}${C.CLI_AV&&C.CLI_AV[e]?`<button class="mini" data-usarcli="${esc(C.CLI_AV[e])}">Usar o dado padrão do cliente</button>`:""}</div>`).join("")}
+function alertsHTML(C){return `<div class="alerts">${C.E.map(e=>`<div class="alert err"><b>Falta:</b> <span>${esc(e)}</span></div>`).join("")}${C.W.map(e=>`<div class="alert warn" style="flex-wrap:wrap"><b>Atenção:</b> <span>${esc(e)}</span>${C.P_AV&&C.P_AV[e]?`<button class="mini" data-confirmar="${esc(C.P_AV[e])}">Confirmado pela ficha técnica/laudo</button>`:""}${C.LAC_AV&&C.LAC_AV[e]?`<button class="mini" data-lacest="${esc(C.LAC_AV[e])}">Usar os carboidratos como lactose (estimativa)</button><button class="mini" data-lacsem="${esc(C.LAC_AV[e])}">Confirmar CONTÉM LACTOSE sem teor</button>`:""}${C.CLI_AV&&C.CLI_AV[e]?`<button class="mini" data-usarcli="${esc(C.CLI_AV[e])}">Usar o dado padrão do cliente</button>`:""}</div>`).join("")}
   ${(C.CONF||[]).length?`<details class="small" ${C.CONF.some(c=>!c.fonte.trim())?"open":""}><summary>Avisos confirmados pela ficha técnica/laudo (${C.CONF.length})</summary><div class="stack" style="gap:6px;margin-top:6px">${C.CONF.map(c=>`<div class="alert info" style="flex-direction:column;align-items:stretch;gap:4px"><span>${esc(c.msg)}</span>
     <div class="row" style="gap:8px"><input type="text" data-bind="confirmados.${esc(c.k)}.fonte" value="${esc(c.fonte)}" placeholder="Fonte (ex.: ficha técnica do fornecedor, laudo nº…)" style="flex:1;min-width:220px"><button class="mini" data-desconfirmar="${esc(c.k)}">Desfazer</button></div>${c.fonte.trim()?"":`<span class="small" style="color:var(--bad)">Informe a fonte.</span>`}</div>`).join("")}</div></details>`:""}${C.I.map(e=>`<div class="alert info"><span>${esc(e)}</span></div>`).join("")}</div>`}
 function resumoHTML(C){
@@ -2036,15 +2087,23 @@ function viewPorcao(R,C){
     ${imgsObsHTML("obsImgs",R.obsImgs)}
     ${inp("porcao.notasInternas","Notas internas (não saem na ficha)",{area:true,span:true,ph:"Anotações suas: saem só no Relatório de pendências (uso interno)."})}</div></div>`;
 }
-function rtiqCard(R,C){ R.rtiq=R.rtiq||{perfil:"",cinzas:"",lim:{}}; const sg=sugerirRtiq(R); const b100g={}; KEYS.forEach(k=>b100g[k]=(C.calc100||C.b100)[k]/(C.liquido?C.dens:1)); const ri=rtiqInfo(R,b100g);
+function rtiqCard(R,C){ R.rtiq=R.rtiq||{perfil:"",cinzas:"",lim:{}}; const sg=sugerirRtiq(R); const b100g={}; KEYS.forEach(k=>b100g[k]=(C.calc100||C.b100)[k]/(C.liquido?C.dens:1));
+  const ri=rtiqInfo(R,b100g,{ings:C.ings,massaFinal:C.massaFinal}); const pf=RTIQ_PERFIS[R.rtiq.perfil]||{};
+  R.ingredientes.forEach(i=>{ if(i.opcional===true) i.opcional="1"; else if(i.opcional===false) i.opcional=""; });
   return `<div class="card stack"><div><span class="eyebrow">Padrão de identidade (RTIQ)</span><h2>Conferência com o padrão do produto</h2>
-    <p class="muted small">Confere a composição final (por 100 g, com os valores calculados, sem arredondar) com os limites do regulamento técnico. A umidade é estimada: 100 − (carboidratos + proteínas + gorduras + fibras + cinzas).</p></div>
+    <p class="muted small">Confere a composição final (por 100 g, com os valores calculados, sem arredondar) com os limites do regulamento técnico. A umidade é estimada: 100 − (carboidratos + proteínas + gorduras + fibras + cinzas). Com laudo de umidade ou gordura, a conferência usa o laudo.</p></div>
     <div class="grid3">${sel("rtiq.perfil","Padrão",[["","Não conferir"],...Object.entries(RTIQ_PERFIS).map(([k,p])=>[k,p.nome+(p.norma?` (${p.norma})`:"")])],{re:true,hint:sg&&!R.rtiq.perfil?`Sugestão pela denominação: ${RTIQ_PERFIS[sg].nome}.`:""})}
-      ${R.rtiq.perfil?inp("rtiq.cinzas","Cinzas do laudo (g/100 g)",{n:true,blur:true,hint:"Em branco, o sistema estima pelas cinzas do sal (sódio × 2,54); minerais do leite ficam de fora, então a umidade estimada sai um pouco alta."}):""}</div>
-    ${R.rtiq.perfil==="personalizado"?`<div class="grid3">${RTIQ_CAMPOS.map(([k,l])=>inp("rtiq.lim."+k,l+" (g/100 g)",{n:true,blur:true})).join("")}</div>`:""}
-    ${ri?`<div class="row" style="gap:6px 16px"><span class="small">Umidade estimada: <b>${brFix(ri.umid,2)} g</b></span><span class="small">Cinzas ${ri.laudoCinz?"(laudo)":"(estimadas)"}: <b>${brFix(ri.cinz,2)} g</b></span><span class="small">Gordura: <b>${brFix(b100g.gord,2)} g</b></span><span class="small">Proteína: <b>${brFix(b100g.prot,2)} g</b></span><span class="small muted">por 100 g</span></div>
-      <div class="small muted">Limites: ${RTIQ_CAMPOS.filter(([k])=>ri.lim[k]!=null).map(([k,l])=>`${l.toLowerCase()} ${brFix(ri.lim[k],1)} g`).join(" · ")||"nenhum informado"}.</div>
+      ${R.rtiq.perfil?inp("rtiq.umidLaudo","Umidade do laudo (g/100 g)",{n:true,blur:true})+inp("rtiq.gordLaudo","Gordura do laudo (g/100 g)",{n:true,blur:true})+inp("rtiq.cinzas","Cinzas do laudo (g/100 g)",{n:true,blur:true,hint:"Em branco, o sistema estima pelas cinzas do sal (sódio × 2,54); minerais do leite ficam de fora, então a umidade estimada sai um pouco alta."}):""}</div>
+    ${R.rtiq.perfil==="personalizado"?`<div class="grid3">${RTIQ_CAMPOS.map(([k,l])=>inp("rtiq.lim."+k,l+(/%/.test(l)?"":" (g/100 g)"),{n:true,blur:true})).join("")}</div>`:""}
+    ${ri?`<div class="row" style="gap:6px 16px"><span class="small">Umidade ${ri.laudoUmid?"(laudo)":"estimada"}: <b>${brFix(ri.umid,2)} g</b></span><span class="small">Gordura${ri.laudoGord?" (laudo)":""}: <b>${brFix(ri.gord,2)} g</b></span><span class="small">GES: <b>${brFix(ri.ges,2)}%</b></span><span class="small">Proteína: <b>${brFix(b100g.prot,2)} g</b></span><span class="small">Cinzas ${ri.laudoCinz?"(laudo)":"(estimadas)"}: <b>${brFix(ri.cinz,2)} g</b></span>
+        ${ri.pctOpc!=null?`<span class="small">Opcionais não lácteos: <b>${brFix(ri.pctOpc,2)}%</b></span>`:""}${ri.pctAmido!=null?`<span class="small">Amido: <b>${brFix(ri.pctAmido,2)}%</b></span>`:""}${ri.varInfo?`<span class="small">${esc(ri.varInfo.v)} na mistura de queijos: <b>${brFix(ri.varInfo.pct,2)}%</b></span>`:""}<span class="small muted">por 100 g</span></div>
+      <div class="small muted">Limites: ${RTIQ_CAMPOS.filter(([k])=>ri.lim[k]!=null).map(([k,l])=>`${l.toLowerCase()} ${brFix(ri.lim[k],1)}${/%|GES/.test(l)?"%":" g"}`).join(" · ")||"nenhum informado"}.</div>
+      ${ri.infos.map(a=>`<div class="alert info"><span>${esc(a)}</span></div>`).join("")}
       ${ri.avisos.length?ri.avisos.map(a=>`<div class="alert warn"><span>${esc(a)}</span></div>`).join(""):`<div class="alert info"><span>Dentro do padrão nos itens conferidos.</span></div>`}`:""}
+    ${pf.classif||pf.queijo||R.rtiq.perfil==="personalizado"?`<div class="stack" style="gap:6px"><b class="small">Classificação dos ingredientes no RTIQ</b>
+      <span class="small muted">Obrigatórios: ${pf.queijo&&/fundido|processado/.test(fold(pf.nome))?"queijos e agentes emulsificantes/sais fundentes":"os do padrão"}. Os opcionais entram no limite de não lácteos e na lupa do Anexo XVI.</span>
+      <div class="grid3">${R.ingredientes.map((i,ix)=>i.nome&&i.nome.trim()?sel(`ingredientes.${ix}.opcional`,esc(i.nome),[["","Obrigatório"],["1","Opcional"]],{re:true}):"").join("")}</div></div>`:""}
+    ${pf.requeijao?`<div class="alert info"><span>Requeijão não é queijo para o Anexo XVI (Anvisa, P&R 170): não recebe a vedação do item 6.</span></div>`:""}
   </div>`}
 function declaradosCard(R,C){ const un=C.un, D=R.declarados||{};
   const naTab=C.linhas.filter(l=>l.k!=="energia").map(l=>l.k); const ks=[...naTab,...Object.keys(D).filter(k=>NUT[k]&&!naTab.includes(k))];
@@ -2084,6 +2143,7 @@ function viewRotulo(R,C){
     <div class="stack">
       <div><span class="eyebrow">Rotulagem nutricional frontal</span>
         ${lup?`<div class="paper ${S.real?"":"fit"}">${svgOf(lup,z)}</div><div class="paper-cap"><span class="num">${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm</span><span>${lup.M.pct?`${br(lup.M.pct,2)}% exigido · ocupa ${br(lup.M.ocup,2)}% de ${br(lup.M.area,1)} cm²`:""} · “ALTO EM” ${br(lup.M.pt,1)} pt${lup.M.motivo?" · "+esc(lup.M.motivo):""}</span></div>
+          ${(C.lupa.liberadaPor||[]).length?`<div class="alert info">${C.lupa.liberadaPor.map(x=>`${esc(x.n)}: liberado pelo ingrediente opcional ${esc(joinE(x.opc.length?x.opc:["(não identificado)"]))}`).join("; ")} (Anvisa, P&R 169).</div>`:""}
           ${C.lupa.vedados.length?`<div class="alert info">Só ${esc(joinE(C.lupa.nutrientes))}: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas a lupa é vedada para ${C.lupa.vedados.length>1?"eles":"esse nutriente"} (Anexo XVI; RDC 429/2020, art. 18, §2º).</div>`:""}<p class="small muted">Metade superior do painel principal, em superfície contínua, preto sobre branco (RDC 429/2020, art. 21). Fonte do modelo: Arial Narrow.${C.lupa.opcional?` Lupa opcional: ${esc(joinE(C.lupa.motivosOpc))} (RDC 429/2020, art. 18, §3º).`:""}</p>`
           :C.lupa.vedados.length?`<div class="alert info">Sem lupa: ${esc(joinE(C.lupa.vedados))} passa${C.lupa.vedados.length>1?"m":""} do limite, mas é vedada (Anexo XVI, IN 75/2020).</div>`:`<div class="alert info">Não precisa de lupa: nenhum nutriente atinge os limites do Anexo XV (${C.liquido?"7,5 g / 3 g / 300 mg por 100 ml":"15 g / 6 g / 600 mg por 100 g"}).</div>`}
       </div>
@@ -2223,6 +2283,7 @@ async function pdfFicha(R,C,T,tabs,lup,dec){
   if(C.lupa.dispensada.length) kv("Rotulagem frontal",`Opcional e não aplicada: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º). Sem ela, o produto teria lupa de ${joinE(C.lupa.dispensada)}.`);
   else if(C.lupa.opcional&&C.lupa.precisa) kv("Rotulagem frontal",`Opcional neste produto: ${joinE(C.lupa.motivosOpc)} (RDC 429/2020, art. 18, §3º).`);
   if(lup){y+=2; h2(`Rotulagem nutricional frontal — ${brFix(lup.w,1)} × ${brFix(lup.h,1)} mm (tamanho real)`); need(lup.h+4); pdfDraw(doc,lup,M,y); y+=lup.h+3;
+    if((C.lupa.liberadaPor||[]).length) para(`Anexo XVI: ${C.lupa.liberadaPor.map(x=>`${x.n} liberado por ${joinE(x.opc.length?x.opc:["ingrediente opcional"])}`).join("; ")} (Anvisa, P&R 169).`,{size:8.5});
     para(`A rotulagem nutricional frontal fica no painel principal, na metade superior. "ALTO EM" em ${br(lup.M.pt,1)} pt.${lup.M.pct?` Ocupação mínima ${br(lup.M.pct,2)}% de ${br(lup.M.area,1)} cm2 do painel principal.`:""}${lup.M.motivo?" "+lup.M.motivo+".":""}${C.lupa.vedados.length?` Lupa vedada para ${joinE(C.lupa.vedados)} (Anexo XVI).`:""}`,{size:8,cor:CINZA})}
   h2("Lista de ingredientes e advertências"); {const L=layParas([{txt:T.ing,pt:9.5}],W); need(L.h); pdfDraw(doc,L,M,y); y+=L.h+2;} if(T.alg) para(T.alg,{bold:true}); if(T.lac) para(T.lac,{bold:true}); para(T.gluten,{bold:true});
   if(C.restLac){ (T.restLac||[]).forEach(x=>para(x,{bold:true})); para(`Alimento para dietas com restrição de lactose: ${T.restLac.length>1?"as advertências acima vão":"a advertência acima vai"} em negrito e em destaque (RDC 715/2022, art. 8º). A denominação de venda termina com “para dietas com restrição de lactose” (art. 6º, IV).${C.restLac.manual&&C.restLac.fonte?` Açúcares presentes conforme ${C.restLac.fonte}.`:""}`,{size:8,cor:CINZA}); }
@@ -2654,6 +2715,10 @@ document.addEventListener("click",e=>{
   if(d.vst){const [p,k]=d.vst.split("|");const o=getP(S.R,p);o.st=o.st===k?"":k;salvar();const y=window.scrollY;render();window.scrollTo(0,y);if(k==="nc"&&o.st==="nc"){const t=document.querySelector(`textarea[data-bind="${p}.obs"]`);t&&t.focus()}return}
   if(d.act==="vadd"){S.R.extras.push({titulo:"",st:"",obs:""});salvar();render();setTimeout(()=>{const el=document.querySelector(`input[data-bind="extras.${S.R.extras.length-1}.titulo"]`);el&&el.focus()},30);return}
   if(d.vdel!=null){if(b.dataset.armed){S.R.extras.splice(+d.vdel,1);salvar();render()}else{b.dataset.armed="1";b.textContent="Confirmar"}return}
+  if(d.lacest||d.lacsem){const i=S.R.ingredientes.find(x=>x.id===(d.lacest||d.lacsem)); if(!i) return;
+    if(d.lacest){ const v=String(i.comp.acTot??"").trim()!==""?i.comp.acTot:i.comp.carb; if(String(v??"").trim()===""){toast("O ingrediente não tem açúcares totais nem carboidratos informados.");return} i.comp.lac=String(v); i.lacFonte="estimativa: açúcares totais do ingrediente"; toast(`Lactose de “${i.nome}” = ${v} g/100 g (estimativa).`); }
+    else { i.lacSemTeor=true; toast(`“${i.nome}”: CONTÉM LACTOSE confirmado sem teor.`); }
+    salvar(); render(); return}
   if(d.usarcli){const dd=dadosCli(S.R);if(dd&&String(dd[d.usarcli]??"").trim()){setP(S.R,d.usarcli,dd[d.usarcli]);salvar();render();toast("Dado padrão do cliente aplicado.")}return}
   if(d.aplicarcli){ if(!b.dataset.armed){b.dataset.armed="1";b.textContent="Confirmar: atualizar "+b.dataset.n+" rótulo(s)";return}
     (async()=>{b.disabled=true;b.textContent="Atualizando…";const c=DBR.clientes.find(x=>x.id===d.aplicarcli);const dd=c&&c.rotulagem;let n=0,err=null;
