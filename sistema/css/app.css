@@ -593,3 +593,16 @@ a.botao-sec { color: var(--tinta); text-decoration: none; }
   .pp-linha, .pp-card .contatos li { grid-template-columns: 1fr; gap: 2px; }
   .pp-ed-cab { flex-direction: column; }
 }
+/* modelos de proposta, páginas opcionais e precificação de RT */
+.pp-modelos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pp-modelos button { text-align: left; background: var(--papel); border: 1px solid var(--linha); border-top: 4px solid var(--laranja); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.pp-modelos button:hover { border-color: var(--laranja); background: var(--laranja-suave); }
+.pp-modelos b { font-family: var(--titulo); font-size: 18px; }
+.pp-modelos span { font-size: 13.5px; color: var(--tinta-2); }
+.pp-tira { background: var(--fundo); border-radius: 7px; padding: 7px 10px; color: var(--tinta-2); }
+.pp-tira:has(input:checked) { background: var(--ambar-suave); color: var(--ambar); font-weight: 600; }
+.pp-tiras { margin-bottom: 12px; }
+.pp-sec > summary .chip { margin-left: 8px; font-weight: 500; }
+.pp-modelo { align-self: center; }
+.pp-modo { margin-bottom: 16px; flex-wrap: wrap; }
+@media (max-width: 640px) { .pp-modelos { grid-template-columns: 1fr; } }

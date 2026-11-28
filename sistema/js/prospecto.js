@@ -28,6 +28,12 @@
   const ST_PROP = [["pronta", "Pronta para revisar", "proximo"], ["revisada", "Revisada", ""], ["enviada", "Enviada ao cliente", "ok"]];
   const chipSt = (s) => { const o = ST_PROP.find((x) => x[0] === s) || [s, s, ""]; return `<span class="chip ${o[2]}">${esc(o[1])}</span>`; };
 
+  // simulação de RT: valor fixo pelas horas incluídas + valor de cada hora além delas (guardada em itens[0])
+  const simRT = (s) => (Array.isArray(s.itens) && s.itens[0]?.rt ? s.itens[0] : null);
+  const resumoSim = (s) => { const r = simRT(s); return r
+    ? `RT · ${moeda(r.fixo)} por ${horasTxt(Number(r.incluidas))} no mês + ${moeda(s.valor_hora)} por hora adicional${Number(r.previstas) > Number(r.incluidas) ? ` · previsão de ${horasTxt(Number(r.previstas))}: ${moeda(s.valor_total)}` : ""}`
+    : `${(s.itens || []).filter((i) => i.horas).map((i) => `${i.servico}: ${horasTxt(Number(i.horas))}`).join(" · ")} · ${moeda(s.valor_hora)}/h`; };
+
   const E = { propId: null, rascunho: null, rascunhoId: null };
   const acompDe = (id) => S.dados.acomp.filter((a) => a.prospect_id === id).sort((a, b) => String(b.data).localeCompare(String(a.data)) || String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
   const propostasDe = (id) => S.dados.propostas.filter((a) => a.prospect_id === id).sort((a, b) => String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
@@ -78,7 +84,7 @@
         </section>
       </div>
       <section class="pp-card pp-largo"><div class="pp-card-cab"><h2>Precificação</h2><button class="botao-sec" data-acao="pp-ir-preco" data-id="${p.id}">Abrir calculadora</button></div>
-        ${sims.length ? `<ul class="pp-lista">${sims.map((s) => `<li><div><span><b>${esc(s.nome)}</b> · ${moeda(s.valor_total)}</span><small>${(s.itens || []).filter((i) => i.horas).map((i) => `${esc(i.servico)}: ${horasTxt(Number(i.horas))}`).join(" · ")} · ${moeda(s.valor_hora)}/h</small></div></li>`).join("")}</ul>`
+        ${sims.length ? `<ul class="pp-lista">${sims.map((s) => `<li><div><span><b>${esc(s.nome)}</b> · ${moeda(simRT(s) ? simRT(s).fixo : s.valor_total)}${simRT(s) ? "/mês" : ""}</span><small>${esc(resumoSim(s))}</small></div></li>`).join("")}</ul>`
           : `<p class="sem">Nenhuma simulação vinculada. Na calculadora, escolha esta empresa em “Vincular a uma empresa”.</p>`}
       </section>`;
   }
@@ -119,8 +125,8 @@
       <section class="pp-card"><h2>Propostas</h2>
         <div class="pp-botoes"><button class="botao" data-acao="pp-nova-proposta" data-id="${p.id}">+ Nova proposta</button><button class="botao-sec" data-acao="pp-claude" data-id="${p.id}">Gerar com o Claude</button></div>
         ${props.length ? `<ul class="pp-lista pp-sel">${props.map((x) => `<li class="${atual?.id === x.id ? "ativo" : ""}" data-acao="pp-sel" data-id="${x.id}" tabindex="0"><div><b>${esc(x.titulo || "Proposta")}</b>
-          <small>${fmtData(String(x.criado_em || "").slice(0, 10))}${x.origem === "claude" ? " · Claude" : ""}</small>${chipSt(x.status)}</div></li>`).join("")}</ul>`
-          : `<p class="sem">Nenhuma proposta ainda. “+ Nova proposta” abre o seu modelo já com o nome desta empresa: é só mudar o que for diferente.</p>`}
+          <small>${esc(PR.nomeModelo(x.conteudo?.modelo))} · ${fmtData(String(x.criado_em || "").slice(0, 10))}${x.origem === "claude" ? " · Claude" : ""}</small>${chipSt(x.status)}</div></li>`).join("")}</ul>`
+          : `<p class="sem">Nenhuma proposta ainda. “+ Nova proposta” abre um dos seus modelos (projeto ou RT) já com o nome desta empresa: é só mudar o que for diferente.</p>`}
       </section>
       <section class="pp-card" data-ed-prop>${atual ? "" : `<p class="vazio">Crie ou selecione uma proposta.</p>`}</section>
     </div>`;
@@ -129,7 +135,7 @@
     const desenhar = () => {
       const c = E.rascunho;
       box.innerHTML = `<div class="pp-ed-cab"><input data-tit value="${esc(atual.titulo || "")}" aria-label="Título da proposta">
-          <select data-st aria-label="Situação">${ST_PROP.map((s) => `<option value="${s[0]}" ${atual.status === s[0] ? "selected" : ""}>${s[1]}</option>`).join("")}</select></div>
+          <span class="chip analise pp-modelo">${esc(PR.nomeModelo(c.modelo))}</span><select data-st aria-label="Situação">${ST_PROP.map((s) => `<option value="${s[0]}" ${atual.status === s[0] ? "selected" : ""}>${s[1]}</option>`).join("")}</select></div>
         <div class="pp-botoes"><button class="botao" data-salvar>Salvar</button><button class="botao-sec" data-ver>Visualizar / Baixar PDF</button><span class="espaco"></span>
           <button class="botao-sec" data-dup>Duplicar</button><button class="botao-perigo" data-del>Excluir</button></div>
         ${PR.editorHTML(c)}
@@ -147,7 +153,7 @@
       const tentar = (fn) => async (ev) => { ev.preventDefault(); try { await fn(ev); } catch (e) { SIS.falha(e); } };
       box.querySelectorAll("[data-salvar]").forEach((b) => (b.onclick = tentar(async () => { await salvar(); render(); })));
       box.querySelectorAll("[data-ver]").forEach((b) => (b.onclick = tentar(async () => { await salvar(true); PR.abrirProposta(E.rascunho, { nomeArquivo: box.querySelector("[data-tit]").value || `Proposta ${p.nome}` }); })));
-      box.querySelector("[data-add-etapa]").onclick = () => { ler(); E.rascunho.etapas.push({ nome: "", descricao: "", inclui: [], entrega: [], valor: "", nota: "" }); redesenhar(); };
+      const add = box.querySelector("[data-add-etapa]"); if (add) add.onclick = () => { ler(); E.rascunho.etapas.push({ nome: "", descricao: "", inclui: [], entrega: [], valor: "", nota: "" }); redesenhar(); };
       box.querySelectorAll("[data-rm-etapa]").forEach((b) => (b.onclick = () => { ler(); E.rascunho.etapas.splice(Number(b.dataset.rmEtapa), 1); redesenhar(); }));
       box.querySelector("[data-logo]").onchange = tentar(async (ev) => { const arq = ev.target.files[0]; if (!arq) return; ler(); E.rascunho.logo_cliente = await PR.lerLogo(arq); redesenhar(); toast("Logo adicionada. Salve a proposta para guardar."); });
       const rm = box.querySelector("[data-logo-rm]"); if (rm) rm.onclick = () => { ler(); E.rascunho.logo_cliente = ""; redesenhar(); };
@@ -166,24 +172,36 @@
     desenhar();
   }
 
-  async function novaProposta(p) {
+  function escolherModelo(p) {
     if (falta("propostas")) { toast("Falta preparar o banco: rode o arquivo 10_prospeccao_propostas.sql no Supabase.", true); return; }
-    const c = PR.MODELO_PADRAO(); c.cliente = p.nome;
-    const reg = await DB.salvar("propostas", { prospect_id: p.id, titulo: `Proposta ${p.nome}`, conteudo: c, status: "pronta", origem: "manual" });
+    abrirModal("Nova proposta", `<p class="dica">Qual modelo usar para ${esc(p.nome)}?</p>
+      <div class="pp-modelos">
+        <button type="button" data-acao="pp-criar-proposta" data-id="${p.id}" data-modelo="projeto"><b>Projeto</b><span>Consultoria por etapas: como posso ajudar, Método DECIDIR, etapas, investimento por etapa e rotulagem.</span></button>
+        <button type="button" data-acao="pp-criar-proposta" data-id="${p.id}" data-modelo="rt"><b>Responsabilidade técnica</b><span>RT mensal: objetivos, formato de atuação, atividades, atendimento remoto e valor mensal + hora adicional.</span></button>
+      </div>`, null);
+  }
+
+  async function novaProposta(p, modelo) {
+    const c = PR.MODELO_PADRAO(modelo); c.cliente = p.nome;
+    if (modelo === "rt") { // aproveita a simulação de RT desta empresa, se houver
+      const s = simsDe(p.id).find(simRT);
+      if (s) { const r = simRT(s); c.horas_incluidas = String(r.incluidas).replace(".", ","); c.valor_mensal = moeda(r.fixo); c.hora_adicional = moeda(s.valor_hora); c.formato_destaque = `Total mensal: *${c.horas_incluidas} horas presenciais* na planta industrial.`; }
+    }
+    const reg = await DB.salvar("propostas", { prospect_id: p.id, titulo: `Proposta ${modelo === "rt" ? "RT " : ""}${p.nome}`, conteudo: c, status: "pronta", origem: "manual" });
     guardarLocal("propostas", reg); E.propId = reg.id;
-    toast("Proposta criada a partir do seu modelo.");
+    fecharModal(); toast("Proposta criada a partir do seu modelo.");
     if (location.hash === `#/prospecto/${p.id}/propostas`) render(); else location.hash = `#/prospecto/${p.id}/propostas`;
   }
 
   // "Gerar com o Claude": monta a mensagem com tudo da empresa + o que muda nesta proposta
-  function mensagemProposta(p, oQueMuda) {
+  function mensagemProposta(p, oQueMuda, modelo = "projeto") {
     const l = (r, v) => (v ? `${r}: ${String(v).trim()}\n` : "");
     const etapa = (SIS.ETAPAS_PROSP.find((e) => e[0] === p.etapa) || [p.etapa, p.etapa])[1];
-    let t = `GERAR PROPOSTA ISADORA\nprospect_id: ${p.id}\n\n`;
+    let t = `GERAR PROPOSTA ISADORA\nprospect_id: ${p.id}\nmodelo: ${modelo === "rt" ? "rt (responsabilidade técnica)" : "projeto (consultoria por etapas)"}\n\n`;
     t += `== O QUE MUDA NESTA PROPOSTA ==\n${(oQueMuda || "").trim() || "(nada informado: usar o modelo padrão com os dados abaixo)"}\n`;
     t += `\n== DADOS ==\n${l("Empresa", p.nome)}${l("Tipo de produto", p.tipo_produto)}${l("Cidade", p.cidade)}${l("Contato", p.contato)}${l("Instagram", p.instagram)}${l("Site", p.site)}${l("Etapa", etapa)}${l("Valor proposto", p.valor_proposto ? moeda(p.valor_proposto) : "")}`;
     t += `\n== BRIEFING ==\n${l("Situação atual", p.dor)}${l("Objetivo", p.objetivo)}${l("Serviços de interesse", p.servicos_interesse)}${l("Produtos / linha", p.produtos)}${l("Registro / fiscalização", p.inspecao)}${l("Observações", p.observacoes)}`;
-    for (const s of simsDe(p.id).slice(0, 3)) t += `Simulação "${s.nome}": ${moeda(s.valor_total)} (${(s.itens || []).filter((i) => i.horas).map((i) => `${i.servico} ${i.horas}h`).join(", ")} · ${moeda(s.valor_hora)}/h)${s.observacao ? ` — ${s.observacao}` : ""}\n`;
+    for (const s of simsDe(p.id).slice(0, 3)) t += `Simulação "${s.nome}": ${resumoSim(s)}${simRT(s) ? "" : ` · total ${moeda(s.valor_total)}`}${s.observacao ? ` — ${s.observacao}` : ""}\n`;
     const ac = acompDe(p.id);
     if (ac.length) {
       t += `\n== ACOMPANHAMENTO (mais recente primeiro) ==\n`;
@@ -196,7 +214,8 @@
   function modalClaude(p) {
     abrirModal("Gerar proposta com o Claude", `
       <p class="dica">Escreva abaixo o que muda nesta proposta (produtos, etapas, valores, prazos, o que entra e o que sai). Depois copie a mensagem e cole no chat do Claude, no Projeto <b>M2L Digital</b>, conversa <b>Sistema Consultoria Isadora</b>. O Claude escreve a proposta no seu modelo e ela aparece aqui, na aba Propostas.</p>
-      <label class="campo"><span>O que muda nesta proposta</span><textarea data-claude-muda rows="7" placeholder="Ex.: linha de geleias e antepastos; só as etapas 1 e 2; etapa 1 por R$ 2.000; rotulagem de 6 produtos; validade de 10 dias"></textarea></label>`,
+      <label class="campo"><span>Modelo</span><select data-claude-modelo>${Object.keys(PR.MODELOS).map((m) => `<option value="${m}">${esc(PR.nomeModelo(m))}</option>`).join("")}</select></label>
+      <label class="campo"><span>O que muda nesta proposta</span><textarea data-claude-muda rows="7" placeholder="Ex.: linha de geleias e antepastos; só as etapas 1 e 2; etapa 1 por R$ 2.000; tirar a página de rotulagem; validade de 10 dias"></textarea></label>`,
       null, `<button type="button" class="botao" data-acao="pp-claude-copiar" data-id="${p.id}">Copiar mensagem</button>`);
     document.querySelector(".modal").classList.add("modal-larga");
   }
@@ -205,24 +224,53 @@
   // PRECIFICAÇÃO
   // =====================================================================
   const SERVICOS_PADRAO = ["Diagnóstico e visita técnica", "Direcionamento técnico e de produto", "Consultoria aplicada e treinamento (BPF)", "Rotulagem"];
-  const novoCalc = (vh = 0) => ({ id: null, nome: "", prospect_id: "", valor_hora: vh || "", observacao: "", itens: SERVICOS_PADRAO.map((servico) => ({ servico, horas: "" })) });
+  const cfg = (chave) => S.dados.config.find((c) => c.chave === chave);
+  const cfgHora = () => cfg("valor_hora");
+  const rtPadrao = () => ({ fixo: "", incluidas: 20, hora_extra: "", ...(cfg("rt_padrao")?.valor || {}) });
+  const novoCalc = (modo = "projeto") => {
+    const r = rtPadrao();
+    return { id: null, modo, nome: "", prospect_id: "", valor_hora: Number(cfgHora()?.valor?.valor ?? 0) || "", observacao: "",
+      itens: SERVICOS_PADRAO.map((servico) => ({ servico, horas: "" })),
+      fixo: r.fixo || "", incluidas: r.incluidas || 20, hora_extra: r.hora_extra || "", previstas: "" };
+  };
   let calc = null;
-  const cfgHora = () => S.dados.config.find((c) => c.chave === "valor_hora");
+  // RT: valor fixo pelas horas incluídas + valor da hora para cada hora além delas
+  const contaRT = (c) => { const inc = num(c.incluidas), prev = num(c.previstas) || inc, extra = Math.max(0, prev - inc); return { inc, prev, extra, total: Math.round((num(c.fixo) + extra * num(c.hora_extra)) * 100) / 100 }; };
 
   function telaPrecificacao(el) {
     if (falta("precificacoes", "config")) { el.innerHTML = AVISO_SQL; return; }
     const padrao = Number(cfgHora()?.valor?.valor ?? 0);
-    calc ||= novoCalc(padrao);
+    calc ||= novoCalc();
+    const rt = calc.modo === "rt";
     const sims = [...S.dados.precificacoes].sort((a, b) => String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
     const abertos = S.dados.prospects.filter((p) => p.etapa !== "perdido").sort((a, b) => a.nome.localeCompare(b.nome));
     const fixo = (it) => SERVICOS_PADRAO.includes(it.servico) && !it.livre;
+    const paraQuem = `<label class="campo"><span>Para qual cliente / empresa</span><input data-nome value="${esc(calc.nome)}" placeholder="ex.: Queijos & Companhia">
+            <select data-prospect><option value="">Vincular a uma empresa (opcional)</option>${abertos.map((p) => `<option value="${p.id}" ${calc.prospect_id === p.id ? "selected" : ""}>${esc(p.nome)}</option>`).join("")}</select></label>`;
+    const rp = cfg("rt_padrao")?.valor;
     el.innerHTML = `<div class="pp-preco">
       <section class="pp-card"><div class="pp-card-cab"><h2>${calc.id ? "Editando simulação" : "Calculadora de preço"}</h2>${calc.id ? `<span class="chip analise">${esc(calc.nome)}</span>` : ""}</div>
+        <div class="seg pp-modo" role="group" aria-label="Tipo de precificação">
+          <button data-acao="pp-preco-modo" data-modo="projeto" class="${rt ? "" : "ativo"}">Projeto (horas × valor da hora)</button>
+          <button data-acao="pp-preco-modo" data-modo="rt" class="${rt ? "ativo" : ""}">Responsabilidade técnica (fixo + hora adicional)</button></div>
+        ${rt ? `
+        <div class="grade-form">
+          <label class="campo"><span>Valor fixo mensal (R$)</span><input type="number" min="0" step="0.01" inputmode="decimal" data-rt="fixo" value="${esc(calc.fixo ?? "")}" placeholder="ex.: 5300"></label>
+          <label class="campo"><span>Horas incluídas no valor fixo</span><input type="number" min="0" step="0.5" inputmode="decimal" data-rt="incluidas" value="${esc(calc.incluidas ?? "")}" placeholder="20"></label>
+          <label class="campo"><span>Valor de cada hora além das incluídas (R$)</span><input type="number" min="0" step="0.01" inputmode="decimal" data-rt="hora_extra" value="${esc(calc.hora_extra ?? "")}" placeholder="ex.: 125">
+            <small class="pp-dica">${rp ? `Padrão salvo: ${moeda(rp.fixo)} por ${horasTxt(num(rp.incluidas))} + ${moeda(rp.hora_extra)}/h` : "Ainda sem padrão salvo"} · <a href="#" data-acao="pp-preco-padrao">salvar como padrão</a></small></label>
+          <label class="campo"><span>Horas previstas no mês <small class="pp-dica">· opcional, para simular</small></span><input type="number" min="0" step="0.5" inputmode="decimal" data-rt="previstas" value="${esc(calc.previstas ?? "")}" placeholder="ex.: 26"></label>
+          ${paraQuem}
+        </div>
+        <table class="pp-tab"><thead><tr><th>Composição do mês</th><th class="dir">Horas</th><th class="dir">Valor</th></tr></thead>
+          <tbody><tr><td><b>Valor fixo</b></td><td class="dir" data-r="inc">—</td><td class="dir" data-r="vfixo">—</td></tr>
+            <tr><td><b>Horas adicionais</b></td><td class="dir" data-r="extra">—</td><td class="dir" data-r="vextra">—</td></tr></tbody></table>
+        <div class="pp-total"><div><span>Horas no mês</span><b data-th>0 h</b></div><div class="forte"><span>Valor do mês</span><b data-tv>R$ 0,00</b></div></div>
+        <p class="dica" data-aviso></p>` : `
         <div class="grade-form">
           <label class="campo"><span>Valor da sua hora (R$)</span><input type="number" min="0" step="0.01" inputmode="decimal" data-vh value="${esc(calc.valor_hora || "")}" placeholder="ex.: 150">
             <small class="pp-dica">${padrao ? `Padrão salvo: ${moeda(padrao)}/h` : "Ainda sem valor padrão salvo"} · <a href="#" data-acao="pp-preco-padrao">salvar como padrão</a></small></label>
-          <label class="campo"><span>Para qual cliente / empresa</span><input data-nome value="${esc(calc.nome)}" placeholder="ex.: Queijos & Companhia">
-            <select data-prospect><option value="">Vincular a uma empresa (opcional)</option>${abertos.map((p) => `<option value="${p.id}" ${calc.prospect_id === p.id ? "selected" : ""}>${esc(p.nome)}</option>`).join("")}</select></label>
+          ${paraQuem}
         </div>
         <table class="pp-tab"><thead><tr><th>Serviço</th><th class="dir">Horas</th><th class="dir">Valor</th><th></th></tr></thead>
           <tbody>${calc.itens.map((it, i) => `<tr><td>${fixo(it) ? `<b>${esc(it.servico)}</b>` : `<input data-serv="${i}" value="${esc(it.servico)}" placeholder="Nome do serviço" aria-label="Nome do serviço">`}</td>
@@ -230,17 +278,26 @@
             <td class="dir" data-v="${i}">—</td><td class="dir">${fixo(it) ? "" : `<button class="mini" data-acao="pp-preco-rm" data-i="${i}" title="Remover">×</button>`}</td></tr>`).join("")}</tbody></table>
         <button class="botao-sec" data-acao="pp-preco-add">+ Outro serviço</button>
         <div class="pp-total"><div><span>Total de horas</span><b data-th>0 h</b></div><div class="forte"><span>Valor a cobrar</span><b data-tv>R$ 0,00</b></div></div>
-        <p class="dica" data-aviso></p>
+        <p class="dica" data-aviso></p>`}
         <label class="campo"><span>Observação</span><textarea data-obs rows="2" placeholder="ex.: inclui 2 visitas presenciais; deslocamento à parte">${esc(calc.observacao || "")}</textarea></label>
         <div class="pp-botoes pp-fim"><span class="espaco"></span><button class="botao-sec" data-acao="pp-preco-limpar">Limpar</button>
           ${calc.prospect_id ? `<button class="botao-sec" data-acao="pp-preco-aplicar">Salvar e usar na empresa</button>` : ""}
           <button class="botao" data-acao="pp-preco-salvar">${calc.id ? "Salvar alterações" : "Salvar simulação"}</button></div>
       </section>
       <section class="pp-card"><h2>Simulações salvas</h2>
-        ${sims.length ? `<ul class="pp-lista">${sims.map((s) => `<li class="${calc.id === s.id ? "ativo" : ""}"><div><b>${esc(s.nome)}</b><small>${horasTxt(Number(s.total_horas))} · ${moeda(s.valor_hora)}/h · ${fmtData(String(s.criado_em || "").slice(0, 10))}</small><span>${moeda(s.valor_total)}</span></div>
+        ${sims.length ? `<ul class="pp-lista">${sims.map((s) => `<li class="${calc.id === s.id ? "ativo" : ""}"><div><b>${esc(s.nome)}</b><small>${esc(resumoSim(s))} · ${fmtData(String(s.criado_em || "").slice(0, 10))}</small><span>${moeda(simRT(s) ? simRT(s).fixo : s.valor_total)}${simRT(s) ? "/mês" : ""}</span></div>
           <span class="pp-item-acoes"><button class="mini" data-acao="pp-preco-abrir" data-id="${s.id}">Abrir</button><button class="mini" data-acao="pp-preco-excluir" data-id="${s.id}">Excluir</button></span></li>`).join("")}</ul>` : `<p class="sem">Nenhuma simulação salva ainda.</p>`}
       </section></div>`;
     const calcular = () => {
+      if (rt) {
+        const r = contaRT(calc), q = (k) => el.querySelector(`[data-r="${k}"]`);
+        q("inc").textContent = r.inc ? `até ${horasTxt(r.inc)}` : "—"; q("vfixo").textContent = num(calc.fixo) ? moeda(num(calc.fixo)) : "—";
+        q("extra").textContent = r.extra ? horasTxt(r.extra) : "—"; q("vextra").textContent = r.extra ? moeda(r.extra * num(calc.hora_extra)) : "—";
+        el.querySelector("[data-th]").textContent = horasTxt(r.prev);
+        el.querySelector("[data-tv]").textContent = moeda(r.total);
+        el.querySelector("[data-aviso]").textContent = !num(calc.fixo) ? "Preencha o valor fixo mensal." : !num(calc.hora_extra) ? "Preencha o valor da hora adicional." : !r.inc ? "" : `Dentro do pacote, a hora sai por ${moeda(num(calc.fixo) / r.inc)}. ` + (r.extra ? `${horasTxt(r.extra)} além das ${horasTxt(r.inc)}: ${moeda(num(calc.fixo))} + ${horasTxt(r.extra)} × ${moeda(num(calc.hora_extra))}.` : `Cada hora além das ${horasTxt(r.inc)} soma ${moeda(num(calc.hora_extra))}.`);
+        return;
+      }
       const vh = num(calc.valor_hora); let th = 0;
       calc.itens.forEach((it, i) => { const h = num(it.horas); th += h; const c = el.querySelector(`[data-v="${i}"]`); if (c) c.textContent = h ? moeda(h * vh) : "—"; });
       el.querySelector("[data-th]").textContent = horasTxt(th);
@@ -248,7 +305,8 @@
       el.querySelector("[data-aviso]").textContent = !vh ? "Preencha o valor da sua hora para calcular o preço." : th ? `${horasTxt(th)} × ${moeda(vh)}/h` : "";
     };
     calcular();
-    el.querySelector("[data-vh]").oninput = (e) => { calc.valor_hora = e.target.value; calcular(); };
+    const vh = el.querySelector("[data-vh]"); if (vh) vh.oninput = (e) => { calc.valor_hora = e.target.value; calcular(); };
+    el.querySelectorAll("[data-rt]").forEach((i) => (i.oninput = () => { calc[i.dataset.rt] = i.value; calcular(); }));
     el.querySelector("[data-nome]").oninput = (e) => { calc.nome = e.target.value; };
     el.querySelector("[data-obs]").oninput = (e) => { calc.observacao = e.target.value; };
     el.querySelector("[data-prospect]").onchange = (e) => { calc.prospect_id = e.target.value; const p = S.dados.prospects.find((x) => x.id === e.target.value); if (p && !calc.nome) calc.nome = p.nome; render(); };
@@ -257,12 +315,22 @@
   }
 
   async function salvarCalc() {
-    const vh = num(calc.valor_hora);
     if (!calc.nome.trim()) { toast("Dê um nome para a simulação (cliente ou empresa).", true); return null; }
-    if (!vh) { toast("Preencha o valor da hora.", true); return null; }
-    const itens = calc.itens.filter((it) => it.servico.trim()).map((it) => ({ servico: it.servico.trim(), horas: num(it.horas) }));
-    const th = itens.reduce((s, i) => s + i.horas, 0);
-    const reg = await DB.salvar("precificacoes", { ...(calc.id ? { id: calc.id } : {}), nome: calc.nome.trim(), prospect_id: calc.prospect_id || null, valor_hora: vh, observacao: calc.observacao || null, itens, total_horas: th, valor_total: Math.round(th * vh * 100) / 100 });
+    let dados;
+    if (calc.modo === "rt") {
+      const r = contaRT(calc);
+      if (!num(calc.fixo)) { toast("Preencha o valor fixo mensal.", true); return null; }
+      if (!r.inc) { toast("Preencha as horas incluídas no valor fixo.", true); return null; }
+      if (!num(calc.hora_extra)) { toast("Preencha o valor da hora adicional.", true); return null; }
+      dados = { valor_hora: num(calc.hora_extra), itens: [{ rt: true, fixo: num(calc.fixo), incluidas: r.inc, previstas: r.prev }], total_horas: r.prev, valor_total: r.total };
+    } else {
+      const vh = num(calc.valor_hora);
+      if (!vh) { toast("Preencha o valor da hora.", true); return null; }
+      const itens = calc.itens.filter((it) => it.servico.trim()).map((it) => ({ servico: it.servico.trim(), horas: num(it.horas) }));
+      const th = itens.reduce((s, i) => s + i.horas, 0);
+      dados = { valor_hora: vh, itens, total_horas: th, valor_total: Math.round(th * vh * 100) / 100 };
+    }
+    const reg = await DB.salvar("precificacoes", { ...(calc.id ? { id: calc.id } : {}), nome: calc.nome.trim(), prospect_id: calc.prospect_id || null, observacao: calc.observacao || null, ...dados });
     guardarLocal("precificacoes", reg); calc.id = reg.id;
     toast("Simulação salva.");
     return reg;
@@ -273,10 +341,11 @@
   // =====================================================================
   const prospect = (id) => S.dados.prospects.find((x) => x.id === id);
   Object.assign(SIS.acoes, {
-    "pp-nova-proposta": (el) => novaProposta(prospect(el.dataset.id)),
+    "pp-nova-proposta": (el) => escolherModelo(prospect(el.dataset.id)),
+    "pp-criar-proposta": (el) => novaProposta(prospect(el.dataset.id), el.dataset.modelo),
     "pp-sel": (el) => { E.propId = el.dataset.id; render(); },
     "pp-claude": (el) => modalClaude(prospect(el.dataset.id)),
-    "pp-claude-copiar": (el) => copiar(mensagemProposta(prospect(el.dataset.id), document.querySelector("[data-claude-muda]")?.value)),
+    "pp-claude-copiar": (el) => copiar(mensagemProposta(prospect(el.dataset.id), document.querySelector("[data-claude-muda]")?.value, document.querySelector("[data-claude-modelo]")?.value)),
     "pp-acomp-novo": (el) => modalAcomp(el.dataset.id, null),
     "pp-acomp-editar": (el) => modalAcomp(null, S.dados.acomp.find((a) => a.id === el.dataset.id)),
     "pp-acomp-excluir": async (el) => {
@@ -285,31 +354,46 @@
       S.dados.acomp = S.dados.acomp.filter((a) => a.id !== el.dataset.id);
       fecharModal(); render(); toast("Registro excluído.");
     },
-    "pp-ir-preco": (el) => { const p = prospect(el.dataset.id); calc = novoCalc(Number(cfgHora()?.valor?.valor ?? 0)); calc.prospect_id = p.id; calc.nome = p.nome; SIS.abrirPrecificacao(); },
+    "pp-ir-preco": (el) => { const p = prospect(el.dataset.id); calc = novoCalc(); calc.prospect_id = p.id; calc.nome = p.nome; SIS.abrirPrecificacao(); },
+    "pp-preco-modo": (el) => { calc.modo = el.dataset.modo; render(); },
     "pp-preco-add": () => { calc.itens.push({ servico: "", horas: "", livre: true }); render(); },
     "pp-preco-rm": (el) => { calc.itens.splice(Number(el.dataset.i), 1); render(); },
     "pp-preco-limpar": () => { calc = null; render(); },
     "pp-preco-padrao": async (el, e) => {
       e.preventDefault();
-      const vh = num(calc.valor_hora);
-      if (!vh) return toast("Preencha o valor da hora primeiro.", true);
-      const atual = cfgHora();
-      guardarLocal("config", await DB.salvar("config", { ...(atual ? { id: atual.id } : {}), chave: "valor_hora", valor: { valor: vh } }));
-      toast(`Valor da hora salvo: ${moeda(vh)}.`); render();
+      const salvarCfg = async (chave, valor) => { const atual = cfg(chave); guardarLocal("config", await DB.salvar("config", { ...(atual ? { id: atual.id } : {}), chave, valor })); };
+      if (calc.modo === "rt") {
+        if (!num(calc.fixo) || !num(calc.incluidas) || !num(calc.hora_extra)) return toast("Preencha o valor fixo, as horas incluídas e a hora adicional primeiro.", true);
+        await salvarCfg("rt_padrao", { fixo: num(calc.fixo), incluidas: num(calc.incluidas), hora_extra: num(calc.hora_extra) });
+        toast("Padrão de RT salvo.");
+      } else {
+        const vh = num(calc.valor_hora);
+        if (!vh) return toast("Preencha o valor da hora primeiro.", true);
+        await salvarCfg("valor_hora", { valor: vh });
+        toast(`Valor da hora salvo: ${moeda(vh)}.`);
+      }
+      render();
     },
     "pp-preco-salvar": async () => { if (await salvarCalc()) render(); },
     "pp-preco-aplicar": async () => {
       const reg = await salvarCalc();
       if (!reg) return;
-      guardarLocal("prospects", await DB.salvar("prospects", { id: reg.prospect_id, valor_proposto: reg.valor_total }));
-      toast(`Valor proposto atualizado para ${moeda(reg.valor_total)}.`);
+      const valor = simRT(reg) ? simRT(reg).fixo : reg.valor_total; // em RT, o valor proposto é o fixo mensal
+      guardarLocal("prospects", await DB.salvar("prospects", { id: reg.prospect_id, valor_proposto: valor }));
+      toast(`Valor proposto atualizado para ${moeda(valor)}.`);
       location.hash = `#/prospecto/${reg.prospect_id}`;
     },
     "pp-preco-abrir": (el) => {
       const s = S.dados.precificacoes.find((x) => x.id === el.dataset.id);
-      const itens = (s.itens || []).map((it) => ({ servico: it.servico, horas: it.horas || "", livre: !SERVICOS_PADRAO.includes(it.servico) }));
-      for (const sp of SERVICOS_PADRAO) if (!itens.some((it) => it.servico === sp)) itens.push({ servico: sp, horas: "" });
-      calc = { id: s.id, nome: s.nome, prospect_id: s.prospect_id || "", valor_hora: s.valor_hora, observacao: s.observacao || "", itens };
+      const r = simRT(s);
+      calc = novoCalc(r ? "rt" : "projeto");
+      Object.assign(calc, { id: s.id, nome: s.nome, prospect_id: s.prospect_id || "", observacao: s.observacao || "" });
+      if (r) Object.assign(calc, { fixo: r.fixo, incluidas: r.incluidas, hora_extra: s.valor_hora, previstas: Number(r.previstas) > Number(r.incluidas) ? r.previstas : "" });
+      else {
+        const itens = (s.itens || []).map((it) => ({ servico: it.servico, horas: it.horas || "", livre: !SERVICOS_PADRAO.includes(it.servico) }));
+        for (const sp of SERVICOS_PADRAO) if (!itens.some((it) => it.servico === sp)) itens.push({ servico: sp, horas: "" });
+        Object.assign(calc, { valor_hora: s.valor_hora, itens });
+      }
       render(); window.scrollTo(0, 0);
     },
     "pp-preco-excluir": async (el) => {
