@@ -606,3 +606,4 @@ a.botao-sec { color: var(--tinta); text-decoration: none; }
 .pp-modelo { align-self: center; }
 .pp-modo { margin-bottom: 16px; flex-wrap: wrap; }
 @media (max-width: 640px) { .pp-modelos { grid-template-columns: 1fr; } }
+.pp-sub { margin: 8px 0 0; font-size: 15px; font-family: inherit; font-weight: 600; color: var(--tinta-2); }

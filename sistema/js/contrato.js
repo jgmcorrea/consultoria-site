@@ -66,7 +66,9 @@
     const atual = cfg(chave);
     guardarLocal("config", await DB.salvar("config", { ...(atual ? { id: atual.id } : {}), chave, valor }));
   }
-  const CONTRATADA_PADRAO = () => ({ nome: "Isadora de Andrade Paulo", nacionalidade: "brasileira", estado_civil: "", profissao: "Engenheira de Alimentos", registro: "", rg: "", cpf: "", endereco: "", pagamento: "" });
+  // a contratada é a empresa da Isadora (pessoa jurídica), com ela como responsável técnica;
+  // sem a razão social preenchida, o contrato sai no nome dela (pessoa física), como nos modelos antigos
+  const CONTRATADA_PADRAO = () => ({ empresa: "", empresa_cnpj: "", empresa_sede: "", nome: "Isadora de Andrade Paulo", nacionalidade: "brasileira", estado_civil: "", profissao: "Engenheira de Alimentos", registro: "", rg: "", cpf: "", endereco: "", pagamento: "" });
   const contratada = () => ({ ...CONTRATADA_PADRAO(), ...(cfg("contratada")?.valor || {}) });
 
   const propostasDe = (id) => S.dados.propostas.filter((a) => a.prospect_id === id).sort((a, b) => String(b.criado_em || "").localeCompare(String(a.criado_em || "")));
@@ -127,7 +129,10 @@
 
     titulo("DAS PARTES");
     par(["Contratante: ", true], `${v(D.razao)}, pessoa jurídica de direito privado, inscrita no CNPJ nº ${v(D.cnpj)}, com sede em ${v(D.sede)}, doravante denominada CONTRATANTE e neste ato representada na forma de seus atos constitutivos, por seu representante legal ${v(D.rep_nome)}${D.rep_qualif ? `, ${D.rep_qualif.trim()}` : ""}, portador do Documento de Identidade RG nº ${v(D.rep_rg)}, inscrito no CPF sob o nº ${v(D.rep_cpf)}${D.rep_endereco ? `, residente e domiciliado em ${D.rep_endereco.trim()}` : ""}.`);
-    par(["Contratada: ", true], `${v(K.nome)}${[K.nacionalidade, K.estado_civil, K.profissao].filter((x) => String(x || "").trim()).map((x) => `, ${x.trim()}`).join("")}, sob registro no ${v(K.registro)}${K.rg ? `, portadora do Documento de Identidade RG nº ${K.rg.trim()}` : ""}, inscrita no CPF sob o nº ${v(K.cpf)}, residente e domiciliada em ${v(K.endereco)}.`);
+    const pj = !!String(K.empresa || "").trim();
+    const qualif = [K.nacionalidade, K.estado_civil, K.profissao].filter((x) => String(x || "").trim()).map((x) => `, ${x.trim()}`).join("");
+    if (pj) par(["Contratada: ", true], `${K.empresa.trim()}, pessoa jurídica de direito privado, inscrita no CNPJ nº ${v(K.empresa_cnpj)}, com sede em ${v(K.empresa_sede)}, doravante denominada CONTRATADA e neste ato representada por sua responsável técnica ${v(K.nome)}${qualif}, sob registro no ${v(K.registro)}${K.rg ? `, portadora do Documento de Identidade RG nº ${K.rg.trim()}` : ""}, inscrita no CPF sob o nº ${v(K.cpf)}${K.endereco ? `, residente e domiciliada em ${K.endereco.trim()}` : ""}.`);
+    else par(["Contratada: ", true], `${v(K.nome)}${[K.nacionalidade, K.estado_civil, K.profissao].filter((x) => String(x || "").trim()).map((x) => `, ${x.trim()}`).join("")}, sob registro no ${v(K.registro)}${K.rg ? `, portadora do Documento de Identidade RG nº ${K.rg.trim()}` : ""}, inscrita no CPF sob o nº ${v(K.cpf)}, residente e domiciliada em ${v(K.endereco)}.`);
     par("Decidem as partes, na melhor forma de direito, celebrar o presente ", ["CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE RESPONSABILIDADE TÉCNICA E CONSULTORIA", true], ", que reger-se-á mediante as cláusulas e condições adiante estipuladas.");
 
     let c = 0, i = 0;
@@ -136,7 +141,7 @@
 
     clausula("DO OBJETO");
     item("O presente contrato tem por objeto a prestação de serviços de responsabilidade técnica por parte da CONTRATADA à CONTRATANTE, sem vínculo empregatício, de acordo com critérios, termos e condições detalhados neste contrato.");
-    item("A CONTRATADA providenciará junto ao CREA – Conselho Regional de Engenharia e Agronomia de Santa Catarina a emissão da anotação de função técnica referente ao serviço mencionado na cláusula 1.1.");
+    item(`A CONTRATADA${pj ? `, por meio de sua responsável técnica ${v(K.nome)},` : ""} providenciará junto ao CREA – Conselho Regional de Engenharia e Agronomia de Santa Catarina a emissão da anotação de função técnica referente ao serviço mencionado na cláusula 1.1.`);
 
     clausula("OBRIGAÇÕES DA CONTRATANTE");
     item("A CONTRATANTE deverá fornecer à CONTRATADA todas as informações necessárias à realização do serviço, devendo especificar os detalhes necessários à perfeita consecução do mesmo.");
@@ -180,7 +185,9 @@
     const centro = (t, neg = false) => B.push({ t: "centro", partes: [[t, neg]] });
     const espaco = () => B.push({ t: "espaco", partes: [] });
     espaco(); centro(`${v(D.cidade)}, ${D.data ? fmtData(D.data) : VAZIO}`, true);
-    espaco(); espaco(); centro("__________________________________"); centro(v(K.nome), true); centro(`CPF: ${v(K.cpf)}`);
+    espaco(); espaco(); centro("__________________________________");
+    if (pj) { centro(K.empresa.trim(), true); centro(`CNPJ: ${v(K.empresa_cnpj)}`); centro(`${v(K.nome)} – Responsável técnica`); }
+    else { centro(v(K.nome), true); centro(`CPF: ${v(K.cpf)}`); }
     espaco(); espaco(); centro("__________________________________"); centro(v(D.razao), true); centro(`CNPJ: ${v(D.cnpj)}`);
     if (D.testemunhas) for (const n of [1, 2]) { espaco(); espaco(); centro("__________________________________"); centro(`Testemunha ${n}:`, true); }
     return B;
@@ -191,7 +198,8 @@
     const q = (ok, nome) => { if (!ok) f.push(nome); };
     q(D.razao, "razão social"); q(D.cnpj, "CNPJ"); q(D.sede, "endereço da sede"); q(D.rep_nome, "nome do representante legal"); q(D.rep_rg, "RG do representante"); q(D.rep_cpf, "CPF do representante");
     q(numero(D.horas_presenciais) + numero(D.horas_remotas), "horas mensais"); q(numero(D.valor_mensal), "valor mensal"); q(numero(D.hora_extra), "valor da hora extra");
-    q(K.registro, "registro profissional da contratada"); q(K.cpf, "CPF da contratada"); q(K.endereco, "endereço da contratada"); q(K.pagamento, "forma de pagamento");
+    q(K.empresa, "razão social da empresa da Isadora"); q(K.empresa_cnpj, "CNPJ da empresa da Isadora"); q(K.empresa_sede, "sede da empresa da Isadora");
+    q(K.registro, "registro profissional da Isadora"); q(K.cpf, "CPF da Isadora"); q(K.pagamento, "forma de pagamento");
     return f;
   }
 
@@ -279,7 +287,7 @@ ${corpo}
     const f = (obj, k, r, o = {}) => `<label class="campo ${o.largo ? "largo" : ""}"><span>${r}${o.dica ? ` <small class="pp-dica">· ${o.dica}</small>` : ""}</span>${o.area
       ? `<textarea data-${obj}="${k}" rows="${o.area}" placeholder="${esc(o.ph || "")}">${esc(Array.isArray((obj === "d" ? D : K)[k]) ? (obj === "d" ? D : K)[k].join("\n") : (obj === "d" ? D : K)[k] ?? "")}</textarea>`
       : `<input type="${o.tipo || "text"}" data-${obj}="${k}" value="${esc((obj === "d" ? D : K)[k] ?? "")}" placeholder="${esc(o.ph || "")}" ${o.tipo === "number" ? 'min="0" step="0.01" inputmode="decimal"' : ""}>`}</label>`;
-    const faltaK = !K.cpf || !K.endereco || !K.registro || !K.pagamento;
+    const faltaK = !K.empresa || !K.empresa_cnpj || !K.empresa_sede || !K.cpf || !K.registro || !K.pagamento;
     const pend = pendencias(D, K);
     el.innerHTML = `
       ${cliente ? "" : `<p class="pp-aviso">Esta empresa ainda não está como cliente (etapa “Fechado”). Dá para preparar o contrato desde já.</p>`}
@@ -336,14 +344,18 @@ ${corpo}
             <label class="pp-marca largo"><input type="checkbox" data-d="testemunhas" ${D.testemunhas ? "checked" : ""}> Incluir as linhas de duas testemunhas</label>
           </div></details>
 
-          <details ${faltaK || E.abrirK ? "open" : ""} class="pp-sec" data-sec-k><summary>6. Contratada (dados da Isadora)${faltaK ? ` <span class="chip proximo">preencher uma vez</span>` : ""}</summary><div class="grade-form">
-            <p class="dica largo">Preencha uma vez: esses dados ficam guardados no banco do sistema e entram em todos os contratos.</p>
+          <details ${faltaK || E.abrirK ? "open" : ""} class="pp-sec" data-sec-k><summary>6. Contratada (empresa da Isadora)${faltaK ? ` <span class="chip proximo">preencher uma vez</span>` : ""}</summary><div class="grade-form">
+            <p class="dica largo">Preencha uma vez: esses dados ficam guardados no banco do sistema e entram em todos os contratos. O contrato sai no nome da empresa, com a Isadora como responsável técnica.</p>
+            ${f("k", "empresa", "Razão social da empresa", { largo: true })}
+            ${f("k", "empresa_cnpj", "CNPJ da empresa", { ph: "00.000.000/0000-00" })}
+            ${f("k", "empresa_sede", "Sede da empresa", { ph: "rua, nº, complemento, município/UF, CEP" })}
+            ${f("k", "pagamento", "Forma de pagamento (cláusula 5.1)", { largo: true, ph: "PIX (CNPJ: 00.000.000/0000-00)", dica: "o texto entra depois de “realizados por meio de”" })}
+            <h3 class="largo pp-sub">Responsável técnica</h3>
             ${f("k", "nome", "Nome completo", { largo: true })}
             ${f("k", "nacionalidade", "Nacionalidade")}${f("k", "estado_civil", "Estado civil")}
             ${f("k", "profissao", "Profissão")}${f("k", "registro", "Registro profissional", { ph: "CREA-SC nº 000000-0" })}
-            ${f("k", "rg", "RG", { dica: "opcional" })}${f("k", "cpf", "CPF", { ph: "000.000.000-00" })}
-            ${f("k", "endereco", "Endereço", { largo: true, ph: "rua, nº, complemento, município/UF" })}
-            ${f("k", "pagamento", "Forma de pagamento (cláusula 5.1)", { largo: true, ph: "PIX (CPF: 000.000.000-00)", dica: "o texto entra depois de “realizados por meio de”" })}
+            ${f("k", "cpf", "CPF", { ph: "000.000.000-00" })}${f("k", "rg", "RG", { dica: "opcional" })}
+            ${f("k", "endereco", "Endereço residencial", { largo: true, dica: "opcional", ph: "rua, nº, complemento, município/UF" })}
           </div></details>
         </div>
         <div class="pp-botoes pp-fim"><span class="espaco"></span><button class="botao-sec" data-ct="word">Baixar em Word</button><button class="botao-sec" data-ct="pdf">Visualizar / Baixar PDF</button><button class="botao" data-ct="salvar">Salvar</button></div>
