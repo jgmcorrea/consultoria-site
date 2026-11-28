@@ -45,7 +45,17 @@
     { n: "proxima_acao", r: "Próxima ação", ph: "Ex.: ligar para a RT" }, { n: "proxima_acao_data", r: "Data da próxima ação", t: "date" },
     { n: "observacoes", r: "Observações", t: "textarea" },
   ];
-  const P = { busca: "", tipo: "", cidade: "", modo: "quadro" };
+  // Briefing (colunas criadas pelo 10_prospeccao_propostas.sql)
+  const CAMPOS_BRIEFING = [
+    { n: "dor", r: "Situação atual / o que incomoda", t: "textarea", ph: "O que está acontecendo hoje na empresa" },
+    { n: "objetivo", r: "Objetivo do cliente", t: "textarea", ph: "O que ele quer alcançar" },
+    { n: "servicos_interesse", r: "Serviços de interesse", full: true, ph: "Consultoria, RT, rotulagem, treinamento de BPF…" },
+    { n: "produtos", r: "Produtos / linha", t: "textarea", ph: "Ex.: caponata, pesto, patês à base de queijo" },
+    { n: "inspecao", r: "Registro / fiscalização", ph: "SIF, SIE, SIM, ANVISA, ainda sem registro…" },
+  ];
+  const temBriefing = () => DB.demo || S.dados.prospects.some((p) => "dor" in p);
+  const camposProspect = () => (temBriefing() ? [...CAMPOS_PROSP.slice(0, -1), ...CAMPOS_BRIEFING, CAMPOS_PROSP[CAMPOS_PROSP.length - 1]] : CAMPOS_PROSP);
+  const P = { busca: "", tipo: "", cidade: "", modo: "quadro", aba: "funil" };
   const titulo = (n) => String(n || "");
 
   function filtrar() {
@@ -79,7 +89,16 @@
       </article>`;
   }
 
+  const pilulasProsp = () => `<div class="seg pilulas-prosp" role="group" aria-label="Área da prospecção">
+      <button data-acao="prosp-aba" data-aba="funil" class="${P.aba === "funil" ? "ativo" : ""}">Funil de prospecção</button>
+      <button data-acao="prosp-aba" data-aba="preco" class="${P.aba === "preco" ? "ativo" : ""}">Precificação</button></div>`;
+
   function telaProspeccao(el) {
+    if (P.aba === "preco" && SIS.telaPrecificacao) {
+      el.innerHTML = `<header class="topo"><h1>Prospecção</h1><p class="topo-meta">Quanto cobrar de cada cliente, a partir do valor da sua hora</p></header>${pilulasProsp()}<div data-preco></div>`;
+      SIS.telaPrecificacao(el.querySelector("[data-preco]"));
+      return;
+    }
     const todos = S.dados.prospects;
     const lista = filtrar();
     const abertos = todos.filter((p) => !["fechado", "perdido"].includes(p.etapa)).length;
@@ -91,6 +110,7 @@
         <h1>Prospecção</h1>
         <p class="topo-meta">${abertos} empresas em andamento · ${todos.filter((p) => p.etapa === "fechado").length} fechadas · ${todos.filter((p) => p.etapa === "perdido").length} frias</p>
       </header>
+      ${pilulasProsp()}
       <div class="barra-ferramentas">
         <label class="busca"><span class="sr">Buscar empresa</span><input type="search" placeholder="Buscar empresa, cidade, CNPJ…" value="${esc(P.busca)}" data-campo="prosp-busca"></label>
         <select data-campo="prosp-tipo" aria-label="Tipo de produto"><option value="">Todos os tipos</option>${tipos.map((t) => `<option ${P.tipo === t ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
@@ -122,7 +142,7 @@
           </tr>`).join("") || `<tr><td colspan="6" class="vazio">Nenhuma empresa com esses filtros.</td></tr>`}</tbody>
       </table></div>`}`;
     el.querySelectorAll("[data-prospect]").forEach((c) => {
-      const abrir = (e) => { if (e.target.closest("a,button")) return; modalProspect(S.dados.prospects.find((p) => p.id === c.dataset.prospect)); };
+      const abrir = (e) => { if (e.target.closest("a,button")) return; location.hash = `#/prospecto/${c.dataset.prospect}`; };
       c.addEventListener("click", abrir);
       c.addEventListener("keydown", (e) => { if (e.key === "Enter") abrir(e); });
     });
@@ -131,13 +151,16 @@
   function modalProspect(p) {
     const novo = !p;
     p = p || { etapa: "prospeccao" };
-    abrirModal(novo ? "Nova empresa" : esc(p.nome), formCampos(CAMPOS_PROSP, p) + (novo ? "" : `<p class="dica">${p.clickup_id ? "Migrada do ClickUp. " : ""}Cadastrada em ${fmtData(String(p.criado_em || "").slice(0, 10)) || "—"}.</p>`),
+    const CAMPOS = camposProspect();
+    abrirModal(novo ? "Nova empresa" : esc(p.nome), formCampos(CAMPOS, p) + (novo ? "" : `<p class="dica">${p.clickup_id ? "Migrada do ClickUp. " : ""}Cadastrada em ${fmtData(String(p.criado_em || "").slice(0, 10)) || "—"}.</p>`),
       async (f) => {
-        const dados = lerCampos(f, CAMPOS_PROSP);
+        const dados = lerCampos(f, CAMPOS);
         if (dados.etapa !== "perdido") dados.motivo_perda = null;
         if (!novo) dados.id = p.id;
-        guardarLocal("prospects", await DB.salvar("prospects", dados));
+        const salvo = await DB.salvar("prospects", dados);
+        guardarLocal("prospects", salvo);
         toast(novo ? "Empresa adicionada." : "Empresa salva.");
+        if (novo) location.hash = `#/prospecto/${salvo.id}`;
       },
       novo ? "" : `<button type="button" class="botao-perigo" data-acao="prosp-excluir" data-id="${p.id}">Excluir</button>`);
     document.querySelector(".modal").classList.add("modal-larga");
@@ -158,6 +181,8 @@
   Object.assign(SIS.acoes, {
     "prosp-novo": () => modalProspect(null),
     "prosp-modo": (el) => { P.modo = el.dataset.modo; render(); },
+    "prosp-aba": (el) => { P.aba = el.dataset.aba; render(); },
+    "prosp-editar": (el) => modalProspect(S.dados.prospects.find((x) => x.id === el.dataset.id)),
     "prosp-mover": async (el) => {
       const p = S.dados.prospects.find((x) => x.id === el.dataset.id);
       const para = el.dataset.para;
@@ -170,7 +195,10 @@
       if (!confirm("Excluir esta empresa da prospecção?")) return;
       await DB.excluir("prospects", el.dataset.id);
       S.dados.prospects = S.dados.prospects.filter((p) => p.id !== el.dataset.id);
-      fecharModal(); render(); toast("Empresa excluída.");
+      S.dados.acomp = S.dados.acomp.filter((a) => a.prospect_id !== el.dataset.id);
+      S.dados.propostas = S.dados.propostas.filter((a) => a.prospect_id !== el.dataset.id);
+      fecharModal(); toast("Empresa excluída.");
+      if (location.hash.startsWith("#/prospecto/")) location.hash = "#/prospeccao"; else render();
     },
   });
 
@@ -269,6 +297,8 @@
     if (c === "prosp-cidade") { P.cidade = e.target.value; render(); }
   });
 
+  SIS.abrirPrecificacao = () => { P.aba = "preco"; if (location.hash === "#/prospeccao") render(); else location.hash = "#/prospeccao"; };
+  Object.assign(SIS, { ETAPAS_PROSP: ETAPAS, linhasContato, linkWhats, virarCliente, temBriefing });
   SIS.telas.prospeccao = telaProspeccao;
   SIS.telas.laboratorios = telaLaboratorios;
 })();

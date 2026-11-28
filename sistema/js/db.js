@@ -9,8 +9,11 @@ window.DB = (() => {
     clientes: "cons_clientes", cards: "cons_cards", itens: "cons_itens", horas: "cons_horas",
     prospects: "cons_prospects", labs: "cons_laboratorios", faturas: "cons_faturas", unidades: "cons_unidades", servicos: "cons_servicos",
     lancamentos: "emp_lancamentos", // Financeiro da Empresa (as notas dos clientes viram entradas aqui)
+    // Prospecção completa (10_prospeccao_propostas.sql): acompanhamento, propostas e precificação
+    acomp: "cons_prospect_acomp", propostas: "cons_propostas", precificacoes: "cons_precificacoes", config: "cons_config",
   };
-  const OPCIONAIS = ["lancamentos", "servicos"]; // se a tabela não existir ou não tiver acesso, o resto do sistema abre mesmo assim
+  const OPCIONAIS = ["lancamentos", "servicos", "acomp", "propostas", "precificacoes", "config"];
+  const faltando = new Set(); // tabelas opcionais que não abriram (SQL ainda não rodado) // se a tabela não existir ou não tiver acesso, o resto do sistema abre mesmo assim
 
   const novoId = () => (crypto.randomUUID ? crypto.randomUUID()
     : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
@@ -79,6 +82,7 @@ window.DB = (() => {
       if (t === "cons_clientes") { apaga("cons_cards", "cliente_id"); apaga("cons_horas", "cliente_id"); apaga("cons_servicos", "cliente_id"); }
       if (t === "cons_cards") { apaga("cons_itens", "card_id"); tab("cons_horas").forEach((h) => { if (s.has(String(h.card_id))) h.card_id = null; }); }
       if (t === "cons_itens") apaga("cons_itens", "parent_id");
+      if (t === "cons_prospects") { apaga("cons_prospect_acomp", "prospect_id"); apaga("cons_propostas", "prospect_id"); }
     }
     const sessao = { user: { id: "demo", email: "demonstração" } };
     return {
@@ -99,6 +103,7 @@ window.DB = (() => {
     const base = {
       cons_clientes: d.clientes || [], cons_cards: d.cards || [], cons_itens: d.itens || [], cons_horas: d.horas || [],
       cons_prospects: d.prospects || [], cons_laboratorios: d.labs || [], cons_faturas: d.faturas || [], cons_unidades: d.unidades || [], cons_servicos: d.servicos || [],
+      cons_prospect_acomp: [], cons_propostas: [], cons_precificacoes: [], cons_config: [],
       ...(d.financeiro || {}),
     };
     base.cons_horas.forEach((h) => (h.minutos = minutos(h)));
@@ -120,7 +125,7 @@ window.DB = (() => {
 
   async function carregarTudo() {
     const nomes = Object.keys(T);
-    const res = await Promise.all(nomes.map((n) => pegarTudo(T[n]).catch((e) => { if (OPCIONAIS.includes(n)) { console.warn(n, e); return []; } throw e; })));
+    const res = await Promise.all(nomes.map((n) => pegarTudo(T[n]).catch((e) => { if (OPCIONAIS.includes(n)) { console.warn(n, e); faltando.add(n); return []; } throw e; })));
     return Object.fromEntries(nomes.map((n, i) => [n, res[i]]));
   }
 
@@ -150,5 +155,5 @@ window.DB = (() => {
     return data === true;
   }
 
-  return { demo, sb, carregarTudo, recarregar, salvar, excluir, sessao, entrar, sair, temAcesso, minutos, novoId };
+  return { demo, sb, faltando, carregarTudo, recarregar, salvar, excluir, sessao, entrar, sair, temAcesso, minutos, novoId };
 })();

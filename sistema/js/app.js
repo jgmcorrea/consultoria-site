@@ -12,7 +12,7 @@
   const PRIORIDADES = { urgente: "Urgente", alta: "Alta", normal: "Normal", baixa: "Baixa" };
 
   const S = {
-    dados: { clientes: [], cards: [], itens: [], horas: [], prospects: [], labs: [], faturas: [], unidades: [], servicos: [], lancamentos: [] },
+    dados: { clientes: [], cards: [], itens: [], horas: [], prospects: [], labs: [], faturas: [], unidades: [], servicos: [], lancamentos: [], acomp: [], propostas: [], precificacoes: [], config: [] },
     finMes: null,
     mostrarCumpridas: true,
     busca: "",
@@ -84,6 +84,7 @@
   function rota() {
     const p = location.hash.replace(/^#\/?/, "").split("/");
     if (p[0] === "c" && p[1]) return { tela: "cliente", id: p[1], aba: p[2] || "tarefas" };
+    if (p[0] === "prospecto" && p[1]) return { tela: "prospecto", id: p[1], aba: p[2] || "dados" };
     if (["prospeccao", "laboratorios", "financeiro"].includes(p[0])) return { tela: p[0], sub: p[1] };
     return { tela: "inicio" };
   }
@@ -142,7 +143,7 @@
         </a>
         <nav class="nav-clientes" aria-label="Clientes">
           <a href="#/" class="nav-link ${r.tela === "inicio" ? "ativo" : ""}">Visão geral</a>
-          <a href="#/prospeccao" class="nav-link ${r.tela === "prospeccao" ? "ativo" : ""}"><span>Prospecção</span>${(() => { const n = S.dados.prospects.filter((p) => !["fechado", "perdido"].includes(p.etapa)).length; return n ? `<span class="nav-num">${n}</span>` : ""; })()}</a>
+          <a href="#/prospeccao" class="nav-link ${["prospeccao", "prospecto"].includes(r.tela) ? "ativo" : ""}"><span>Prospecção</span>${(() => { const n = S.dados.prospects.filter((p) => !["fechado", "perdido"].includes(p.etapa)).length; return n ? `<span class="nav-num">${n}</span>` : ""; })()}</a>
           <a href="#/laboratorios" class="nav-link ${r.tela === "laboratorios" ? "ativo" : ""}">Laboratórios</a>
           <a href="#/financeiro" class="nav-link ${r.tela === "financeiro" ? "ativo" : ""}">Financeiro</a>
           <a href="../rotulos/" class="nav-link">Rótulos</a>
