@@ -6,7 +6,7 @@
   const { esc, toast, hoje, fmtData } = window.SIS;
 
   const maisDias = (n) => { const d = new Date(hoje() + "T12:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-  const CONTATO = () => ({ whatsapp: "47 99133-6033", email: "consultoriaisadoraandrade@gmail.com", instagram: "consultoraisadoraandrade" });
+  const CONTATO = () => ({ whatsapp: "47 99133-6033", email: "consultoriaisadoraandrade@gmail.com", instagram: "consultoraisadoraandrade", site: "www.consultoraisadoraandrade.com.br" });
 
   // ---------------------------------------------------------------------
   // Modelos padrão (textos fixos da Isadora + o que muda por cliente)
@@ -199,7 +199,7 @@
         ${tira("fechamento", "Tirar a página de fechamento (“Vamos construir esse projeto juntos?” + validade)")}
         ${txt("fechamento_1", "Fechamento (linha branca)", c.fechamento_1)}${txt("fechamento_2", "Fechamento (linha escura)", c.fechamento_2)}
         ${tira("contato", "Tirar a página de contato")}
-        ${txt("con.whatsapp", "WhatsApp", c.contato.whatsapp)}${txt("con.email", "E-mail", c.contato.email)}${txt("con.instagram", "Instagram", c.contato.instagram)}`, { aberto: false });
+        ${txt("con.whatsapp", "WhatsApp", c.contato.whatsapp)}${txt("con.email", "E-mail", c.contato.email)}${txt("con.instagram", "Instagram", c.contato.instagram)}${txt("con.site", "Site", c.contato.site)}`, { aberto: false });
 
     if (c.modelo === "rt") return `
     <div class="pp-editor">
@@ -392,7 +392,8 @@
     pag("contato", `<section class="s contato"><div class="contato-topo"></div><div class="contato-txt"><span>CONSULTORIA</span><b>ISADORA ANDRADE</b>
       ${c.contato.whatsapp ? `<p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2.8a9.2 9.2 0 0 0-7.900 13.900L2.800 21.200l4.700-1.200A9.200 9.200 0 1 0 12 2.800z"/><path d="M8.300 7.600c.6-.6 1.300-.5 1.600.2l.6 1.400c.2.500 0 .9-.3 1.300l-.4.500c.8 1.400 1.900 2.500 3.300 3.200l.6-.5c.4-.3.8-.4 1.300-.2l1.400.7c.6.300.7 1 .2 1.600-.9 1-2.200 1.300-3.500.8-3-1.100-5.200-3.300-6.200-6.100-.4-1.100 0-2.200.8-2.900z" fill="currentColor" stroke="none"/></svg>${esc(c.contato.whatsapp)}</p>` : ""}
       ${c.contato.email ? `<p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="5" width="19" height="14" rx="1.5"/><path d="M3 6l9 7 9-7"/></svg>${esc(c.contato.email)}</p>` : ""}
-      ${c.contato.instagram ? `<p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor"/></svg>${esc(c.contato.instagram)}</p>` : ""}</div>
+      ${c.contato.instagram ? `<p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor"/></svg>${esc(c.contato.instagram)}</p>` : ""}
+      ${c.contato.site ? `<p><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.2"/><path d="M2.8 12h18.4M12 2.8c2.6 2.5 4 5.700 4 9.200s-1.400 6.700-4 9.200c-2.600-2.500-4-5.700-4-9.200s1.400-6.700 4-9.200z"/></svg>${esc(c.contato.site)}</p>` : ""}</div>
       <img class="contato-logo" src="${logo}" alt="Consultora Isadora Andrade"></section>`);
     return s;
   }
@@ -469,9 +470,9 @@
   .valid { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font: 700 17px Arimo, Arial; color: #fff; }
   /* contato */
   .contato-topo { position: absolute; left: 0; right: 0; top: 0; height: 62px; background: ${COR}; }
-  .contato-txt { position: absolute; left: 146px; top: 230px; } .contato-txt span { display: block; font: 300 49px Poppins; letter-spacing: .01em; } .contato-txt b { display: block; font: 600 52px/1.5 Poppins; margin-bottom: 40px; }
+  .contato-txt { position: absolute; left: 146px; top: 204px; } .contato-txt span { display: block; font: 300 49px Poppins; letter-spacing: .01em; } .contato-txt b { display: block; font: 600 52px/1.5 Poppins; margin-bottom: 40px; }
   .contato-txt p { display: flex; align-items: center; gap: 10px; font-size: 18.5px; font-weight: 300; margin-bottom: 22px; } .contato-txt svg { width: 40px; height: 40px; }
-  .contato-logo { position: absolute; right: 150px; top: 290px; width: 240px; }
+  .contato-logo { position: absolute; right: 150px; top: 280px; width: 240px; }
   @media print { html, body { background: #fff; } .barra-acoes { display: none; } .s { margin: 0; box-shadow: none; } }
   /* modelo de responsabilidade técnica */
   .capa-longa { padding-left: 20px; padding-right: 20px; } .capa-longa h1 { font-size: 80px; line-height: 1.14; padding-top: 74px; white-space: nowrap; } .capa-longa .capa-logos { top: 384px; }
