@@ -47,7 +47,7 @@
     if (!p) { el.innerHTML = `<header class="topo"><h1>Prospecção</h1></header><p class="vazio">Empresa não encontrada. <a href="#/prospeccao">Voltar para a prospecção</a></p>`; return; }
     const etapa = (SIS.ETAPAS_PROSP.find((e) => e[0] === p.etapa) || [p.etapa, p.etapa])[1];
     const acomp = acompDe(p.id), props = propostasDe(p.id);
-    const abas = [["dados", "Dados e briefing"], ["acompanhamento", `Acompanhamento${acomp.length ? ` (${acomp.length})` : ""}`], ["propostas", `Propostas${props.length ? ` (${props.length})` : ""}`]];
+    const abas = [["dados", "Dados e briefing"], ["acompanhamento", `Acompanhamento${acomp.length ? ` (${acomp.length})` : ""}`], ["propostas", `Propostas${props.length ? ` (${props.length})` : ""}`], ["contrato", "Contrato"]];
     el.innerHTML = `
       <header class="topo">
         <p class="pp-voltar"><a href="#/prospeccao">← Prospecção</a></p>
@@ -55,14 +55,17 @@
           <p class="topo-meta"><span class="etiqueta et-${esc(p.etapa)}">${esc(etapa)}</span>${[p.tipo_produto, p.cidade].filter(Boolean).map((x) => ` · ${esc(x)}`).join("")}${p.valor_proposto ? ` · <b>${moeda(p.valor_proposto)}</b>` : ""}</p></div>
           <div class="pp-acoes">
             ${p.etapa === "fechado" && !p.cliente_id ? `<button class="botao-sec" data-acao="prosp-cliente" data-id="${p.id}">Virar cliente</button>` : ""}
+            ${p.cliente_id ? `<a class="botao-sec" href="#/c/${p.cliente_id}/dados">Abrir cliente</a>` : ""}
+            ${p.etapa === "fechado" ? `<a class="botao" href="#/prospecto/${p.id}/contrato">Gerar contrato</a>` : ""}
             <button class="botao-sec" data-acao="prosp-editar" data-id="${p.id}">Editar dados</button>
-            <button class="botao" data-acao="pp-nova-proposta" data-id="${p.id}">+ Nova proposta</button></div></div>
+            <button class="${p.etapa === "fechado" ? "botao-sec" : "botao"}" data-acao="pp-nova-proposta" data-id="${p.id}">+ Nova proposta</button></div></div>
         <nav class="abas" role="tablist">${abas.map(([k, n]) => `<a role="tab" aria-selected="${r.aba === k}" class="aba ${r.aba === k ? "ativa" : ""}" href="#/prospecto/${p.id}/${k}">${n}</a>`).join("")}</nav>
       </header>
       <div data-aba></div>`;
     const box = el.querySelector("[data-aba]");
     if (r.aba === "acompanhamento") return abaAcomp(box, p, acomp);
     if (r.aba === "propostas") return abaPropostas(box, p, props);
+    if (r.aba === "contrato") return SIS.contrato.abaContrato(box, p);
     return abaDados(box, p);
   }
 

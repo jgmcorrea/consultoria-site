@@ -394,6 +394,7 @@
         ${semColunasNF ? `<p class="aviso largo">Rode o SQL dos dados de emissão da nota no Supabase para liberar estes campos.</p>` : ""}
         ${CAMPOS_NF.map((x) => campoDados(c, x, semColunasNF)).join("")}
         <h2 class="largo form-titulo">Contrato e cobrança</h2>
+        ${(() => { const pr = S.dados.prospects.find((x) => x.cliente_id === c.id); return pr ? `<p class="dica largo"><a class="botao-sec" href="#/prospecto/${pr.id}/contrato">Gerar contrato</a> Monta o contrato com os dados da empresa, da proposta e dos valores.</p>` : ""; })()}
         ${CAMPOS_CONTRATO.map((x) => campoContrato(c, x)).join("")}
         <datalist id="indices"><option>IPCA</option><option>IGP-M</option><option>INPC</option><option>Salário mínimo</option></datalist>
         <label class="alternar largo"><input type="checkbox" name="ativo" ${c.ativo !== false ? "checked" : ""}> Cliente ativo</label>

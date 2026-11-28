@@ -168,14 +168,18 @@
 
   async function virarCliente(p) {
     if (!confirm(`Criar o cliente ${p.nome} com os dados de contato da prospecção?`)) return;
+    // valores da proposta de RT (enviada ou mais recente) já entram no "Contrato e cobrança" do cliente
+    const rt = SIS.contrato ? SIS.contrato.daProposta(SIS.contrato.propostaBase(p)) : {};
+    const horasRT = SIS.contrato ? SIS.contrato.numero(rt.horas_presenciais) + SIS.contrato.numero(rt.horas_remotas) : 0;
+    const cobranca = rt.valor_mensal && horasRT ? { modelo_cobranca: "pacote", pacote_valor: rt.valor_mensal, pacote_horas: horasRT, ...(rt.hora_extra ? { valor_hora_extra: rt.hora_extra } : {}) } : {};
     const cli = await DB.salvar("clientes", {
       nome: p.nome, cnpj: p.cnpj, cidade: p.cidade, segmento: p.tipo_produto, responsavel: p.contato, email: p.email,
-      telefone: p.telefone, whatsapp: p.whatsapp, observacoes: p.observacoes, ordem: S.dados.clientes.length, ativo: true,
+      telefone: p.telefone, whatsapp: p.whatsapp, observacoes: p.observacoes, ordem: S.dados.clientes.length, ativo: true, ...cobranca,
     });
     guardarLocal("clientes", cli);
     guardarLocal("prospects", await DB.salvar("prospects", { id: p.id, etapa: "fechado", cliente_id: cli.id }));
-    toast(`${p.nome} agora é cliente.`);
-    location.hash = `#/c/${cli.id}/dados`;
+    toast(`${p.nome} agora é cliente. Confira os dados e gere o contrato.`);
+    location.hash = `#/prospecto/${p.id}/contrato`;
   }
 
   Object.assign(SIS.acoes, {
