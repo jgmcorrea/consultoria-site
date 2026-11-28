@@ -417,7 +417,7 @@
   .capa { text-align: center; padding: 88px 60px 0; }
   .capa h1 { margin: 0; font-size: 112px; line-height: 1.02; color: #3B3B3B; } .capa h1 span { display: block; font-weight: 500; } .capa h1 b { display: block; font-weight: 600; }
   .capa-logos { position: absolute; left: 0; right: 0; top: 380px; height: 160px; display: grid; grid-template-columns: 1fr 60px 1fr; align-items: center; padding: 0 250px; }
-  .capa-ia { height: 158px; justify-self: center; } .mais { font: 400 30px Poppins; color: #333; } .capa-cli { max-height: 120px; max-width: 250px; justify-self: center; object-fit: contain; }
+  .capa-ia { height: 158px; justify-self: center; } .mais { font: 400 30px Poppins; color: #333; } .capa-cli { height: 132px; width: 280px; justify-self: center; object-fit: contain; }
   .capa-nome { font: 600 30px/1.2 Poppins; color: #3B3B3B; justify-self: center; max-width: 280px; }
   .capa-ass { position: absolute; left: 0; right: 0; top: 580px; font: 500 34px Poppins; color: ${COR}; letter-spacing: .01em; }
   .capa-b1 { position: absolute; left: 0; right: 0; bottom: 30px; height: 42px; background: ${COR}; } .capa-b2 { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; background: ${COR}; }
