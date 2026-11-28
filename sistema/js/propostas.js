@@ -19,6 +19,7 @@
     logo_cliente: "",
     assinatura: "Isadora Andrade",
     sobre_titulo: "Isadora Andrade",
+    registro: "", // registro profissional, abaixo do nome (ex.: CREA-SC nº ...)
     sobre: [
       "Engenheira de Alimentos, atuo desde 2017 na indústria de alimentos, com foco em empresas sob SIF, onde a fiscalização é mais intensa e contínua.",
       "Especialista em Gestão da Qualidade, Higiene e Tecnologia de Produtos de Origem Animal, com ampla atuação em indústrias de laticínios, especialmente queijos.",
@@ -98,9 +99,15 @@
     logo_cliente: "",
     assinatura: "Isadora Andrade",
     sobre_titulo: "Isadora Andrade",
+    registro: "", // registro profissional, abaixo do nome (ex.: CREA-SC nº ...)
     sobre: ["Engenheira de Alimentos", "Especialista em Gestão da Qualidade, Higiene e Tecnologia de Produtos de Origem Animal", "Mestre em Engenharia Química"],
     trajetoria_titulo: "Experiência em:",
     trajetoria: ["Indústrias fiscalizadas pelo SIF", "Desinterdição de empresas", "Auditorias e adequações técnicas"],
+    cenario_titulo: "Cenário atual",
+    cenario: ["Empresa sem Responsável Técnico com ART vigente", "Recadastramento da planta na Plataforma SDA Digital pendente, com prazo em março/2027", "Inclusão de novos produtos no fluxo da planta depende da regularização da RT", "Exposição a autuação pelos órgãos de fiscalização enquanto a situação não for regularizada"],
+    cenario_destaque: "A proposta prioriza a regularização imediata da RT e a conclusão do recadastramento.",
+    condicoes_titulo: "Condições gerais",
+    condicoes: ["Prazo indeterminado, com período mínimo de 6 meses", "Após o período mínimo, encerramento com aviso prévio de 30 dias e baixa da ART", "A empresa se compromete a comunicar de imediato fiscalizações, notificações e desvios de qualidade", "Processos, formulações e rótulos não devem ser alterados sem avaliação prévia da RT", "A Responsabilidade Técnica é exercida perante o CREA-SC e não abrange exigências de outros conselhos profissionais", "Proposta válida conforme a data indicada na capa"],
     objetivos_titulo: "Objetivos da proposta",
     objetivos: ["Conformidade com a legislação vigente", "Segurança de alimentos", "Manutenção dos Programas de Autocontrole (PAC)", "Redução de riscos técnicos e sanitários", "Padronização e melhoria contínua dos processos"],
     objetivos_destaque: "A atuação visa garantir controle técnico da planta industrial e suporte estratégico à gestão.",
@@ -129,14 +136,15 @@
     fechamento_1: "Vamos construir",
     fechamento_2: "esse projeto juntos?",
     validade: maisDias(15),
-    ocultar: { clientes: true, fechamento: true }, // o modelo de RT não traz essas duas páginas; dá para incluir
+    // páginas que uma proposta nova de RT já traz tiradas (dá para incluir): o cenário é específico de cada cliente
+    ocultar: { clientes: true, fechamento: true, cenario: true },
     contato: CONTATO(),
   });
 
   const MODELOS = { projeto: ["Projeto / consultoria por etapas", MODELO_PROJETO], rt: ["Responsabilidade técnica (RT)", MODELO_RT] };
   const nomeModelo = (m) => (MODELOS[m] || MODELOS.projeto)[0];
   const MODELO_PADRAO = (m = "projeto") => (MODELOS[m] || MODELOS.projeto)[1]();
-  const LISTAS = ["sobre", "trajetoria", "ajuda_texto", "ajuda_caixas", "metodo_texto", "metodo_itens", "objetivos", "atividades", "remoto_caixas"];
+  const LISTAS = ["sobre", "trajetoria", "ajuda_texto", "ajuda_caixas", "metodo_texto", "metodo_itens", "objetivos", "atividades", "remoto_caixas", "cenario", "condicoes"];
 
   // completa uma proposta com os campos que faltarem (propostas antigas ou geradas pelo Claude)
   function normalizar(c = {}) {
@@ -192,6 +200,7 @@
     const fixos = (n) => sec(`${n}. Quem é a Isadora`, `
         ${tira("sobre")}
         ${txt("sobre_titulo", "Título", c.sobre_titulo, true)}
+        <label class="campo largo"><span>Registro profissional <small class="pp-dica">· opcional; sai abaixo do nome, em letra menor</small></span><input type="text" data-k="registro" value="${esc(c.registro ?? "")}" placeholder="ex.: CREA-SC nº 000000-0"></label>
         ${area("sobre", "Apresentação", L(c.sobre), 4, um)}
         ${txt("trajetoria_titulo", "Chamada da segunda lista", c.trajetoria_titulo, true)}
         ${area("trajetoria", "Segunda lista", L(c.trajetoria), 4, um)}`, { aberto: false, ks: ["sobre"] })
@@ -205,30 +214,35 @@
     if (c.modelo === "rt") return `
     <div class="pp-editor">
       ${capa}
-      ${sec("2. Objetivos da proposta", `
+      ${sec("2. Cenário atual", `
+        ${tira("cenario")}
+        ${txt("cenario_titulo", "Título", c.cenario_titulo, true)}
+        ${area("cenario", "Itens", L(c.cenario), 5, um)}
+        ${area("cenario_destaque", "Faixa azul", c.cenario_destaque, 2)}`, { ks: ["cenario"] })}
+      ${sec("3. Objetivos da proposta", `
         ${tira("objetivos")}
         ${txt("objetivos_titulo", "Título", c.objetivos_titulo, true)}
         ${area("objetivos", "Objetivos", L(c.objetivos), 5, um)}
         ${area("objetivos_destaque", "Faixa azul", c.objetivos_destaque, 2)}`, { ks: ["objetivos"] })}
-      ${sec("3. Formato de atuação", `
+      ${sec("4. Formato de atuação", `
         ${tira("formato")}
         ${txt("formato_titulo", "Título", c.formato_titulo, true)}
         ${txt("formato_intro", "Abertura", c.formato_intro, true)}
         ${area("formato_blocos", "Blocos com seta", blocosTxt(c.formato_blocos), 7, "a 1ª linha de cada bloco é o título; separe os blocos com uma linha em branco")}
         ${area("formato_destaque", "Faixa azul", c.formato_destaque, 2, "o que estiver entre *asteriscos* sai em negrito")}
         ${area("formato_nota", "Texto final", c.formato_nota, 3)}`, { ks: ["formato"] })}
-      ${sec("4. Atividades contempladas", `
+      ${sec("5. Atividades contempladas", `
         ${tira("atividades")}
         ${txt("atividades_titulo", "Título", c.atividades_titulo, true)}
         ${txt("atividades_intro", "Abertura", c.atividades_intro, true)}
         ${area("atividades", "Atividades", L(c.atividades), 6, um)}`, { ks: ["atividades"] })}
-      ${sec("5. Atendimento remoto", `
+      ${sec("6. Atendimento remoto", `
         ${tira("remoto")}
         ${txt("remoto_titulo", "Título", c.remoto_titulo, true)}
         ${txt("remoto_intro", "Abertura", c.remoto_intro, true)}
         ${area("remoto_caixas", "Caixas", L(c.remoto_caixas), 4, um)}
         ${area("remoto_nota", "Texto final", c.remoto_nota, 2)}`, { ks: ["remoto"] })}
-      ${sec("6. Investimento", `
+      ${sec("7. Investimento", `
         ${tira("investimento")}
         ${txt("rt_titulo", "Título", c.rt_titulo, true)}
         ${txt("horas_incluidas", "Horas presenciais incluídas no mês", c.horas_incluidas)}
@@ -237,8 +251,12 @@
         ${txt("valor_mensal", "Valor mensal (fixo, pelas horas incluídas)", c.valor_mensal)}
         ${txt("hora_adicional", "Valor de cada hora além das incluídas", c.hora_adicional)}
         ${txt("investimento_obs", "Observação abaixo dos valores", c.investimento_obs)}
-        <p class="dica largo">Se mudar as horas incluídas, ajuste também a faixa azul do bloco 3 (“Total mensal…”).</p>`, { ks: ["investimento"] })}
-      ${fixos(7)}
+        <p class="dica largo">Se mudar as horas incluídas, ajuste também a faixa azul do bloco “Formato de atuação” (“Total mensal…”).</p>`, { ks: ["investimento"] })}
+      ${sec("8. Condições gerais", `
+        ${tira("condicoes")}
+        ${txt("condicoes_titulo", "Título", c.condicoes_titulo, true)}
+        ${area("condicoes", "Itens", L(c.condicoes), 7, um)}`, { ks: ["condicoes"] })}
+      ${fixos(9)}
     </div>`;
 
     return `
@@ -362,8 +380,10 @@
       <div class="capa-logos"><img class="capa-ia" src="${logo}" alt="Consultora Isadora Andrade"><span class="mais">+</span>
         ${c.logo_cliente ? `<img class="capa-cli" src="${esc(c.logo_cliente)}" alt="${esc(c.cliente)}">` : `<span class="capa-nome">${esc(c.cliente || "Cliente")}</span>`}</div>
       <div class="capa-ass">${esc(c.assinatura)}</div><div class="capa-b1"></div><div class="capa-b2"></div></section>`);
-    pag("sobre", `<section class="s sobre ${c.modelo === "rt" ? "sobre-rt" : ""}">${selo}<div class="curva"></div><div class="foto" style="background-image:url('${u("img/proposta/isadora.jpg")}')" role="img" aria-label="Isadora Andrade"></div>
-      <h2>${esc(c.sobre_titulo)}</h2><div class="sobre-txt" data-ajusta>${lista(c.sobre)}${c.trajetoria.length ? `<p>${esc(c.trajetoria_titulo)}</p>${lista(c.trajetoria)}` : ""}</div></section>`);
+    pag("sobre", `<section class="s sobre ${c.modelo === "rt" ? "sobre-rt" : ""} ${c.registro ? "com-registro" : ""}">${selo}<div class="curva"></div><div class="foto" style="background-image:url('${u("img/proposta/isadora.jpg")}')" role="img" aria-label="Isadora Andrade"></div>
+      <h2>${esc(c.sobre_titulo)}</h2>${c.registro ? `<div class="registro">${esc(c.registro)}</div>` : ""}<div class="sobre-txt" data-ajusta>${lista(c.sobre)}${c.trajetoria.length ? `<p>${esc(c.trajetoria_titulo)}</p>${lista(c.trajetoria)}` : ""}</div></section>`);
+    if (c.modelo === "rt") pag("cenario", `<section class="s">${selo}<h2>${duo(c.cenario_titulo, 1, true)}</h2>
+      <div class="obj larga" data-ajusta>${c.cenario.filter(Boolean).map((o) => `<div class="cx">${esc(o)}</div>`).join("")}${c.cenario_destaque ? `<div class="azul">${negrito(c.cenario_destaque)}</div>` : ""}</div>${barra}</section>`);
     pag("clientes", `<section class="s nomes">${selo}<h2>Alguns dos nomes que já<br><span class="c">confiaram no meu trabalho</span></h2><img class="nomes-img" src="${u("img/proposta/clientes.jpg")}" alt="Empresas atendidas"></section>`);
 
     if (c.modelo === "rt") {
@@ -379,10 +399,10 @@
         <div class="remoto">${c.remoto_intro ? `<p>${esc(c.remoto_intro)}</p>` : ""}<div class="remoto-cx">${c.remoto_caixas.filter(Boolean).map((x) => `<div>${esc(x)}</div>`).join("")}</div>
           ${c.remoto_nota ? `<p class="just">${esc(c.remoto_nota)}</p>` : ""}</div>${barra}</section>`);
       pag("investimento", `<section class="s">${selo}<h2 class="c">${esc(c.rt_titulo)}</h2>
-        <div class="inv inv-rt"><h3>Investimento</h3><div class="inv-caixas">
+        <div class="inv inv-rt ${c.investimento_obs ? "tem-obs" : ""}"><h3>Investimento</h3><div class="inv-caixas">
           ${c.valor_mensal ? `<div class="cx rt-cx"><span>Valor mensal${horasRT(c)}:</span><b>${esc(c.valor_mensal)}</b></div>` : ""}
           ${c.hora_adicional ? `<div class="cx rt-cx"><span>Hora técnica<br>adicional:</span><b>${esc(c.hora_adicional)}</b></div>` : ""}</div>
-          ${c.investimento_obs ? `<p class="inv-obs">${esc(c.investimento_obs)}</p>` : ""}</div>${barra}</section>`);
+          ${c.investimento_obs ? `<p class="inv-obs" data-ajusta>${esc(c.investimento_obs)}</p>` : ""}</div>${barra}</section>`);
     } else {
       const etapas = c.etapas.filter((e) => e.nome || e.inclui.length || e.descricao);
       const pontos = `<div class="trilho"><i style="top:24%"></i><i style="top:50%"></i><i style="top:76%"></i></div>`;
@@ -401,12 +421,14 @@
       const pagas = etapas.filter((e) => e.valor);
       if (pagas.length) pag("investimento", `<section class="s">${selo}<h2>${esc(c.investimento_titulo)} - <span class="c">Investimento</span></h2>
         <div class="inv"><div class="inv-caixas n${Math.min(pagas.length, 4)}">${etapas.map((e, i) => e.valor ? `<div class="cx inv-cx"><b>${etapas.length > 1 ? `Etapa ${i + 1}:` : "Investimento:"}</b><span>${esc(e.valor)}</span>${e.nota ? `<small>${esc(e.nota)}</small>` : ""}</div>` : "").join("")}</div>
-          ${c.investimento_obs ? `<p class="inv-obs">${esc(c.investimento_obs)}</p>` : ""}</div>${barra}</section>`);
+          ${c.investimento_obs ? `<p class="inv-obs" data-ajusta>${esc(c.investimento_obs)}</p>` : ""}</div>${barra}</section>`);
       pag("rotulagem", `<section class="s">${selo}<h2>${duo(c.rotulagem.titulo, Math.max(1, String(c.rotulagem.titulo).trim().split(/\s+/).length - 1))}</h2>
         <div class="rotul"><div class="rotul-txt" data-ajusta>${lista(c.rotulagem.itens)}</div>
           ${c.rotulagem.valor ? `<div class="cx inv-cx"><b>Investimento:</b><span>${esc(c.rotulagem.valor)}</span>${c.rotulagem.unidade ? `<small>${esc(c.rotulagem.unidade)}</small>` : ""}</div>` : ""}</div>${barra}</section>`);
     }
 
+    if (c.modelo === "rt") pag("condicoes", `<section class="s">${selo}<h2>${duo(c.condicoes_titulo, 1, true)}</h2>
+      <div class="ativ cond" data-ajusta>${lista(c.condicoes)}</div>${barra}</section>`);
     pag("fechamento", `<section class="s fecho"><span class="selo-b"><img src="${logo}" alt=""></span><div class="moldura"><div class="f1">${esc(c.fechamento_1)}</div><div class="f2">${esc(c.fechamento_2)}</div>
       ${c.validade ? `<div class="valid">Proposta válida até ${fmtData(c.validade)}</div>` : ""}</div></section>`);
     pag("contato", `<section class="s contato"><div class="contato-topo"></div><div class="contato-txt"><span>CONSULTORIA</span><b>ISADORA ANDRADE</b>
@@ -477,7 +499,8 @@
   .inv-caixas { display: flex; gap: 18px; align-items: flex-start; justify-content: center; width: 100%; }
   .inv-cx { padding: 26px 12px 28px; min-height: 158px; width: 270px; line-height: 1.3; } .inv-cx b { font: 700 36px Poppins; color: ${COR}; } .inv-cx span { font: 400 36px Poppins; white-space: nowrap; } .inv-cx small { font: 400 25px/1.45 Poppins; }
   .inv-caixas.n4 .inv-cx { width: 205px; } .inv-caixas.n4 .inv-cx b, .inv-caixas.n4 .inv-cx span { font-size: 27px; } .inv-caixas.n4 .inv-cx small { font-size: 19px; }
-  .inv-obs { font-size: 20px; text-align: center; font-weight: 400; }
+  .inv-obs { font-size: 20px; line-height: 1.4; text-align: center; font-weight: 400; max-height: 118px; overflow: hidden; padding: 0 24px; white-space: pre-line; flex-shrink: 0; }
+  .registro { margin: -22px 0 20px 76px; font: 400 32px/1.3 Poppins, Arial; color: #6B6B6B; } .com-registro .sobre-txt { height: 520px; } .sobre-rt.com-registro .sobre-txt { padding-top: 40px; }
   /* rotulagem */
   .rotul { display: grid; grid-template-columns: 650px 1fr; gap: 54px; align-items: center; margin-top: 26px; }
   .rotul-txt { font-size: 24px; max-height: 420px; overflow: hidden; } .rotul-txt li + li { margin-top: 1.5em; } .rotul .inv-cx { width: 378px; min-height: 190px; justify-self: end; margin-right: 0; } .rotul .inv-cx b { font-size: 40px; }
@@ -507,7 +530,11 @@
   .remoto-cx div { border: 2.5px solid ${COR}; border-radius: 9px; text-align: center; font-weight: 400; font-size: 24px; line-height: 40px; white-space: nowrap; } .remoto .just { line-height: 1.8; }
   .inv-rt { left: 210px; right: 210px; top: 184px; bottom: 60px; justify-content: flex-start; padding-top: 34px; gap: 60px; } .inv-rt h3 { margin: 0; font: 700 40px Poppins; color: ${COR}; }
   .inv-rt .inv-caixas { gap: 56px; } .rt-cx { width: 348px; min-height: 168px; padding: 18px 10px; line-height: 1.35; } .inv-rt .inv-caixas { align-items: stretch; } .rt-cx span { font: 400 28px/1.35 Poppins; } .rt-cx b { font: 700 40px Poppins; margin-top: 14px; }
-  .inv-rt::before { top: 34%; height: 36%; }`;
+  .inv-rt::before { top: 34%; height: 36%; }
+  .inv-rt.tem-obs { padding-top: 22px; gap: 26px; } .inv-rt.tem-obs .rt-cx { min-height: 150px; padding: 12px 10px; }
+  .obj.larga { width: 1010px; height: 536px; overflow: hidden; font-size: 24px; } .obj.larga .cx { height: auto; min-height: 64px; font-size: 1em; line-height: 1.3; padding: .35em 1.2em; white-space: normal; text-wrap: balance; flex-shrink: 0; }
+  .obj.larga .azul { font-size: 1em; flex-shrink: 0; text-wrap: balance; }
+  .ativ.cond ul { margin-top: 0; } .ativ.cond li + li { margin-top: .85em; }`;
 
   // encolhe o texto dos blocos marcados até caber no slide (propostas com muito conteúdo)
   const AJUSTE = `document.fonts.ready.then(function () { document.querySelectorAll("[data-ajusta]").forEach(function (el) {
