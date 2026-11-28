@@ -121,7 +121,8 @@
     remoto_nota: "Demandas que excedam a carga horária contratada serão consideradas como hora técnica adicional.",
     // investimento: valor fixo pelas horas incluídas + valor de cada hora além delas
     rt_titulo: "Responsabilidade técnica",
-    horas_incluidas: "20",
+    horas_incluidas: "20", // presenciais
+    horas_remotas: "",     // remotas (online); preenchidas as duas, a proposta é mista
     valor_mensal: "R$ 5.300,00",
     hora_adicional: "R$ 125,00",
     investimento_obs: "",
@@ -231,6 +232,8 @@
         ${tira("investimento")}
         ${txt("rt_titulo", "Título", c.rt_titulo, true)}
         ${txt("horas_incluidas", "Horas presenciais incluídas no mês", c.horas_incluidas)}
+        ${txt("horas_remotas", "Horas remotas (online) incluídas no mês", c.horas_remotas)}
+        <p class="dica largo">Só presencial: deixe as remotas em branco. Só remoto: deixe as presenciais em branco. Misto: preencha as duas, e a proposta mostra as duas quantidades.</p>
         ${txt("valor_mensal", "Valor mensal (fixo, pelas horas incluídas)", c.valor_mensal)}
         ${txt("hora_adicional", "Valor de cada hora além das incluídas", c.hora_adicional)}
         ${txt("investimento_obs", "Observação abaixo dos valores", c.investimento_obs)}
@@ -338,6 +341,13 @@
   };
   const link = (tipo, v) => { const h = hrefContato(tipo, v); return h ? `<a href="${esc(h)}" target="_blank" rel="noopener">${esc(v)}</a>` : esc(v); };
 
+  // linha das horas no valor mensal de RT: só presenciais, só remotas ou as duas (misto)
+  const horasRT = (c) => {
+    const qt = (v, um, varios) => { v = String(v ?? "").trim(); if (!v || /^0+([.,]0+)?$/.test(v)) return ""; return /^\d+([.,]\d+)?$/.test(v) ? `${esc(v)} ${v === "1" ? um : varios}` : esc(v); };
+    const p = qt(c.horas_incluidas, "hora presencial", "horas presenciais"), r = qt(c.horas_remotas, "hora remota", "horas remotas");
+    return p && r ? `<br>(${p}<br>+ ${r})` : p || r ? `<br>(${p || r})` : "";
+  };
+
   function slidesHTML(conteudo, base = location.href) {
     const c = normalizar(conteudo);
     const u = (f) => new URL(f, base).href;
@@ -370,7 +380,7 @@
           ${c.remoto_nota ? `<p class="just">${esc(c.remoto_nota)}</p>` : ""}</div>${barra}</section>`);
       pag("investimento", `<section class="s">${selo}<h2 class="c">${esc(c.rt_titulo)}</h2>
         <div class="inv inv-rt"><h3>Investimento</h3><div class="inv-caixas">
-          ${c.valor_mensal ? `<div class="cx rt-cx"><span>Valor mensal${c.horas_incluidas ? `<br>(${esc(c.horas_incluidas)} horas presenciais)` : ""}:</span><b>${esc(c.valor_mensal)}</b></div>` : ""}
+          ${c.valor_mensal ? `<div class="cx rt-cx"><span>Valor mensal${horasRT(c)}:</span><b>${esc(c.valor_mensal)}</b></div>` : ""}
           ${c.hora_adicional ? `<div class="cx rt-cx"><span>Hora técnica<br>adicional:</span><b>${esc(c.hora_adicional)}</b></div>` : ""}</div>
           ${c.investimento_obs ? `<p class="inv-obs">${esc(c.investimento_obs)}</p>` : ""}</div>${barra}</section>`);
     } else {
@@ -496,7 +506,7 @@
   .remoto { margin: -8px 130px 0 -42px; font-size: 26px; } .remoto-cx { width: 672px; margin: 38px 0 38px 236px; display: flex; flex-direction: column; gap: 26px; }
   .remoto-cx div { border: 2.5px solid ${COR}; border-radius: 9px; text-align: center; font-weight: 400; font-size: 24px; line-height: 40px; white-space: nowrap; } .remoto .just { line-height: 1.8; }
   .inv-rt { left: 210px; right: 210px; top: 184px; bottom: 60px; justify-content: flex-start; padding-top: 34px; gap: 60px; } .inv-rt h3 { margin: 0; font: 700 40px Poppins; color: ${COR}; }
-  .inv-rt .inv-caixas { gap: 56px; } .rt-cx { width: 348px; height: 168px; line-height: 1.35; } .rt-cx span { font: 400 28px/1.35 Poppins; } .rt-cx b { font: 700 40px Poppins; margin-top: 14px; }
+  .inv-rt .inv-caixas { gap: 56px; } .rt-cx { width: 348px; min-height: 168px; padding: 18px 10px; line-height: 1.35; } .inv-rt .inv-caixas { align-items: stretch; } .rt-cx span { font: 400 28px/1.35 Poppins; } .rt-cx b { font: 700 40px Poppins; margin-top: 14px; }
   .inv-rt::before { top: 34%; height: 36%; }`;
 
   // encolhe o texto dos blocos marcados até caber no slide (propostas com muito conteúdo)
